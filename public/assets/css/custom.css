@@ -1,0 +1,512 @@
+/* ============================================================
+   CLMS Custom Theme Overrides
+   ------------------------------------------------------------
+   Loaded AFTER Sneat's core.css and demo.css so every rule here
+   wins on specificity/cascade. Keep this file focused on brand
+   tokens and high-level theming; put page-specific tweaks in
+   their own stylesheets.
+   ============================================================ */
+
+/* ---- 1. Brand palette --------------------------------------
+   Navy is the new primary. Cream is the app canvas. The -rgb
+   triplets are what Bootstrap uses internally for
+   rgba(var(--bs-primary-rgb), .5) style alpha mixes, so we
+   must override both the hex and the triplet.
+------------------------------------------------------------- */
+:root {
+  --clms-navy: #0f204b;
+  --clms-navy-rgb: 15, 32, 75;
+  --clms-cream: #fdfcf0;
+  --clms-cream-rgb: 253, 252, 240;
+
+  --bs-primary: var(--clms-navy);
+  --bs-primary-rgb: var(--clms-navy-rgb);
+
+  --bs-body-bg: var(--clms-cream);
+  --bs-body-bg-rgb: var(--clms-cream-rgb);
+}
+
+/* ---- 2. Body canvas ----------------------------------------
+   Sneat paints the shell via `body` and the menu/content
+   wrappers, so the cream has to be applied to all three or the
+   old grey (#f5f5f9) bleeds through.
+------------------------------------------------------------- */
+html,
+body {
+  background-color: var(--clms-cream) !important;
+}
+
+.layout-wrapper,
+.layout-container,
+.layout-page,
+.content-wrapper {
+  background-color: var(--clms-cream);
+}
+
+/* ---- 3. Primary button / link recolour ---------------------
+   Sneat hard-codes the old purple (#696cff) into a handful of
+   component classes, so we repoint them at the navy token.
+------------------------------------------------------------- */
+.btn-primary,
+.bg-primary {
+  background-color: var(--clms-navy) !important;
+  border-color: var(--clms-navy) !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+  background-color: #0a1736 !important;
+  border-color: #0a1736 !important;
+}
+
+.text-primary {
+  color: var(--clms-navy) !important;
+}
+
+.btn-outline-primary {
+  color: var(--clms-navy) !important;
+  border-color: var(--clms-navy) !important;
+}
+
+.btn-outline-primary:hover {
+  background-color: var(--clms-navy) !important;
+  border-color: var(--clms-navy) !important;
+  color: #fff !important;
+}
+
+a {
+  color: var(--clms-navy);
+}
+
+a:hover {
+  color: #0a1736;
+}
+
+/* ---- 4. SweetAlert2 stacking context -----------------------
+   Sneat parks `.layout-menu` at z-index 1080–1100 and
+   `.layout-navbar` around 1075. SweetAlert2's default
+   `.swal2-container` is 1060, so the sidebar / navbar end up
+   *above* the backdrop and don't get dimmed. We lift the
+   container well clear of Sneat's layout chrome so the backdrop
+   covers the whole viewport.
+------------------------------------------------------------- */
+.swal2-container {
+  z-index: 10600 !important;
+}
+
+/* ---- 5. SweetAlert2 flash dialog styling -------------------
+   Pairs with public/assets/js/clms-notify.js (customClass
+   popup: 'clms-flash-dialog'). The defaults from SweetAlert2
+   are already good — these overrides just round the corners
+   a touch more and tint the drop shadow navy so the dialog
+   feels like part of our brand, not a third-party widget.
+------------------------------------------------------------- */
+.clms-flash-dialog {
+  border-radius: .85rem !important;
+  box-shadow: 0 1rem 2.5rem rgba(15, 32, 75, .18) !important;
+  padding: 1.75rem 1.25rem 1.5rem !important;
+}
+
+.clms-flash-dialog .swal2-title {
+  font-size: 1.15rem !important;
+  font-weight: 600 !important;
+  color: #1a2340 !important;
+  margin-top: .75rem !important;
+  padding: 0 .75rem !important;
+}
+
+.clms-flash-dialog .swal2-timer-progress-bar-container {
+  border-bottom-left-radius: .85rem;
+  border-bottom-right-radius: .85rem;
+  height: .25rem;
+}
+
+/* ---- 6. Brand logo -----------------------------------------
+   Single source of truth for sizing the CLMS mark so it lines
+   up identically across all three sidebars and the auth pages.
+------------------------------------------------------------- */
+.clms-brand-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.clms-brand-logo-auth {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(15, 32, 75, .15));
+}
+
+/* Sneat renders `.app-brand-link` as inline-flex-y already, we
+   just need the image to sit cleanly next to the text. */
+.app-brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+}
+
+/* ---- 6b. Desktop collapsed sidebar toggle visibility --------
+   In collapsed desktop mode, Sneat can leave the chevron icon
+   visually hidden (only a thin handle remains). Force the toggle
+   control + icon to stay visible and clickable. */
+.layout-menu-collapsed .layout-menu .app-brand .layout-menu-toggle {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 5;
+}
+
+.layout-menu-collapsed .layout-menu .app-brand .layout-menu-toggle i {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  color: #fff !important;
+  font-size: 1.2rem;
+  line-height: 1;
+  transform: none !important;
+}
+
+/* ---- 7. Exam result card -----------------------------------
+   The post-submit summary shown by student/grade_exam.php and
+   the server-side auto-finalise path in student/take_exam.php.
+   The hero strip is tone-coded (success / warning / info) so
+   passed / not-passed / pending-review states are readable at
+   a glance.
+------------------------------------------------------------- */
+.clms-exam-result {
+  border: 1px solid rgba(15, 32, 75, .08);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 .5rem 1.5rem rgba(15, 32, 75, .06);
+}
+
+.clms-exam-result__hero {
+  position: relative;
+  text-align: center;
+  padding: 2.25rem 1.5rem 1.75rem;
+  color: #fff;
+  background: linear-gradient(135deg, #0a1736 0%, #0f204b 60%, #1a2f6b 100%);
+}
+.clms-exam-result__hero::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 4px;
+  background: linear-gradient(90deg, #d4af37, #f6c85f, #d4af37);
+  opacity: .9;
+}
+.clms-exam-result--success .clms-exam-result__hero {
+  background: linear-gradient(135deg, #0a1736 0%, #0f204b 55%, #1d5f3e 130%);
+}
+.clms-exam-result--warning .clms-exam-result__hero {
+  background: linear-gradient(135deg, #3a1d1d 0%, #7a2e2e 55%, #a23b3b 130%);
+}
+.clms-exam-result--warning .clms-exam-result__hero::after {
+  background: linear-gradient(90deg, #ffd86b, #ff8b4d, #ffd86b);
+}
+.clms-exam-result--info .clms-exam-result__hero {
+  background: linear-gradient(135deg, #0a1736 0%, #1a2f6b 60%, #2f4ba0 130%);
+}
+
+.clms-exam-result__hero-icon {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 1rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, .1);
+  border: 2px solid rgba(255, 255, 255, .28);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+}
+.clms-exam-result__hero-icon i {
+  font-size: 2.5rem;
+  color: #ffe6a7;
+}
+.clms-exam-result--warning .clms-exam-result__hero-icon i { color: #ffd1d1; }
+.clms-exam-result--info .clms-exam-result__hero-icon i { color: #cfd9ff; }
+
+.clms-exam-result__hero-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0 0 .35rem;
+  color: #fff;
+  letter-spacing: .2px;
+}
+.clms-exam-result__hero-lead {
+  margin: 0 auto;
+  max-width: 520px;
+  color: rgba(255, 255, 255, .82);
+  font-size: .95rem;
+}
+.clms-exam-result__hero-course {
+  margin: .75rem 0 0;
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: rgba(255, 255, 255, .6);
+}
+
+/* --- Big score + threshold bar ---------------------------- */
+.clms-exam-result__score {
+  text-align: center;
+  padding: 1rem 0 .5rem;
+}
+.clms-exam-result__score-value {
+  font-weight: 800;
+  line-height: 1;
+  color: var(--clms-navy);
+}
+.clms-exam-result__percent {
+  font-size: 3.75rem;
+}
+.clms-exam-result__percent-sign {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: rgba(15, 32, 75, .55);
+  margin-left: .15rem;
+}
+.clms-exam-result--success .clms-exam-result__percent { color: #1d6f43; }
+.clms-exam-result--warning .clms-exam-result__percent { color: #a23b3b; }
+.clms-exam-result--info    .clms-exam-result__percent { color: var(--clms-navy); }
+
+.clms-exam-result__score-label {
+  margin-top: .35rem;
+  color: #6b7280;
+  font-size: .85rem;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+}
+
+.clms-exam-result__bar {
+  position: relative;
+  max-width: 520px;
+  margin: 1.25rem auto .5rem;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(15, 32, 75, .08);
+  overflow: hidden;
+}
+.clms-exam-result__bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1d6f43, #2fa568);
+  transition: width .4s ease;
+}
+.clms-exam-result--warning .clms-exam-result__bar-fill {
+  background: linear-gradient(90deg, #a23b3b, #e05a5a);
+}
+.clms-exam-result--info .clms-exam-result__bar-fill {
+  background: linear-gradient(90deg, var(--clms-navy), #2f4ba0);
+}
+/* Marker lives OUTSIDE the clipping fill so it paints over the full track. */
+.clms-exam-result__bar-marker {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: rgba(15, 32, 75, .55);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .9);
+  transform: translateX(-1px);
+  pointer-events: none;
+}
+.clms-exam-result__bar-legend {
+  max-width: 520px;
+  margin: 0 auto;
+  color: #6b7280;
+  font-size: .8rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+.clms-exam-result__bar-legend i {
+  color: var(--clms-navy);
+  vertical-align: middle;
+  margin-right: .15rem;
+}
+
+/* --- Stat tiles ------------------------------------------- */
+.clms-exam-result__stats {
+  margin-top: 1.5rem !important;
+}
+.clms-exam-result__stat {
+  height: 100%;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(15, 32, 75, .08);
+  border-radius: .75rem;
+  background: rgba(15, 32, 75, .02);
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+.clms-exam-result__stat-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 32, 75, .08);
+  color: var(--clms-navy);
+  font-size: 1.1rem;
+}
+.clms-exam-result__stat-label {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: #6b7280;
+  font-weight: 600;
+}
+.clms-exam-result__stat-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--clms-navy);
+}
+.clms-exam-result__stat-muted {
+  color: rgba(15, 32, 75, .55);
+  font-weight: 500;
+  font-size: .95rem;
+}
+
+/* --- Certificate row -------------------------------------- */
+.clms-exam-result__certificate {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(29, 111, 67, .25);
+  border-radius: .75rem;
+  background: linear-gradient(135deg, rgba(29, 111, 67, .06), rgba(212, 175, 55, .08));
+  flex-wrap: wrap;
+}
+.clms-exam-result__certificate-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #d4af37;
+  color: #3a2a00;
+  font-size: 1.8rem;
+  box-shadow: 0 4px 12px rgba(212, 175, 55, .35);
+  flex-shrink: 0;
+}
+.clms-exam-result__certificate-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.clms-exam-result__certificate-title {
+  font-weight: 700;
+  color: var(--clms-navy);
+  margin-bottom: .2rem;
+}
+.clms-exam-result__certificate-hash code {
+  background: rgba(15, 32, 75, .06);
+  color: var(--clms-navy);
+  padding: .1rem .4rem;
+  border-radius: .3rem;
+  font-size: .78rem;
+  word-break: break-all;
+}
+
+@media (max-width: 575.98px) {
+  .clms-exam-result__percent { font-size: 3rem; }
+  .clms-exam-result__hero { padding: 1.75rem 1.25rem 1.5rem; }
+  .clms-exam-result__hero-title { font-size: 1.45rem; }
+}
+
+/* ---- 8. My Certificates card -------------------------------
+   The dashboard's "My Certificates" grid. Each card shows a
+   thumbnail of the actual certificate template on top, the
+   course title + issue date in the middle, and a download
+   button pinned to the bottom. The preview doubles as a link
+   to the PDF download so students can grab it from either the
+   image or the button.
+------------------------------------------------------------- */
+.clms-cert-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border: 1px solid rgba(15, 32, 75, .08);
+  border-radius: .75rem;
+  overflow: hidden;
+  box-shadow: 0 .35rem 1rem rgba(15, 32, 75, .05);
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.clms-cert-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 .75rem 1.75rem rgba(15, 32, 75, .1);
+}
+.clms-cert-preview {
+  position: relative;
+  display: block;
+  aspect-ratio: 297 / 210; /* A4 landscape — matches the PDF output */
+  background: #f4efe1;
+  overflow: hidden;
+}
+.clms-cert-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .4s ease;
+}
+.clms-cert-card:hover .clms-cert-preview img {
+  transform: scale(1.03);
+}
+.clms-cert-preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: .75rem;
+  background: linear-gradient(180deg, rgba(15, 32, 75, 0) 55%, rgba(15, 32, 75, .45) 100%);
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.clms-cert-card:hover .clms-cert-preview-overlay,
+.clms-cert-card:focus-within .clms-cert-preview-overlay {
+  opacity: 1;
+}
+.clms-cert-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  background: rgba(255, 255, 255, .95);
+  color: var(--clms-navy);
+  font-weight: 600;
+  font-size: .8rem;
+  padding: .35rem .65rem;
+  border-radius: 999px;
+  box-shadow: 0 .2rem .5rem rgba(0, 0, 0, .15);
+}
+.clms-cert-body {
+  padding: .9rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+.clms-cert-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: rgba(255, 159, 67, .15);
+  color: #ff9f43;
+  font-size: 1.1rem;
+}
+.clms-cert-icon i { line-height: 1; }
+.min-width-0 { min-width: 0; }
+

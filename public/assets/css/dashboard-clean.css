@@ -1,0 +1,175 @@
+:root {
+  --clms-radius: 0.375rem;
+  --clms-shadow: 0 4px 6px -1px rgba(15, 32, 75, 0.10), 0 2px 4px -1px rgba(15, 32, 75, 0.06);
+  --clms-shadow-hover: 0 10px 15px -3px rgba(15, 32, 75, 0.12), 0 4px 6px -2px rgba(15, 32, 75, 0.08);
+  --clms-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.clms-dashboard .card {
+  border-radius: var(--clms-radius);
+  box-shadow: var(--clms-shadow);
+  border: 1px solid rgba(15, 32, 75, .08);
+}
+
+.clms-dashboard .card:hover {
+  box-shadow: var(--clms-shadow-hover);
+}
+
+.clms-dashboard .clms-metric-card {
+  border-left: 1px solid rgba(15, 32, 75, .08) !important;
+}
+
+.clms-dashboard .btn,
+.clms-dashboard a,
+.clms-dashboard .badge,
+.clms-dashboard .progress-bar {
+  transition: var(--clms-transition);
+}
+
+.clms-dashboard .btn {
+  border-radius: var(--clms-radius);
+  box-shadow: var(--clms-shadow);
+}
+
+.clms-dashboard .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--clms-shadow-hover);
+}
+
+.clms-dashboard .btn.btn-sm,
+.clms-dashboard .btn.btn-icon {
+  border-radius: var(--clms-radius);
+}
+
+.clms-dashboard .btn-primary {
+  background-color: #0f204b;
+  border-color: #0f204b;
+}
+
+.clms-dashboard .btn-primary:hover,
+.clms-dashboard .btn-primary:focus {
+  background-color: #0a1736;
+  border-color: #0a1736;
+}
+
+.clms-dashboard .btn-outline-primary {
+  color: #0f204b;
+  border-color: #0f204b;
+}
+
+.clms-dashboard .btn-outline-primary:hover,
+.clms-dashboard .btn-outline-primary:focus {
+  background-color: #0f204b;
+  border-color: #0f204b;
+  color: #fff;
+}
+
+.clms-dashboard .btn-outline-secondary:hover,
+.clms-dashboard .btn-outline-secondary:focus,
+.clms-dashboard .btn-outline-light:hover,
+.clms-dashboard .btn-outline-light:focus {
+  color: #0f204b;
+  background-color: #f3f5fb;
+  border-color: #c9d0e4;
+}
+
+.clms-dashboard .btn-warning {
+  background-color: #f1a43a;
+  border-color: #f1a43a;
+  color: #2f2307;
+}
+
+.clms-dashboard .btn-warning:hover,
+.clms-dashboard .btn-warning:focus {
+  background-color: #df9329;
+  border-color: #df9329;
+  color: #2f2307;
+}
+
+.clms-dashboard .btn:focus-visible,
+.clms-dashboard a:focus-visible,
+.clms-dashboard .form-check-input:focus-visible,
+.clms-dashboard .form-control:focus-visible,
+.clms-dashboard .btn-close:focus-visible {
+  outline: 2px solid #0f204b;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(15, 32, 75, 0.2);
+}
+
+.clms-dashboard .table {
+  --bs-table-hover-bg: rgba(15, 32, 75, 0.04);
+}
+
+.clms-dashboard .table > :not(caption) > * > * {
+  border-color: rgba(15, 32, 75, 0.08);
+}
+
+.clms-dashboard .table tbody tr {
+  transition: var(--clms-transition);
+}
+
+.clms-dashboard .table tbody tr:hover {
+  box-shadow: inset 3px 0 0 rgba(15, 32, 75, 0.35);
+}
+
+.clms-dashboard small.text-muted,
+.clms-dashboard .text-muted {
+  color: #4b5b7c !important;
+}
+
+.clms-dashboard .avatar {
+  border-radius: var(--clms-radius) !important;
+}
+
+.clms-dashboard .clms-highlight {
+  background: linear-gradient(135deg, #0a1736 0%, #0f204b 100%) !important;
+  color: #fff;
+}
+
+.clms-dashboard .clms-list-item {
+  border: 1px solid rgba(15, 32, 75, .1);
+  border-radius: var(--clms-radius);
+  padding: .75rem;
+  box-shadow: var(--clms-shadow);
+}
+
+.clms-dashboard .bg-label-primary,
+.clms-dashboard .bg-label-info,
+.clms-dashboard .bg-label-success,
+.clms-dashboard .bg-label-warning,
+.clms-dashboard .bg-label-danger,
+.clms-dashboard .bg-label-secondary {
+  border-radius: var(--clms-radius);
+  border: 1px solid transparent;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.clms-dashboard .bg-label-primary { border-color: rgba(15, 32, 75, 0.22); }
+.clms-dashboard .bg-label-info { border-color: rgba(3, 175, 217, 0.25); }
+.clms-dashboard .bg-label-success { border-color: rgba(40, 199, 111, 0.25); }
+.clms-dashboard .bg-label-warning { border-color: rgba(255, 171, 0, 0.28); }
+.clms-dashboard .bg-label-danger { border-color: rgba(255, 62, 29, 0.28); }
+.clms-dashboard .bg-label-secondary { border-color: rgba(133, 146, 163, 0.3); }
+
+.clms-dashboard .progress {
+  border-radius: 999px;
+  height: 8px !important;
+  background-color: rgba(15, 32, 75, 0.10);
+  overflow: hidden;
+}
+
+.clms-dashboard .progress .progress-bar {
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clms-dashboard .card,
+  .clms-dashboard .btn,
+  .clms-dashboard a,
+  .clms-dashboard .badge,
+  .clms-dashboard .progress-bar,
+  .clms-dashboard .table tbody tr {
+    transition: none !important;
+  }
+}
