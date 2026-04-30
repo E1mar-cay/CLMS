@@ -40,9 +40,15 @@
   border-color: var(--clms-navy);
 }
 
-.btn-clms-primary {
+.btn.btn-clms-primary {
   background-color: var(--clms-navy);
   border-color: var(--clms-navy);
+  --bs-btn-color: #fff;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-color: #fff;
+  --bs-btn-disabled-color: #fff;
+  color: #fff !important;
+  opacity: 1;
   border-radius: var(--clms-radius);
   box-shadow: var(--clms-shadow);
   transition: var(--clms-transition);
@@ -51,11 +57,25 @@
   font-size: .95rem;
 }
 
-.btn-clms-primary:hover {
+.btn.btn-clms-primary:hover {
   background-color: #0a1736;
   border-color: #0a1736;
+  color: #fff !important;
+  opacity: 1;
   box-shadow: var(--clms-shadow-hover);
   transform: translateY(-1px);
+}
+
+.btn.btn-clms-primary:focus,
+.btn.btn-clms-primary:active,
+.btn.btn-clms-primary:visited {
+  color: #fff;
+  opacity: 1;
+}
+
+.btn.btn-clms-primary i {
+  color: inherit !important;
+  opacity: 1 !important;
 }
 
 .clms-auth-footer-link,

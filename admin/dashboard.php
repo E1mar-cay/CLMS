@@ -85,9 +85,11 @@ $upcomingExamStmt = $pdo->query(
     "SELECT
         ea.id,
         ea.attempted_at,
+        ea.deadline_at,
         u.first_name,
         u.last_name,
-        c.title AS course_title
+        c.title AS course_title,
+        COALESCE(c.final_exam_duration_minutes, 45) AS final_exam_duration_minutes
      FROM exam_attempts ea
      INNER JOIN users u ON u.id = ea.user_id
      INNER JOIN courses c ON c.id = ea.course_id
@@ -191,13 +193,6 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
               </div>
 
-              <div class="card mb-4 clms-highlight">
-                <div class="card-body">
-                  <h6 class="text-white mb-1">Announcement</h6>
-                  <p class="mb-0">Criminology Board Exam schedule has been released. Encourage students to complete remaining modules before the deadline.</p>
-                </div>
-              </div>
-
               <div class="row g-4">
                 <div class="col-xl-8">
                   <div class="card mb-4">
@@ -265,18 +260,49 @@ require_once __DIR__ . '/includes/layout-top.php';
 
                 <div class="col-xl-4">
                   <div class="card mb-4">
-                    <h5 class="card-header">Upcoming Exams</h5>
+                    <h5 class="card-header">Students Who Are Taking Exam</h5>
                     <div class="card-body">
 <?php if ($upcomingExams === []) : ?>
                       <p class="mb-0">No active exam attempts.</p>
 <?php else : ?>
                       <div class="d-flex flex-column gap-3">
 <?php foreach ($upcomingExams as $exam) : ?>
-<?php $dueTimestamp = strtotime((string) $exam['attempted_at']) + (45 * 60); ?>
+<?php
+  $attemptedTs = strtotime((string) $exam['attempted_at']) ?: time();
+  $deadlineTs = null;
+  if (!empty($exam['deadline_at'])) {
+      $deadlineParsed = strtotime((string) $exam['deadline_at']);
+      if ($deadlineParsed !== false) {
+          $deadlineTs = $deadlineParsed;
+      }
+  }
+  if ($deadlineTs === null) {
+      $durationMinutes = (int) ($exam['final_exam_duration_minutes'] ?? 45);
+      if ($durationMinutes < 1) {
+          $durationMinutes = 45;
+      }
+      $deadlineTs = $attemptedTs + ($durationMinutes * 60);
+  }
+  $remainingSeconds = $deadlineTs - time();
+  if ($remainingSeconds > 0) {
+      $hours = intdiv($remainingSeconds, 3600);
+      $minutes = intdiv($remainingSeconds % 3600, 60);
+      $seconds = $remainingSeconds % 60;
+      if ($hours > 0) {
+          $remainingLabel = 'Ends in ' . $hours . 'h ' . $minutes . 'm';
+      } else {
+          $remainingLabel = 'Ends in ' . $minutes . 'm ' . $seconds . 's';
+      }
+      $remainingClass = 'text-warning';
+  } else {
+      $remainingLabel = 'Overtime';
+      $remainingClass = 'text-danger';
+  }
+?>
                         <div class="clms-list-item">
-                          <div class="fw-semibold"><?php echo htmlspecialchars((string) $exam['course_title'], ENT_QUOTES, 'UTF-8'); ?></div>
-                          <small class="text-muted d-block"><?php echo htmlspecialchars(trim((string) $exam['first_name'] . ' ' . (string) $exam['last_name']), ENT_QUOTES, 'UTF-8'); ?></small>
-                          <small class="text-warning">Due in <?php echo max(0, (int) ceil(($dueTimestamp - time()) / 3600)); ?>h</small>
+                          <div class="fw-semibold"><?php echo htmlspecialchars(trim((string) $exam['first_name'] . ' ' . (string) $exam['last_name']), ENT_QUOTES, 'UTF-8'); ?></div>
+                          <small class="text-muted d-block"><?php echo htmlspecialchars((string) $exam['course_title'], ENT_QUOTES, 'UTF-8'); ?></small>
+                          <small class="<?php echo $remainingClass; ?>"><?php echo htmlspecialchars($remainingLabel, ENT_QUOTES, 'UTF-8'); ?></small>
                         </div>
 <?php endforeach; ?>
                       </div>

@@ -23,10 +23,22 @@ if ($userRole === 'admin') {
 $courses = [];
 try {
     $courseStmt = $pdo->prepare(
-        'SELECT id, title, description, thumbnail_url, level
-         FROM courses
-         WHERE is_published = 1
-         ORDER BY id DESC
+        'SELECT
+            c.id,
+            c.title,
+            c.description,
+            c.thumbnail_url,
+            c.level,
+            (SELECT COUNT(*) FROM modules m WHERE m.course_id = c.id) AS total_modules,
+            (SELECT COALESCE(SUM(m.duration_minutes), 0) FROM modules m WHERE m.course_id = c.id) AS total_duration_minutes,
+            (SELECT COUNT(DISTINCT up.user_id)
+                FROM user_progress up
+                INNER JOIN modules mm ON mm.id = up.module_id
+                WHERE mm.course_id = c.id) AS learner_count,
+            (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id) AS question_count
+         FROM courses c
+         WHERE c.is_published = 1
+         ORDER BY c.id DESC
          LIMIT 6'
     );
     $courseStmt->execute();
@@ -35,6 +47,35 @@ try {
 } catch (Throwable $e) {
     $courses = [];
 }
+
+$formatDuration = static function (int $totalMinutes): string {
+    if ($totalMinutes <= 0) {
+        return 'Self-paced';
+    }
+    if ($totalMinutes < 60) {
+        return $totalMinutes . ' min';
+    }
+    $hours = intdiv($totalMinutes, 60);
+    $minutes = $totalMinutes % 60;
+    if ($minutes === 0) {
+        return $hours . ($hours === 1 ? ' hr' : ' hrs');
+    }
+    return $hours . ' hr ' . $minutes . ' min';
+};
+
+$resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): string {
+    $path = trim((string) $rawPath);
+    if ($path === '') {
+        return '';
+    }
+    if (preg_match('/^(https?:)?\/\//i', $path) === 1 || str_starts_with($path, 'data:')) {
+        return $path;
+    }
+    if (str_starts_with($path, '/')) {
+        return rtrim((string) $clmsWebBase, '/') . $path;
+    }
+    return rtrim((string) $clmsWebBase, '/') . '/' . ltrim($path, '/');
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -279,6 +320,139 @@ try {
       font-weight: 600;
     }
 
+    .landing-catalog-card {
+      border: 1px solid rgba(15, 32, 75, 0.1);
+      border-radius: var(--clms-radius);
+      box-shadow: var(--clms-shadow);
+      transition: var(--clms-transition);
+      background: #fff;
+      overflow: hidden;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .landing-catalog-card:hover {
+      box-shadow: var(--clms-shadow-hover);
+      transform: translateY(-2px);
+    }
+
+    .landing-catalog-media {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      background: linear-gradient(135deg, #0f204b 0%, #1a2f6b 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .landing-catalog-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: var(--clms-transition);
+    }
+
+    .landing-catalog-card:hover .landing-catalog-media img {
+      transform: scale(1.03);
+    }
+
+    .landing-catalog-placeholder {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+
+    .landing-catalog-level {
+      position: absolute;
+      top: .6rem;
+      left: .6rem;
+      border-radius: var(--clms-radius);
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--clms-navy);
+      border: 1px solid rgba(15, 32, 75, 0.15);
+      font-size: .72rem;
+      font-weight: 700;
+      padding: .25rem .45rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .landing-catalog-cert {
+      position: absolute;
+      top: .6rem;
+      right: .6rem;
+      border-radius: var(--clms-radius);
+      background: rgba(15, 32, 75, 0.92);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      font-size: .72rem;
+      font-weight: 600;
+      padding: .25rem .45rem;
+    }
+
+    .landing-catalog-body {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+      flex: 1;
+    }
+
+    .landing-catalog-desc {
+      color: #4d5a78;
+      font-size: .9rem;
+      margin: 0;
+      min-height: 44px;
+    }
+
+    .landing-catalog-meta {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+
+    .landing-meta-chip {
+      border: 1px solid rgba(15, 32, 75, 0.12);
+      background: rgba(15, 32, 75, 0.05);
+      color: #304267;
+      border-radius: var(--clms-radius);
+      font-size: .75rem;
+      font-weight: 600;
+      padding: .22rem .45rem;
+    }
+
+    .landing-modal-chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: var(--clms-radius);
+      padding: .35rem .55rem;
+      font-size: .78rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+      letter-spacing: .01em;
+    }
+
+    .landing-modal-chip-info {
+      background: #e9efff;
+      color: #0f204b;
+      border-color: #cfdcff;
+    }
+
+    .landing-modal-chip-meta {
+      background: #eef2f7;
+      color: #213150;
+      border-color: #d6deea;
+    }
+
+    .landing-modal-chip-exam {
+      background: #fff3cd;
+      color: #7a5a00;
+      border-color: #ffdf9a;
+    }
+
     .feature-icon {
       font-size: 1.5rem;
       color: var(--clms-navy);
@@ -303,7 +477,7 @@ try {
       border-radius: var(--clms-radius);
       border: 2px solid rgba(15, 32, 75, 0.17);
       background: linear-gradient(180deg, #fffef7 0%, #fff 100%);
-      padding: 1rem;
+      padding: .75rem;
       position: relative;
     }
 
@@ -330,6 +504,16 @@ try {
       color: #4d5a78;
       font-size: .92rem;
       margin-bottom: .4rem;
+    }
+
+    .cert-template-img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: calc(var(--clms-radius) - 1px);
+      border: 1px solid rgba(15, 32, 75, 0.12);
+      box-shadow: var(--clms-shadow);
+      background: #fff;
     }
 
     a,
@@ -525,39 +709,83 @@ try {
         <div class="row g-4">
           <?php if ($courses !== []) : ?>
             <?php foreach ($courses as $course) : ?>
-              <div class="col-sm-6 col-lg-4">
-                <article class="course-card p-4">
-                  <div class="course-thumb">
-                    <?php $thumb = trim((string) ($course['thumbnail_url'] ?? '')); ?>
+              <?php
+                $thumb = $resolveThumbnailUrl((string) ($course['thumbnail_url'] ?? ''));
+                $title = (string) ($course['title'] ?? 'Course');
+                $level = trim((string) ($course['level'] ?? ''));
+                $description = trim((string) ($course['description'] ?? ''));
+                $descText = $description === ''
+                    ? 'Course overview will be provided upon enrollment request approval.'
+                    : mb_strimwidth($description, 0, 120, '...');
+                $levelText = $level !== '' ? $level : 'All Levels';
+                $initials = mb_strtoupper(mb_substr($title, 0, 2));
+                $modalId = 'landingCourseInfoModal-' . (int) ($course['id'] ?? 0);
+                $totalModules = (int) ($course['total_modules'] ?? 0);
+                $learnerCount = (int) ($course['learner_count'] ?? 0);
+                $questionCount = (int) ($course['question_count'] ?? 0);
+                $durationDisplay = $formatDuration((int) ($course['total_duration_minutes'] ?? 0));
+              ?>
+              <div class="col-sm-6 col-lg-4 col-xl-3">
+                <article class="landing-catalog-card">
+                  <div class="landing-catalog-media">
                     <?php if ($thumb !== '') : ?>
-                      <img src="<?php echo htmlspecialchars($thumb, ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?> thumbnail" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                      <div class="course-thumb-fallback" style="display:none;">
-                        <i class="bx bx-book-reader" aria-hidden="true"></i>
-                        <div class="small fw-semibold">Course Preview</div>
-                      </div>
-                    <?php else : ?>
-                      <div class="course-thumb-fallback">
-                        <i class="bx bx-book-reader" aria-hidden="true"></i>
-                        <div class="small fw-semibold">Course Preview</div>
-                      </div>
+                      <img src="<?php echo htmlspecialchars($thumb, ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?> thumbnail" loading="lazy" onerror="this.style.display='none'; this.parentElement.querySelector('.landing-catalog-placeholder').style.display='block';">
                     <?php endif; ?>
+                    <div class="landing-catalog-placeholder" style="<?php echo $thumb !== '' ? 'display:none;' : ''; ?>">
+                      <?php echo htmlspecialchars($initials !== '' ? $initials : 'CL', ENT_QUOTES, 'UTF-8'); ?>
+                    </div>
+                    <span class="landing-catalog-level"><?php echo htmlspecialchars($levelText, ENT_QUOTES, 'UTF-8'); ?></span>
+                    <span class="landing-catalog-cert"><i class="bx bx-award me-1"></i>Certificate</span>
                   </div>
-                  <h3 class="course-title h5 mb-2"><?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?></h3>
-                  <?php if (trim((string) ($course['level'] ?? '')) !== '') : ?>
-                    <p class="small text-secondary mb-2">Level: <?php echo htmlspecialchars((string) $course['level'], ENT_QUOTES, 'UTF-8'); ?></p>
-                  <?php endif; ?>
-                  <p class="course-description mb-3">
-                    <?php
-                    $description = trim((string) ($course['description'] ?? ''));
-                    if ($description === '') {
-                        echo 'Course overview will be provided upon enrollment request approval.';
-                    } else {
-                        echo htmlspecialchars(mb_strimwidth($description, 0, 150, '...'), ENT_QUOTES, 'UTF-8');
-                    }
-                    ?>
-                  </p>
-                  <span class="badge request-badge px-3 py-2">Register to Request Access</span>
+                  <div class="landing-catalog-body">
+                    <h3 class="course-title h6 mb-0"><?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?></h3>
+                    <p class="landing-catalog-desc"><?php echo htmlspecialchars($descText, ENT_QUOTES, 'UTF-8'); ?></p>
+                    <div class="landing-catalog-meta">
+                      <span class="landing-meta-chip"><i class="bx bx-lock-alt me-1"></i>Request Access</span>
+                      <span class="landing-meta-chip"><i class="bx bx-check-shield me-1"></i>Verified Track</span>
+                    </div>
+                    <div class="d-flex gap-2 mt-auto">
+                      <button type="button" class="btn btn-clms btn-clms-outline flex-fill" data-bs-toggle="modal" data-bs-target="#<?php echo htmlspecialchars($modalId, ENT_QUOTES, 'UTF-8'); ?>">
+                        More Info
+                      </button>
+                      <a class="btn btn-clms btn-clms-primary flex-fill" href="register.php">
+                        <i class="bx bx-rocket me-1"></i>Start Learning
+                      </a>
+                    </div>
+                  </div>
                 </article>
+              </div>
+              <div class="modal fade" id="<?php echo htmlspecialchars($modalId, ENT_QUOTES, 'UTF-8'); ?>" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title"><?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?></h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                      <div class="d-flex flex-wrap gap-2 mb-3">
+                        <span class="landing-modal-chip landing-modal-chip-info"><?php echo htmlspecialchars($levelText, ENT_QUOTES, 'UTF-8'); ?></span>
+                        <span class="landing-modal-chip landing-modal-chip-meta"><i class="bx bx-book-open me-1"></i><?php echo $totalModules; ?> modules</span>
+                        <span class="landing-modal-chip landing-modal-chip-meta"><i class="bx bx-time-five me-1"></i><?php echo htmlspecialchars($durationDisplay, ENT_QUOTES, 'UTF-8'); ?></span>
+                        <span class="landing-modal-chip landing-modal-chip-meta"><i class="bx bx-group me-1"></i><?php echo number_format($learnerCount); ?> learners</span>
+<?php if ($questionCount > 0) : ?>
+                        <span class="landing-modal-chip landing-modal-chip-exam"><i class="bx bx-certification me-1"></i>Final Exam</span>
+<?php endif; ?>
+                      </div>
+<?php if ($description !== '') : ?>
+                      <p class="mb-0" style="white-space: pre-wrap;"><?php echo htmlspecialchars($description, ENT_QUOTES, 'UTF-8'); ?></p>
+<?php else : ?>
+                      <p class="mb-0 text-muted">No detailed course description is available yet.</p>
+<?php endif; ?>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                      <a class="btn btn-clms btn-clms-primary" href="register.php">
+                        <i class="bx bx-rocket me-1"></i>Start Learning
+                      </a>
+                    </div>
+                  </div>
+                </div>
               </div>
             <?php endforeach; ?>
           <?php else : ?>
@@ -586,11 +814,11 @@ try {
           <div class="col-lg-6">
             <div class="cert-preview">
               <div class="cert-paper">
-                <h3 class="cert-title h5">Certificate of Completion</h3>
-                <p class="cert-subline mb-2">Criminology Learning Management System</p>
-                <p class="mb-2 text-secondary">Awarded to: <strong>Registered CLMS Learner</strong></p>
-                <p class="mb-2 text-secondary">For successfully completing: <strong>Board Exam Review Course</strong></p>
-                <p class="mb-0 small text-secondary">Validated by Review Center Administrator | Unique Certificate Hash Included</p>
+                <img
+                  class="cert-template-img"
+                  src="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/images/blank_cert_template.jpg', ENT_QUOTES, 'UTF-8'); ?>"
+                  alt="Sample CLMS certificate template"
+                  loading="lazy" />
               </div>
             </div>
           </div>
@@ -627,20 +855,6 @@ try {
       </div>
     </section>
   </main>
-
-  <section class="cta-strip py-5">
-    <div class="container">
-      <div class="row align-items-center g-3">
-        <div class="col-lg-8">
-          <h2 class="cta-strip-title h3 mb-2">Ready to start your criminology board exam preparation?</h2>
-          <p class="cta-strip-lead">Create your CLMS account, request course access, and begin structured, strict, self-paced review today.</p>
-        </div>
-        <div class="col-lg-4 text-lg-end">
-          <a href="register.php" class="btn btn-clms btn-cta-light btn-lg px-4">Register Now</a>
-        </div>
-      </div>
-    </div>
-  </section>
 
   <footer class="site-footer py-4 mt-5">
     <div class="container text-center">

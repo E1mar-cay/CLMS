@@ -193,6 +193,20 @@ $placeholderGradients = [
     'linear-gradient(135deg, #0a1736 0%, #1a2f6b 100%)',
 ];
 
+$resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): string {
+    $path = trim((string) $rawPath);
+    if ($path === '') {
+        return '';
+    }
+    if (preg_match('/^(https?:)?\/\//i', $path) === 1 || str_starts_with($path, 'data:')) {
+        return $path;
+    }
+    if (str_starts_with($path, '/')) {
+        return rtrim((string) $clmsWebBase, '/') . $path;
+    }
+    return rtrim((string) $clmsWebBase, '/') . '/' . ltrim($path, '/');
+};
+
 $courseCards = [];
 foreach ($allCourses as $course) {
     $courseId = (int) $course['id'];
@@ -424,7 +438,7 @@ require_once __DIR__ . '/includes/layout-top.php';
               <div class="row g-3 mb-4">
 <?php foreach ($inProgressCourses as $course) :
     $courseId = (int) $course['id'];
-    $thumbnail = trim((string) ($course['thumbnail_url'] ?? ''));
+    $thumbnail = $resolveThumbnailUrl((string) ($course['thumbnail_url'] ?? ''));
     $mediaStyle = $thumbnail !== ''
         ? 'background-image: url(' . "'" . htmlspecialchars($thumbnail, ENT_QUOTES, 'UTF-8') . "'" . ');'
         : 'background: ' . $course['placeholder_gradient'] . ';';
@@ -488,7 +502,7 @@ require_once __DIR__ . '/includes/layout-top.php';
   $courseId = (int) $course['id'];
   $title = (string) $course['title'];
   $description = (string) ($course['description'] ?? '');
-  $thumbnail = trim((string) ($course['thumbnail_url'] ?? ''));
+  $thumbnail = $resolveThumbnailUrl((string) ($course['thumbnail_url'] ?? ''));
   $levelStyle = $course['level_style'];
   $levelKey = strtolower(trim((string) ($course['level'] ?? 'all')));
   if (!in_array($levelKey, ['beginner', 'intermediate', 'advanced'], true)) {

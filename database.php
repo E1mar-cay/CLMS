@@ -4,12 +4,25 @@ declare(strict_types=1);
 
 /**
  * Shared PDO connection for the Criminology LMS.
- * Prefer setting CLMS_DB_* environment variables; defaults suit local XAMPP.
+ * Priority:
+ * 1) CLMS_DB_* environment variables (recommended for deployment)
+ * 2) Auto defaults:
+ *    - local (localhost/127.0.0.1): local XAMPP values
+ *    - non-local host: production fallback values
  */
-$clmsDbHost = getenv('CLMS_DB_HOST') ?: '127.0.0.1';
-$clmsDbName = getenv('CLMS_DB_NAME') ?: 'clms_db';
-$clmsDbUser = getenv('CLMS_DB_USER') ?: 'root';
-$clmsDbPass = getenv('CLMS_DB_PASS') ?: '';
+$serverName = strtolower((string) ($_SERVER['SERVER_NAME'] ?? ''));
+$isLocalHost = in_array($serverName, ['', 'localhost', '127.0.0.1'], true)
+    || str_ends_with($serverName, '.local');
+
+$defaultDbHost = '127.0.0.1';
+$defaultDbName = $isLocalHost ? 'clms_db' : 'u890408583_review';
+$defaultDbUser = $isLocalHost ? 'root' : 'u890408583_adminrev';
+$defaultDbPass = $isLocalHost ? '' : 'Rev+123456789';
+
+$clmsDbHost = getenv('CLMS_DB_HOST') ?: $defaultDbHost;
+$clmsDbName = getenv('CLMS_DB_NAME') ?: $defaultDbName;
+$clmsDbUser = getenv('CLMS_DB_USER') ?: $defaultDbUser;
+$clmsDbPass = getenv('CLMS_DB_PASS') !== false ? (string) getenv('CLMS_DB_PASS') : $defaultDbPass;
 $clmsDbCharset = 'utf8mb4';
 
 $clmsDsn = sprintf(

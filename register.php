@@ -163,10 +163,6 @@ $showUpgradeToPro = false;
                     <div class="clms-auth-form">
                       <h1 class="mb-2">Create Student Account</h1>
                       <p class="text-muted mb-4">Use your active email address. Password must be at least 8 characters.</p>
-<?php if ($formError !== '') : ?>
-                      <div class="alert alert-danger mb-4" role="alert"><?php echo htmlspecialchars($formError, ENT_QUOTES, 'UTF-8'); ?></div>
-<?php endif; ?>
-
                       <form id="formAuthentication" class="mb-4" action="<?php echo htmlspecialchars($clmsWebBase . '/register.php', ENT_QUOTES, 'UTF-8'); ?>" method="post" novalidate>
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                         <div class="row g-3">
@@ -241,5 +237,17 @@ $showUpgradeToPro = false;
         </div>
       </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<?php if ($formError !== '') : ?>
+    <script>
+      Swal.fire({
+        icon: 'error',
+        title: 'Registration Failed',
+        text: <?php echo json_encode($formError, JSON_UNESCAPED_SLASHES); ?>,
+        confirmButtonColor: '#0f204b',
+      });
+    </script>
+<?php endif; ?>
 
 <?php require __DIR__ . '/includes/auth-footer.php'; ?>

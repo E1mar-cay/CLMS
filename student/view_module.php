@@ -881,9 +881,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                   const userId = <?php echo (int) $_SESSION['user_id']; ?>;
                   const csrfToken = <?php echo json_encode(clms_csrf_token(), JSON_THROW_ON_ERROR); ?>;
                   const apiUrl = <?php echo json_encode($clmsWebBase . '/student/update_progress.php', JSON_THROW_ON_ERROR); ?>;
+                  const markWatchedActionUrl = <?php echo json_encode($clmsWebBase . '/student/view_module.php?module_id=' . (int) $module['id'] . '#moduleQuizCard', JSON_THROW_ON_ERROR); ?>;
                   const storageKey = `clms_module_progress_${userId}_${moduleId}`;
                   const serverLastSecond = <?php echo $lastWatchedSecond; ?>;
-                  let completionSent = <?php echo $isCompleted ? 'true' : 'false'; ?>;
+                  const videoAlreadyUnlocked = <?php echo $videoCompleted ? 'true' : 'false'; ?>;
+                  let completionSent = <?php echo ($videoCompleted || $isCompleted) ? 'true' : 'false'; ?>;
+                  let refreshTriggered = false;
 
                   const persistedSecond = parseInt(localStorage.getItem(storageKey) || '0', 10) || 0;
                   const resumeSecond = Math.max(serverLastSecond, persistedSecond);
@@ -892,7 +895,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                     localStorage.setItem(storageKey, String(Math.max(0, Math.floor(video.currentTime || 0))));
                   };
 
-                  const sendProgress = (isCompleted = false, useBeacon = false) => {
+                  const sendProgress = (isCompleted = false, useBeacon = false, reloadAfterSave = false) => {
                     const second = Math.max(0, Math.floor(video.currentTime || 0));
                     const payload = new URLSearchParams();
                     payload.set('module_id', String(moduleId));
@@ -912,7 +915,14 @@ require_once __DIR__ . '/includes/layout-top.php';
                       },
                       body: payload.toString(),
                       keepalive: useBeacon
-                    }).catch(() => {});
+                    })
+                    .then((res) => {
+                      if (!reloadAfterSave || !res.ok) return;
+                      const targetUrl = new URL(window.location.href);
+                      targetUrl.hash = 'moduleQuizCard';
+                      window.location.replace(targetUrl.toString());
+                    })
+                    .catch(() => {});
                   };
 
                   const checkCompletionThreshold = () => {
@@ -920,8 +930,42 @@ require_once __DIR__ . '/includes/layout-top.php';
                     if (!Number.isFinite(video.duration) || video.duration <= 0) return;
                     if ((video.currentTime / video.duration) >= 0.95) {
                       completionSent = true;
-                      sendProgress(true, false);
+                      sendProgress(true, false, true);
                     }
+                  };
+
+                  const completeAndRefreshNow = () => {
+                    if (refreshTriggered) return;
+                    if (videoAlreadyUnlocked) return;
+                    refreshTriggered = true;
+                    completionSent = true;
+                    sendProgress(true, true, false);
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = markWatchedActionUrl;
+                    form.style.display = 'none';
+
+                    const csrfInput = document.createElement('input');
+                    csrfInput.type = 'hidden';
+                    csrfInput.name = 'csrf_token';
+                    csrfInput.value = csrfToken;
+
+                    const actionInput = document.createElement('input');
+                    actionInput.type = 'hidden';
+                    actionInput.name = 'action';
+                    actionInput.value = 'mark_video_watched';
+
+                    form.appendChild(csrfInput);
+                    form.appendChild(actionInput);
+                    document.body.appendChild(form);
+                    form.submit();
+                  };
+
+                  const isNearVideoEnd = () => {
+                    const duration = getDuration();
+                    const current = getCurrentSecond();
+                    if (!duration || duration <= 0) return false;
+                    return current >= Math.max(1, duration - 1);
                   };
 
                   video.addEventListener('loadedmetadata', () => {
@@ -933,8 +977,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                   video.addEventListener('timeupdate', checkCompletionThreshold);
                   video.addEventListener('pause', () => sendProgress(false, false));
                   video.addEventListener('ended', () => {
-                    completionSent = true;
-                    sendProgress(true, false);
+                    completeAndRefreshNow();
                   });
 
                   setInterval(persistLocally, 5000);
@@ -952,12 +995,15 @@ require_once __DIR__ . '/includes/layout-top.php';
                   const userId = <?php echo (int) $_SESSION['user_id']; ?>;
                   const csrfToken = <?php echo json_encode(clms_csrf_token(), JSON_THROW_ON_ERROR); ?>;
                   const apiUrl = <?php echo json_encode($clmsWebBase . '/student/update_progress.php', JSON_THROW_ON_ERROR); ?>;
+                  const markWatchedActionUrl = <?php echo json_encode($clmsWebBase . '/student/view_module.php?module_id=' . (int) $module['id'] . '#moduleQuizCard', JSON_THROW_ON_ERROR); ?>;
                   const videoId = <?php echo json_encode((string) ($videoSource['video_id'] ?? ''), JSON_THROW_ON_ERROR); ?>;
                   const storageKey = `clms_module_progress_${userId}_${moduleId}`;
                   const serverLastSecond = <?php echo $lastWatchedSecond; ?>;
-                  let completionSent = <?php echo $isCompleted ? 'true' : 'false'; ?>;
+                  const videoAlreadyUnlocked = <?php echo $videoCompleted ? 'true' : 'false'; ?>;
+                  let completionSent = <?php echo ($videoCompleted || $isCompleted) ? 'true' : 'false'; ?>;
                   let player = null;
                   let pollingHandle = null;
+                  let refreshTriggered = false;
 
                   const persistedSecond = parseInt(localStorage.getItem(storageKey) || '0', 10) || 0;
                   const resumeSecond = Math.max(serverLastSecond, persistedSecond);
@@ -976,7 +1022,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                     localStorage.setItem(storageKey, String(getCurrentSecond()));
                   };
 
-                  const sendProgress = (isCompleted = false, useBeacon = false) => {
+                  const sendProgress = (isCompleted = false, useBeacon = false, reloadAfterSave = false) => {
                     const payload = new URLSearchParams();
                     payload.set('module_id', String(moduleId));
                     payload.set('last_watched_second', String(getCurrentSecond()));
@@ -993,7 +1039,14 @@ require_once __DIR__ . '/includes/layout-top.php';
                       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
                       body: payload.toString(),
                       keepalive: useBeacon
-                    }).catch(() => {});
+                    })
+                    .then((res) => {
+                      if (!reloadAfterSave || !res.ok) return;
+                      const targetUrl = new URL(window.location.href);
+                      targetUrl.hash = 'moduleQuizCard';
+                      window.location.replace(targetUrl.toString());
+                    })
+                    .catch(() => {});
                   };
 
                   const checkCompletionThreshold = () => {
@@ -1002,11 +1055,41 @@ require_once __DIR__ . '/includes/layout-top.php';
                     if (!duration || duration <= 0) return;
                     if ((getCurrentSecond() / duration) >= 0.95) {
                       completionSent = true;
-                      sendProgress(true, false);
+                      sendProgress(true, false, true);
                     }
                   };
 
-                  window.onYouTubeIframeAPIReady = () => {
+                  const completeAndRefreshNow = () => {
+                    if (refreshTriggered) return;
+                    if (videoAlreadyUnlocked) return;
+                    refreshTriggered = true;
+                    completionSent = true;
+                    sendProgress(true, true, false);
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = markWatchedActionUrl;
+                    form.style.display = 'none';
+
+                    const csrfInput = document.createElement('input');
+                    csrfInput.type = 'hidden';
+                    csrfInput.name = 'csrf_token';
+                    csrfInput.value = csrfToken;
+
+                    const actionInput = document.createElement('input');
+                    actionInput.type = 'hidden';
+                    actionInput.name = 'action';
+                    actionInput.value = 'mark_video_watched';
+
+                    form.appendChild(csrfInput);
+                    form.appendChild(actionInput);
+                    document.body.appendChild(form);
+                    form.submit();
+                  };
+
+                  const initYouTubePlayer = () => {
+                    if (!(window.YT && typeof YT.Player === 'function')) {
+                      return;
+                    }
                     player = new YT.Player('moduleYouTubePlayer', {
                       videoId: videoId,
                       playerVars: { rel: 0, modestbranding: 1, enablejsapi: 1 },
@@ -1022,7 +1105,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                             pollingHandle = setInterval(() => {
                               persistLocally();
                               checkCompletionThreshold();
-                            }, 5000);
+                              // Some embeds don't reliably fire ENDED. Use
+                              // near-end detection as a hard fallback.
+                              if (!completionSent && isNearVideoEnd()) {
+                                completeAndRefreshNow();
+                              }
+                            }, 1000);
                           } else {
                             if (pollingHandle) {
                               clearInterval(pollingHandle);
@@ -1030,16 +1118,31 @@ require_once __DIR__ . '/includes/layout-top.php';
                             }
                             if (event.data === YT.PlayerState.PAUSED) {
                               persistLocally();
-                              sendProgress(false, false);
+                              if (!completionSent && isNearVideoEnd()) {
+                                completeAndRefreshNow();
+                              } else {
+                                sendProgress(false, false);
+                              }
                             } else if (event.data === YT.PlayerState.ENDED) {
-                              completionSent = true;
-                              sendProgress(true, false);
+                              completeAndRefreshNow();
                             }
                           }
                         }
                       }
                     });
                   };
+
+                  if (window.YT && typeof YT.Player === 'function') {
+                    initYouTubePlayer();
+                  } else {
+                    const prevReady = window.onYouTubeIframeAPIReady;
+                    window.onYouTubeIframeAPIReady = () => {
+                      if (typeof prevReady === 'function') {
+                        try { prevReady(); } catch (_e) {}
+                      }
+                      initYouTubePlayer();
+                    };
+                  }
 
                   window.addEventListener('beforeunload', () => {
                     persistLocally();

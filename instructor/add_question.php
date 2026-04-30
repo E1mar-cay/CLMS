@@ -29,6 +29,15 @@ try {
     error_log('questions.module_id migration failed: ' . $e->getMessage());
 }
 
+try {
+    $examDurationColumnCheck = $pdo->query("SHOW COLUMNS FROM courses LIKE 'final_exam_duration_minutes'")->fetch();
+    if (!$examDurationColumnCheck) {
+        $pdo->exec('ALTER TABLE courses ADD COLUMN final_exam_duration_minutes INT NOT NULL DEFAULT 45');
+    }
+} catch (Throwable $e) {
+    error_log('courses.final_exam_duration_minutes migration failed: ' . $e->getMessage());
+}
+
 $instructorId = (int) $_SESSION['user_id'];
 $pageTitle = 'Add Question | Instructor';
 $activeInstructorPage = 'manage_content';
@@ -40,10 +49,11 @@ $deleteQuestionId = filter_input(INPUT_GET, 'delete', FILTER_VALIDATE_INT);
 $editQuestion = null;
 
 $assignedCoursesStmt = $pdo->prepare(
-    "SELECT c.id, c.title
-     FROM course_instructors ci
-     INNER JOIN courses c ON c.id = ci.course_id
+    "SELECT DISTINCT c.id, c.title, COALESCE(c.final_exam_duration_minutes, 45) AS final_exam_duration_minutes
+     FROM courses c
+     LEFT JOIN course_instructors ci ON ci.course_id = c.id
      WHERE ci.instructor_user_id = :instructor_id
+        OR ci.course_id IS NULL
      ORDER BY c.title ASC"
 );
 $assignedCoursesStmt->execute(['instructor_id' => $instructorId]);
@@ -55,9 +65,16 @@ if ($deleteQuestionId !== false && $deleteQuestionId !== null && $deleteQuestion
         $verifyStmt = $pdo->prepare(
             "SELECT q.id
              FROM questions q
-             INNER JOIN course_instructors ci ON ci.course_id = q.course_id
+             LEFT JOIN course_instructors ci
+               ON ci.course_id = q.course_id
+              AND ci.instructor_user_id = :instructor_id
              WHERE q.id = :question_id
-               AND ci.instructor_user_id = :instructor_id
+               AND (
+                 ci.instructor_user_id IS NOT NULL
+                 OR NOT EXISTS (
+                   SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = q.course_id
+                 )
+               )
              LIMIT 1"
         );
         $verifyStmt->execute([
@@ -243,6 +260,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $successMessage = 'Module video and all related content deleted.';
         } catch (Throwable $e) {
             $errorMessage = $e instanceof RuntimeException ? $e->getMessage() : 'Unable to delete module video.';
+            if (!($e instanceof RuntimeException)) {
+                error_log($e->getMessage());
+            }
+        }
+    } elseif (($_POST['action'] ?? '') === 'update_exam_duration') {
+        try {
+            $durationCourseId = filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
+            $durationMinutes = filter_input(INPUT_POST, 'final_exam_duration_minutes', FILTER_VALIDATE_INT);
+
+            if ($durationCourseId === false || $durationCourseId === null || $durationCourseId <= 0 || !isset($assignedSet[(int) $durationCourseId])) {
+                throw new RuntimeException('You can only update exam time for courses in your scope.');
+            }
+            if ($durationMinutes === false || $durationMinutes === null || $durationMinutes < 1 || $durationMinutes > 600) {
+                throw new RuntimeException('Final exam time limit must be between 1 and 600 minutes.');
+            }
+
+            $updateDurationStmt = $pdo->prepare(
+                'UPDATE courses
+                 SET final_exam_duration_minutes = :duration
+                 WHERE id = :course_id'
+            );
+            $updateDurationStmt->execute([
+                'duration' => (int) $durationMinutes,
+                'course_id' => (int) $durationCourseId,
+            ]);
+
+            $syncDeadlineStmt = $pdo->prepare(
+                'UPDATE exam_attempts
+                 SET deadline_at = DATE_ADD(attempted_at, INTERVAL :duration MINUTE)
+                 WHERE course_id = :course_id
+                   AND status = :status'
+            );
+            $syncDeadlineStmt->execute([
+                'duration' => (int) $durationMinutes,
+                'course_id' => (int) $durationCourseId,
+                'status' => 'in_progress',
+            ]);
+
+            $successMessage = 'Final exam time limit updated.';
+
+            foreach ($assignedCourses as &$assignedCourseRef) {
+                if ((int) $assignedCourseRef['id'] === (int) $durationCourseId) {
+                    $assignedCourseRef['final_exam_duration_minutes'] = (int) $durationMinutes;
+                    break;
+                }
+            }
+            unset($assignedCourseRef);
+        } catch (Throwable $e) {
+            $errorMessage = $e instanceof RuntimeException ? $e->getMessage() : 'Unable to update final exam time limit.';
             if (!($e instanceof RuntimeException)) {
                 error_log($e->getMessage());
             }
@@ -500,10 +566,17 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
         $editStmt = $pdo->prepare(
             'SELECT q.id, q.course_id, q.module_id, q.question_text, q.question_type, q.points
              FROM questions q
-             INNER JOIN course_instructors ci ON ci.course_id = q.course_id
+             LEFT JOIN course_instructors ci
+               ON ci.course_id = q.course_id
+              AND ci.instructor_user_id = :instructor_id
              WHERE q.id = :question_id
                AND q.course_id = :course_id
-               AND ci.instructor_user_id = :instructor_id
+               AND (
+                 ci.instructor_user_id IS NOT NULL
+                 OR NOT EXISTS (
+                   SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = q.course_id
+                 )
+               )
              LIMIT 1'
         );
         $editStmt->execute([
@@ -532,10 +605,17 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
     $questionListStmt = $pdo->prepare(
         'SELECT q.id, q.module_id, q.question_text, q.question_type, q.points, m.title AS module_title
          FROM questions q
-         INNER JOIN course_instructors ci ON ci.course_id = q.course_id
+         LEFT JOIN course_instructors ci
+           ON ci.course_id = q.course_id
+          AND ci.instructor_user_id = :instructor_id
          LEFT JOIN modules m ON m.id = q.module_id
          WHERE q.course_id = :course_id
-           AND ci.instructor_user_id = :instructor_id
+           AND (
+             ci.instructor_user_id IS NOT NULL
+             OR NOT EXISTS (
+               SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = q.course_id
+             )
+           )
          ORDER BY q.id DESC'
     );
     $questionListStmt->execute([
@@ -573,9 +653,16 @@ if ($hasSelectedCourse) {
         "SELECT m.id, m.course_id, c.title AS course_title, m.title, m.video_url, m.duration_minutes, m.sequence_order
          FROM modules m
          INNER JOIN courses c ON c.id = m.course_id
-         INNER JOIN course_instructors ci ON ci.course_id = c.id
-         WHERE ci.instructor_user_id = :instructor_id
-           AND m.course_id = :course_id
+         LEFT JOIN course_instructors ci
+           ON ci.course_id = c.id
+          AND ci.instructor_user_id = :instructor_id
+         WHERE m.course_id = :course_id
+           AND (
+             ci.instructor_user_id IS NOT NULL
+             OR NOT EXISTS (
+               SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
+             )
+           )
          ORDER BY m.sequence_order ASC, m.id ASC"
     );
     $modulesStmt->execute([
@@ -593,6 +680,17 @@ if ($hasSelectedCourse) {
 }
 
 require_once __DIR__ . '/includes/layout-top.php';
+?>
+<?php
+$selectedCourseExamDuration = 45;
+if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourseId > 0) {
+    foreach ($assignedCourses as $assignedCourseForDuration) {
+        if ((int) $assignedCourseForDuration['id'] === (int) $selectedCourseId) {
+            $selectedCourseExamDuration = (int) ($assignedCourseForDuration['final_exam_duration_minutes'] ?? 45);
+            break;
+        }
+    }
+}
 ?>
               <div class="bg-white p-3 mb-3 shadow-sm rounded">
                 <div class="row align-items-center g-2">
@@ -613,6 +711,25 @@ require_once __DIR__ . '/includes/layout-top.php';
                         </select>
                         <span class="badge bg-info fs-6">Questions: <?php echo $questionCount; ?></span>
                       </form>
+<?php if ($selectedCourseId && isset($assignedSet[(int) $selectedCourseId])) : ?>
+                      <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId, ENT_QUOTES, 'UTF-8'); ?>" class="d-flex gap-2 align-items-center mb-0">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                        <input type="hidden" name="action" value="update_exam_duration" />
+                        <input type="hidden" name="course_id" value="<?php echo (int) $selectedCourseId; ?>" />
+                        <label class="form-label mb-0" for="instructor_final_exam_duration"><strong>Final Exam Time (min):</strong></label>
+                        <input
+                          id="instructor_final_exam_duration"
+                          class="form-control"
+                          type="number"
+                          name="final_exam_duration_minutes"
+                          min="1"
+                          max="600"
+                          step="1"
+                          value="<?php echo (int) $selectedCourseExamDuration; ?>"
+                          style="width: 110px;" />
+                        <button type="submit" class="btn btn-outline-secondary">Set</button>
+                      </form>
+<?php endif; ?>
 <?php if ($assignedCourses !== []) : ?>
                       <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#moduleVideoModal" data-action="add">
                         <i class="bx bx-video-plus me-1"></i> Add Module Video

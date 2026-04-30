@@ -20,6 +20,9 @@ $pdo->exec(
 );
 
 $instructorId = (int) $_SESSION['user_id'];
+$courseScopePage = (int) filter_input(INPUT_GET, 'course_page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+$courseScopePerPage = 5;
+$courseScopeOffset = ($courseScopePage - 1) * $courseScopePerPage;
 
 $instructorName = trim((string) ($_SESSION['first_name'] ?? '') . ' ' . (string) ($_SESSION['last_name'] ?? ''));
 if ($instructorName === '') {
@@ -50,6 +53,25 @@ $totalQuestions = (int) ($metrics['total_questions'] ?? 0);
 $attemptsPassed = (int) ($metrics['attempts_passed'] ?? 0);
 $completedModuleRecords = (int) ($metrics['completed_module_records'] ?? 0);
 
+$courseScopeCountStmt = $pdo->prepare(
+    "SELECT COUNT(*) AS total
+     FROM courses c
+     LEFT JOIN course_instructors ci
+       ON ci.course_id = c.id
+      AND ci.instructor_user_id = :instructor_id
+     WHERE ci.instructor_user_id IS NOT NULL
+        OR NOT EXISTS (
+            SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
+        )"
+);
+$courseScopeCountStmt->execute(['instructor_id' => $instructorId]);
+$courseScopeTotalRows = (int) ($courseScopeCountStmt->fetch()['total'] ?? 0);
+$courseScopeTotalPages = max(1, (int) ceil($courseScopeTotalRows / $courseScopePerPage));
+if ($courseScopePage > $courseScopeTotalPages) {
+    $courseScopePage = $courseScopeTotalPages;
+    $courseScopeOffset = ($courseScopePage - 1) * $courseScopePerPage;
+}
+
 $courseSummaryStmt = $pdo->prepare(
     "SELECT
         c.id,
@@ -60,38 +82,77 @@ $courseSummaryStmt = $pdo->prepare(
         COUNT(DISTINCT CASE WHEN ea.status = 'completed' THEN ea.user_id END) AS active_students,
         COALESCE(AVG(CASE WHEN ea.status = 'completed' THEN ea.total_score END), 0) AS avg_score,
         COALESCE(AVG(CASE WHEN ea.status = 'completed' THEN (CASE WHEN ea.is_passed = 1 THEN 100 ELSE 0 END) END), 0) AS pass_rate
-     FROM course_instructors ci
-     INNER JOIN courses c ON c.id = ci.course_id
+     FROM courses c
+     LEFT JOIN course_instructors ci
+       ON ci.course_id = c.id
+      AND ci.instructor_user_id = :instructor_id
      LEFT JOIN modules m ON m.course_id = c.id
      LEFT JOIN questions q ON q.course_id = c.id
      LEFT JOIN exam_attempts ea ON ea.course_id = c.id
-     WHERE ci.instructor_user_id = :instructor_id
+     WHERE ci.instructor_user_id IS NOT NULL
+        OR NOT EXISTS (
+            SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
+        )
      GROUP BY c.id, c.title, c.level
-     ORDER BY c.title ASC"
+     ORDER BY c.title ASC
+     LIMIT :limit OFFSET :offset"
 );
-$courseSummaryStmt->execute(['instructor_id' => $instructorId]);
+$courseSummaryStmt->bindValue(':instructor_id', $instructorId, PDO::PARAM_INT);
+$courseSummaryStmt->bindValue(':limit', $courseScopePerPage, PDO::PARAM_INT);
+$courseSummaryStmt->bindValue(':offset', $courseScopeOffset, PDO::PARAM_INT);
+$courseSummaryStmt->execute();
 $courseSummaries = $courseSummaryStmt->fetchAll();
 
 $recentActivityStmt = $pdo->prepare(
     "SELECT
-        ea.id,
-        ea.attempted_at,
-        ea.completed_at,
+        ea.attempted_at AS activity_time,
         ea.status,
-        ea.total_score,
-        ea.is_passed,
         u.first_name,
         u.last_name,
         c.title AS course_title
      FROM exam_attempts ea
-     INNER JOIN course_instructors ci ON ci.course_id = ea.course_id AND ci.instructor_user_id = :instructor_id
-     INNER JOIN users u ON u.id = ea.user_id
      INNER JOIN courses c ON c.id = ea.course_id
-     ORDER BY COALESCE(ea.completed_at, ea.attempted_at) DESC
+     LEFT JOIN course_instructors ci
+       ON ci.course_id = c.id
+      AND ci.instructor_user_id = :instructor_id
+     INNER JOIN users u ON u.id = ea.user_id
+     WHERE ci.instructor_user_id IS NOT NULL
+        OR NOT EXISTS (
+            SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
+        )
+     ORDER BY ea.attempted_at DESC
      LIMIT 6"
 );
 $recentActivityStmt->execute(['instructor_id' => $instructorId]);
 $recentActivities = $recentActivityStmt->fetchAll();
+
+$upcomingExamStmt = $pdo->prepare(
+    "SELECT
+        ea.id,
+        ea.attempted_at,
+        ea.deadline_at,
+        u.first_name,
+        u.last_name,
+        c.title AS course_title,
+        COALESCE(c.final_exam_duration_minutes, 45) AS final_exam_duration_minutes
+     FROM exam_attempts ea
+     INNER JOIN users u ON u.id = ea.user_id
+     INNER JOIN courses c ON c.id = ea.course_id
+     LEFT JOIN course_instructors ci
+       ON ci.course_id = c.id
+      AND ci.instructor_user_id = :instructor_id
+     WHERE ea.status = 'in_progress'
+       AND (
+         ci.instructor_user_id IS NOT NULL
+         OR NOT EXISTS (
+           SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
+         )
+       )
+     ORDER BY ea.attempted_at DESC
+     LIMIT 5"
+);
+$upcomingExamStmt->execute(['instructor_id' => $instructorId]);
+$upcomingExams = $upcomingExamStmt->fetchAll();
 
 $topStudentsStmt = $pdo->prepare(
     "SELECT
@@ -102,9 +163,18 @@ $topStudentsStmt = $pdo->prepare(
         COUNT(DISTINCT CASE WHEN ea.status = 'completed' THEN ea.id END) AS attempts_completed,
         SUM(CASE WHEN ea.status = 'completed' AND ea.is_passed = 1 THEN 1 ELSE 0 END) AS attempts_passed
      FROM exam_attempts ea
-     INNER JOIN course_instructors ci ON ci.course_id = ea.course_id AND ci.instructor_user_id = :instructor_id
+     INNER JOIN courses c ON c.id = ea.course_id
+     LEFT JOIN course_instructors ci
+       ON ci.course_id = c.id
+      AND ci.instructor_user_id = :instructor_id
      INNER JOIN users u ON u.id = ea.user_id
      WHERE u.role = 'student'
+       AND (
+         ci.instructor_user_id IS NOT NULL
+         OR NOT EXISTS (
+           SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
+         )
+       )
      GROUP BY u.id, u.first_name, u.last_name
      HAVING attempts_completed > 0
      ORDER BY avg_score DESC, attempts_completed DESC
@@ -126,6 +196,20 @@ $questionTypeRows = $questionTypeStmt->fetchAll();
 $questionTypeTotal = 0;
 foreach ($questionTypeRows as $row) {
     $questionTypeTotal += (int) $row['total'];
+}
+
+$latestAnnouncement = null;
+try {
+    $latestAnnouncementStmt = $pdo->query(
+        "SELECT title, body, created_at
+         FROM announcements
+         WHERE is_active = 1
+         ORDER BY created_at DESC
+         LIMIT 1"
+    );
+    $latestAnnouncement = $latestAnnouncementStmt->fetch() ?: null;
+} catch (Throwable $e) {
+    $latestAnnouncement = null;
 }
 
 $pageTitle = 'Instructor Dashboard | Criminology LMS';
@@ -202,6 +286,21 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div class="card mb-4 clms-highlight" id="announcements">
+                <div class="card-body">
+<?php if (is_array($latestAnnouncement)) : ?>
+                  <h6 class="text-white mb-1"><?php echo htmlspecialchars((string) ($latestAnnouncement['title'] ?? 'Announcement'), ENT_QUOTES, 'UTF-8'); ?></h6>
+                  <p class="mb-0"><?php echo nl2br(htmlspecialchars((string) ($latestAnnouncement['body'] ?? ''), ENT_QUOTES, 'UTF-8')); ?></p>
+                  <small class="d-block mt-2 opacity-75">
+                    Posted <?php echo htmlspecialchars((string) date('M j, Y g:i A', strtotime((string) ($latestAnnouncement['created_at'] ?? '')) ?: time()), ENT_QUOTES, 'UTF-8'); ?>
+                  </small>
+<?php else : ?>
+                  <h6 class="text-white mb-1">Announcement</h6>
+                  <p class="mb-0">No active announcements at the moment.</p>
+<?php endif; ?>
                 </div>
               </div>
 
@@ -283,6 +382,43 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </div>
 <?php endif; ?>
                     </div>
+<?php if ($courseScopeTotalPages > 1) : ?>
+                    <div class="card-footer bg-transparent">
+                      <nav aria-label="Course scope pagination">
+                        <ul class="pagination pagination-sm mb-0 justify-content-end">
+<?php
+  $prevParams = [];
+  if ($courseScopePage > 2) {
+      $prevParams['course_page'] = $courseScopePage - 1;
+  }
+  $prevUrl = $clmsWebBase . '/instructor/dashboard.php' . ($prevParams !== [] ? '?' . http_build_query($prevParams) : '');
+?>
+                          <li class="page-item <?php echo $courseScopePage <= 1 ? 'disabled' : ''; ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($prevUrl, ENT_QUOTES, 'UTF-8'); ?>">Previous</a>
+                          </li>
+<?php for ($pageNumber = 1; $pageNumber <= $courseScopeTotalPages; $pageNumber++) : ?>
+<?php
+  $pageParams = [];
+  if ($pageNumber > 1) {
+      $pageParams['course_page'] = $pageNumber;
+  }
+  $pageUrl = $clmsWebBase . '/instructor/dashboard.php' . ($pageParams !== [] ? '?' . http_build_query($pageParams) : '');
+?>
+                          <li class="page-item <?php echo $pageNumber === $courseScopePage ? 'active' : ''; ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($pageUrl, ENT_QUOTES, 'UTF-8'); ?>"><?php echo $pageNumber; ?></a>
+                          </li>
+<?php endfor; ?>
+<?php
+  $nextParams = ['course_page' => min($courseScopeTotalPages, $courseScopePage + 1)];
+  $nextUrl = $clmsWebBase . '/instructor/dashboard.php?' . http_build_query($nextParams);
+?>
+                          <li class="page-item <?php echo $courseScopePage >= $courseScopeTotalPages ? 'disabled' : ''; ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($nextUrl, ENT_QUOTES, 'UTF-8'); ?>">Next</a>
+                          </li>
+                        </ul>
+                      </nav>
+                    </div>
+<?php endif; ?>
                   </div>
 
                   <div class="card">
@@ -357,6 +493,59 @@ require_once __DIR__ . '/includes/layout-top.php';
 
                 <div class="col-xl-4">
                   <div class="card mb-4">
+                    <h5 class="card-header d-flex justify-content-between align-items-center">
+                      <span>Students Who Are Taking Exam</span>
+                    </h5>
+                    <div class="card-body">
+<?php if ($upcomingExams === []) : ?>
+                      <p class="mb-0">No active exam attempts.</p>
+<?php else : ?>
+                      <div class="d-flex flex-column gap-3">
+<?php foreach ($upcomingExams as $exam) : ?>
+<?php
+  $attemptedTs = strtotime((string) $exam['attempted_at']) ?: time();
+  $deadlineTs = null;
+  if (!empty($exam['deadline_at'])) {
+      $deadlineParsed = strtotime((string) $exam['deadline_at']);
+      if ($deadlineParsed !== false) {
+          $deadlineTs = $deadlineParsed;
+      }
+  }
+  if ($deadlineTs === null) {
+      $durationMinutes = (int) ($exam['final_exam_duration_minutes'] ?? 45);
+      if ($durationMinutes < 1) {
+          $durationMinutes = 45;
+      }
+      $deadlineTs = $attemptedTs + ($durationMinutes * 60);
+  }
+  $remainingSeconds = $deadlineTs - time();
+  if ($remainingSeconds > 0) {
+      $hours = intdiv($remainingSeconds, 3600);
+      $minutes = intdiv($remainingSeconds % 3600, 60);
+      $seconds = $remainingSeconds % 60;
+      if ($hours > 0) {
+          $remainingLabel = 'Ends in ' . $hours . 'h ' . $minutes . 'm';
+      } else {
+          $remainingLabel = 'Ends in ' . $minutes . 'm ' . $seconds . 's';
+      }
+      $remainingClass = 'text-warning';
+  } else {
+      $remainingLabel = 'Overtime';
+      $remainingClass = 'text-danger';
+  }
+?>
+                        <div class="clms-list-item">
+                          <div class="fw-semibold"><?php echo htmlspecialchars(trim((string) $exam['first_name'] . ' ' . (string) $exam['last_name']), ENT_QUOTES, 'UTF-8'); ?></div>
+                          <small class="text-muted d-block"><?php echo htmlspecialchars((string) $exam['course_title'], ENT_QUOTES, 'UTF-8'); ?></small>
+                          <small class="<?php echo $remainingClass; ?>"><?php echo htmlspecialchars($remainingLabel, ENT_QUOTES, 'UTF-8'); ?></small>
+                        </div>
+<?php endforeach; ?>
+                      </div>
+<?php endif; ?>
+                    </div>
+                  </div>
+
+                  <div class="card mb-4">
                     <div class="card-header d-flex justify-content-between align-items-center">
                       <h5 class="mb-0">Question Mix</h5>
 <?php if ($questionTypeTotal > 0) : ?>
@@ -405,62 +594,14 @@ require_once __DIR__ . '/includes/layout-top.php';
                     <h5 class="card-header">Recent Activity</h5>
                     <div class="card-body">
 <?php if ($recentActivities === []) : ?>
-                      <div class="text-center py-3 text-muted">
-                        <i class="bx bx-time-five display-6 d-block mb-2"></i>
-                        <p class="mb-0 small">No recent activity yet.</p>
-                      </div>
+                      <p class="mb-0">No recent activity.</p>
 <?php else : ?>
                       <ul class="list-unstyled mb-0">
-<?php foreach ($recentActivities as $activity) :
-    $fullName = trim((string) $activity['first_name'] . ' ' . (string) $activity['last_name']);
-    if ($fullName === '') $fullName = 'Student';
-    $status = (string) $activity['status'];
-    $timeSrc = (string) ($activity['completed_at'] ?? '') !== ''
-        ? (string) $activity['completed_at']
-        : (string) $activity['attempted_at'];
-    $timestamp = strtotime($timeSrc) ?: time();
-
-    switch ($status) {
-        case 'completed':
-        case 'pending_manual_grade':
-            // Legacy `pending_manual_grade` rows are treated the same as
-            // `completed` now that the manual essay review flow has been
-            // removed — pass/fail is driven entirely by is_passed.
-            $isPassed = (int) ($activity['is_passed'] ?? 0) === 1;
-            $icon = $isPassed ? 'bx-check-circle' : 'bx-x-circle';
-            $iconClass = $isPassed ? 'text-success' : 'text-danger';
-            $statusLabel = $isPassed ? 'Passed' : 'Failed';
-            $statusBadge = $isPassed ? 'bg-label-success' : 'bg-label-danger';
-            break;
-        case 'in_progress':
-            $icon = 'bx-play-circle';
-            $iconClass = 'text-info';
-            $statusLabel = 'In Progress';
-            $statusBadge = 'bg-label-info';
-            break;
-        default:
-            $icon = 'bx-info-circle';
-            $iconClass = 'text-muted';
-            $statusLabel = ucfirst(str_replace('_', ' ', $status));
-            $statusBadge = 'bg-label-secondary';
-    }
-?>
-                        <li class="d-flex gap-2 mb-3">
-                          <i class="bx <?php echo $icon; ?> <?php echo $iconClass; ?> mt-1 fs-5"></i>
-                          <div class="flex-grow-1">
-                            <div class="d-flex justify-content-between align-items-start gap-1">
-                              <div class="fw-semibold text-truncate" style="max-width: 170px;">
-                                <?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?>
-                              </div>
-                              <span class="badge <?php echo $statusBadge; ?>"><?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></span>
-                            </div>
-                            <small class="text-muted d-block text-truncate" style="max-width: 240px;">
-                              <?php echo htmlspecialchars((string) $activity['course_title'], ENT_QUOTES, 'UTF-8'); ?>
-                            </small>
-                            <small class="text-muted">
-                              <?php echo htmlspecialchars((string) date('M j, g:i A', $timestamp), ENT_QUOTES, 'UTF-8'); ?>
-                            </small>
-                          </div>
+<?php foreach ($recentActivities as $activity) : ?>
+                        <li class="mb-3">
+                          <div class="fw-semibold"><?php echo htmlspecialchars(trim((string) $activity['first_name'] . ' ' . (string) $activity['last_name']), ENT_QUOTES, 'UTF-8'); ?></div>
+                          <small class="text-muted d-block"><?php echo htmlspecialchars((string) $activity['course_title'], ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars((string) ucfirst(str_replace('_', ' ', (string) $activity['status'])), ENT_QUOTES, 'UTF-8'); ?></small>
+                          <small class="text-muted"><?php echo htmlspecialchars((string) date('M j, g:i A', strtotime((string) $activity['activity_time']) ?: time()), ENT_QUOTES, 'UTF-8'); ?></small>
                         </li>
 <?php endforeach; ?>
                       </ul>
@@ -470,6 +611,28 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
               </div>
               </div>
+
+              <script>
+                (() => {
+                  const REFRESH_MS = 30000;
+                  let timerId = null;
+
+                  const scheduleRefresh = () => {
+                    if (timerId !== null) {
+                      clearTimeout(timerId);
+                    }
+                    if (document.hidden) {
+                      return;
+                    }
+                    timerId = window.setTimeout(() => {
+                      window.location.reload();
+                    }, REFRESH_MS);
+                  };
+
+                  document.addEventListener('visibilitychange', scheduleRefresh);
+                  scheduleRefresh();
+                })();
+              </script>
 
 <?php
 require_once __DIR__ . '/includes/layout-bottom.php';

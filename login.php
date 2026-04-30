@@ -261,66 +261,6 @@ require_once __DIR__ . '/includes/auth-header.php';
         margin: 0 0 1.5rem;
       }
 
-      /* Demo accounts */
-      .clms-auth-divider {
-        display: flex;
-        align-items: center;
-        gap: .75rem;
-        color: #6b7280;
-        font-size: .75rem;
-        font-weight: 600;
-        letter-spacing: .8px;
-        text-transform: uppercase;
-        margin: 1.75rem 0 1rem;
-      }
-      .clms-auth-divider::before,
-      .clms-auth-divider::after {
-        content: '';
-        flex: 1;
-        height: 1px;
-        background: rgba(15, 32, 75, .1);
-      }
-
-      .clms-demo-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: .5rem;
-      }
-      @media (max-width: 380px) {
-        .clms-demo-grid { grid-template-columns: 1fr; }
-      }
-      .clms-demo-pill {
-        border: 1px solid rgba(15, 32, 75, .12);
-        background: #fff;
-        border-radius: var(--clms-radius);
-        padding: .65rem .5rem;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: .25rem;
-        cursor: pointer;
-        transition: var(--clms-transition);
-        color: var(--clms-navy);
-        font-size: .8rem;
-        font-weight: 600;
-      }
-      .clms-demo-pill i {
-        font-size: 1.15rem;
-        color: var(--clms-navy);
-      }
-      .clms-demo-pill small {
-        color: #8a94a6;
-        font-weight: 500;
-        font-size: .68rem;
-      }
-      .clms-demo-pill:hover {
-        border-color: var(--clms-navy);
-        background: rgba(15, 32, 75, .03);
-        transform: translateY(-1px);
-        box-shadow: var(--clms-shadow);
-      }
-      .clms-demo-pill:active { transform: translateY(0); }
-
       /* Shared auth input/button/link tokens are in public/assets/css/auth-public.css */
     </style>
 
@@ -371,13 +311,6 @@ require_once __DIR__ . '/includes/auth-header.php';
 
           <h2 class="clms-auth-welcome">Welcome back</h2>
           <p class="clms-auth-lead">Sign in to continue your learning journey.</p>
-
-<?php if ($registered) : ?>
-          <div class="alert alert-success mb-4 d-flex align-items-center" role="alert">
-            <i class="bx bx-check-circle me-2"></i>
-            <span>Registration successful. You can sign in below.</span>
-          </div>
-<?php endif; ?>
 
 <?php if ($formError !== '') : ?>
           <div class="alert alert-danger mb-4 d-flex align-items-center" role="alert">
@@ -436,41 +369,6 @@ require_once __DIR__ . '/includes/auth-header.php';
             <span class="text-muted">New here?</span>
             <a href="<?php echo htmlspecialchars($clmsWebBase . '/register.php', ENT_QUOTES, 'UTF-8'); ?>">Create an account</a>
           </p>
-
-          <div class="clms-auth-divider">Demo Accounts</div>
-          <div class="clms-demo-grid">
-            <button
-              type="button"
-              class="clms-demo-pill"
-              data-demo-email="admin@clms.local"
-              data-demo-password="Admin@123"
-              title="Use the admin demo account">
-              <i class="bx bx-shield-quarter"></i>
-              <span>Admin</span>
-              <small>Admin@123</small>
-            </button>
-            <button
-              type="button"
-              class="clms-demo-pill"
-              data-demo-email="instructor@clms.local"
-              data-demo-password="Instructor@123"
-              title="Use the instructor demo account">
-              <i class="bx bx-chalkboard"></i>
-              <span>Instructor</span>
-              <small>Instructor@123</small>
-            </button>
-            <button
-              type="button"
-              class="clms-demo-pill"
-              data-demo-email=""
-              data-demo-password="Student@123"
-              data-demo-note="Use any seeded student email (e.g. student1.user123@clms.local)"
-              title="Copy the student demo password">
-              <i class="bx bx-user-circle"></i>
-              <span>Student</span>
-              <small>Student@123</small>
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -480,31 +378,16 @@ require_once __DIR__ . '/includes/auth-header.php';
          beats Sneat's body reset. Scoping via a class keeps it tidy. */
       document.body.classList.add('clms-auth-body');
     </script>
-
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<?php if ($registered) : ?>
     <script>
-      (function () {
-        var emailInput = document.getElementById('email');
-        var passwordInput = document.getElementById('password');
-        if (!emailInput || !passwordInput) { return; }
-
-        document.querySelectorAll('[data-demo-email]').forEach(function (btn) {
-          btn.addEventListener('click', function () {
-            var email = btn.getAttribute('data-demo-email') || '';
-            var password = btn.getAttribute('data-demo-password') || '';
-            var note = btn.getAttribute('data-demo-note') || '';
-
-            if (email) {
-              emailInput.value = email;
-            } else if (note) {
-              emailInput.focus();
-              emailInput.placeholder = note;
-            }
-            if (password) {
-              passwordInput.value = password;
-            }
-          });
-        });
-      })();
+      Swal.fire({
+        icon: 'success',
+        title: 'Account Created',
+        text: 'Registration successful. You can sign in below.',
+        confirmButtonColor: '#0f204b',
+      });
     </script>
+<?php endif; ?>
 
 <?php require __DIR__ . '/includes/auth-footer.php'; ?>

@@ -46,6 +46,13 @@ $clmsSidebarRole = function_exists('clms_current_role') ? clms_current_role() : 
       </a>
     </li>
 
+    <li class="menu-item <?php echo $activeAdminPage === 'student_activity' ? 'active' : ''; ?>">
+      <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/student_activity.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+        <i class="menu-icon tf-icons bx bx-pulse"></i>
+        <div class="text-truncate">Student Activity</div>
+      </a>
+    </li>
+
 <?php if ($clmsSidebarRole === 'admin') : ?>
     <li class="menu-item <?php echo $activeAdminPage === 'users' ? 'active' : ''; ?>">
       <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
@@ -77,6 +84,13 @@ $clmsSidebarRole = function_exists('clms_current_role') ? clms_current_role() : 
       <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/reports.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
         <i class="menu-icon tf-icons bx bx-file"></i>
         <div class="text-truncate">Reports</div>
+      </a>
+    </li>
+
+    <li class="menu-item <?php echo $activeAdminPage === 'rankings' ? 'active' : ''; ?>">
+      <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/rankings.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+        <i class="menu-icon tf-icons bx bx-trophy"></i>
+        <div class="text-truncate">Course Rankings</div>
       </a>
     </li>
 

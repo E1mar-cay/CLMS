@@ -24,13 +24,12 @@ $sessionEmail = (string) ($_SESSION['email'] ?? '');
 $sessionFirstName = trim((string) ($_SESSION['first_name'] ?? ''));
 $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
 
-/* Notification bell is student-only for now. Admins and instructors
-   author announcements (admin/announcements.php), so they don't also
-   get notified about them. Wrapped in isset($pdo) so the navbar stays
-   robust on pages that haven't required database.php yet. */
+/* Notification bell is enabled for students and instructors.
+   Wrapped in isset($pdo) so the navbar stays robust on pages
+   that haven't required database.php yet. */
 $navbarNotifications = [];
 $navbarNotificationsUnread = 0;
-if ($sessionRole === 'student' && $sessionUserId > 0 && isset($pdo) && $pdo instanceof PDO) {
+if (($sessionRole === 'student' || $sessionRole === 'instructor') && $sessionUserId > 0 && isset($pdo) && $pdo instanceof PDO) {
     require_once __DIR__ . '/notifications.php';
     $navbarNotifications = clms_notifications_list($pdo, $sessionUserId, 10);
     $navbarNotificationsUnread = clms_notifications_unread_count($pdo, $sessionUserId);
@@ -78,12 +77,13 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                   <kbd class="clms-navbar-search-kbd d-none d-md-inline-flex">/</kbd>
                 </label>
                 <div class="clms-navbar-search-empty text-muted small mt-1 d-none" id="clmsNavbarSearchEmpty">
-                  <i class="bx bx-info-circle me-1"></i>No matches for "<span data-search-term></span>" on this page.
+                  <i class="bx bx-info-circle me-1"></i>No matches for "<span data-search-term></span>".
                 </div>
+                <div class="clms-navbar-search-results d-none" id="clmsNavbarSearchResults" role="listbox" aria-label="Search suggestions"></div>
               </div>
 
               <ul class="navbar-nav flex-row align-items-center ms-auto gap-2">
-<?php if ($sessionRole === 'student') : ?>
+<?php if ($sessionRole === 'student' || $sessionRole === 'instructor') : ?>
                 <li class="nav-item dropdown-notifications navbar-dropdown dropdown me-1">
                   <a
                     class="nav-link dropdown-toggle hide-arrow clms-bell-btn"
@@ -144,8 +144,13 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
 <?php endif; ?>
                     </ul>
                     <div class="dropdown-footer border-top px-3 py-2 text-center">
+<?php
+  $announcementLink = $sessionRole === 'instructor'
+      ? $clmsWebBase . '/instructor/dashboard.php#announcements'
+      : $clmsWebBase . '/student/dashboard.php#announcements';
+?>
                       <a
-                        href="<?php echo htmlspecialchars($clmsWebBase . '/student/dashboard.php#announcements', ENT_QUOTES, 'UTF-8'); ?>"
+                        href="<?php echo htmlspecialchars($announcementLink, ENT_QUOTES, 'UTF-8'); ?>"
                         class="text-decoration-none small fw-semibold">
                         View all announcements
                       </a>
@@ -281,6 +286,50 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
             }
             .clms-avatar-lg { width: 46px; height: 46px; font-size: 1.15rem; }
             [data-search-hidden="true"] { display: none !important; }
+            .clms-navbar-search-results {
+              position: absolute;
+              z-index: 1065;
+              top: calc(100% + 8px);
+              left: 0;
+              width: min(560px, calc(100vw - 1.5rem));
+              max-height: 360px;
+              overflow-y: auto;
+              background: #fff;
+              border: 1px solid rgba(15, 32, 75, 0.12);
+              border-radius: .65rem;
+              box-shadow: 0 .75rem 2rem rgba(15, 32, 75, .12);
+            }
+            .clms-navbar-search-result-item {
+              display: flex;
+              align-items: flex-start;
+              gap: .65rem;
+              padding: .65rem .8rem;
+              text-decoration: none;
+              color: inherit;
+              border-bottom: 1px solid rgba(15, 32, 75, .06);
+              transition: background-color .18s;
+            }
+            .clms-navbar-search-result-item:last-child { border-bottom: 0; }
+            .clms-navbar-search-result-item:hover,
+            .clms-navbar-search-result-item.is-active {
+              background-color: rgba(15, 32, 75, .045);
+              color: inherit;
+            }
+            .clms-navbar-search-result-icon {
+              color: #6c7f96;
+              margin-top: 1px;
+              font-size: 1.1rem;
+            }
+            .clms-navbar-search-result-title {
+              font-weight: 600;
+              line-height: 1.2;
+            }
+            .clms-navbar-search-result-subtitle {
+              display: block;
+              color: #6c7f96;
+              font-size: .8rem;
+              margin-top: .1rem;
+            }
 
             /* --- Notification bell ------------------------------------ */
             .clms-bell-btn {
@@ -361,9 +410,17 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
             (() => {
               const input = document.getElementById('clmsNavbarSearch');
               const emptyEl = document.getElementById('clmsNavbarSearchEmpty');
+              const resultBox = document.getElementById('clmsNavbarSearchResults');
               if (!input) return;
+              const searchEndpoint = <?php echo json_encode($clmsWebBase . '/navbar_search.php', JSON_UNESCAPED_SLASHES); ?>;
+              let activeIndex = -1;
+              let latestToken = 0;
 
               document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                  if (resultBox) resultBox.classList.add('d-none');
+                  return;
+                }
                 if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
                 const tag = (event.target && event.target.tagName) || '';
                 if (/^(INPUT|TEXTAREA|SELECT)$/i.test(tag) || event.target.isContentEditable) return;
@@ -372,42 +429,84 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                 input.select();
               });
 
-              const getSearchText = (item) => {
-                const attr = item.getAttribute('data-search-text');
-                if (attr !== null) return attr.toLowerCase();
-                return (item.innerText || item.textContent || '').toLowerCase();
+              const escapeHtml = (value) => String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+
+              const hideResults = () => {
+                if (!resultBox) return;
+                resultBox.classList.add('d-none');
+                resultBox.innerHTML = '';
+                activeIndex = -1;
               };
 
-              const apply = () => {
-                const query = input.value.trim().toLowerCase();
-                const items = document.querySelectorAll('[data-search-item]');
+              const setActive = (index) => {
+                if (!resultBox) return;
+                const nodes = Array.from(resultBox.querySelectorAll('.clms-navbar-search-result-item'));
+                nodes.forEach((node, i) => node.classList.toggle('is-active', i === index));
+                activeIndex = index;
+                if (index >= 0 && nodes[index]) {
+                  nodes[index].scrollIntoView({ block: 'nearest' });
+                }
+              };
 
-                if (items.length === 0) {
-                  if (emptyEl) emptyEl.classList.add('d-none');
+              const renderResults = (items, query) => {
+                if (!resultBox) return;
+
+                if (!items || items.length === 0) {
+                  hideResults();
+                  if (emptyEl) {
+                    const termEl = emptyEl.querySelector('[data-search-term]');
+                    if (termEl) termEl.textContent = query;
+                    emptyEl.classList.toggle('d-none', query === '');
+                  }
                   return;
                 }
 
-                let visibleCount = 0;
-                items.forEach((item) => {
-                  if (query === '') {
-                    item.setAttribute('data-search-hidden', 'false');
-                    visibleCount++;
-                    return;
-                  }
-                  const matches = getSearchText(item).includes(query);
-                  item.setAttribute('data-search-hidden', matches ? 'false' : 'true');
-                  if (matches) visibleCount++;
-                });
+                if (emptyEl) emptyEl.classList.add('d-none');
+                resultBox.innerHTML = items.map((item) => `
+                  <a class="clms-navbar-search-result-item" href="${escapeHtml(item.url || '#')}" role="option">
+                    <i class="bx ${escapeHtml(item.icon || 'bx-search')} clms-navbar-search-result-icon"></i>
+                    <span class="min-w-0">
+                      <span class="clms-navbar-search-result-title d-block text-truncate">${escapeHtml(item.title || '')}</span>
+                      <small class="clms-navbar-search-result-subtitle text-truncate">${escapeHtml(item.subtitle || '')}</small>
+                    </span>
+                  </a>
+                `).join('');
+                resultBox.classList.remove('d-none');
+                setActive(-1);
+              };
 
+              const runAjaxSearch = async () => {
+                const query = input.value.trim();
                 if (emptyEl) {
-                  const termEl = emptyEl.querySelector('[data-search-term]');
-                  if (termEl) termEl.textContent = input.value.trim();
-                  if (query !== '' && visibleCount === 0) {
-                    emptyEl.classList.remove('d-none');
-                  } else {
-                    emptyEl.classList.add('d-none');
-                  }
+                  emptyEl.classList.add('d-none');
                 }
+                if (query === '') {
+                  hideResults();
+                  return;
+                }
+
+                const token = ++latestToken;
+                try {
+                  const response = await fetch(`${searchEndpoint}?q=${encodeURIComponent(query)}`, {
+                    credentials: 'same-origin',
+                  });
+                  if (!response.ok) return;
+                  const payload = await response.json();
+                  if (token !== latestToken) return;
+                  if (!payload || payload.ok !== true) return;
+                  renderResults(Array.isArray(payload.items) ? payload.items : [], query);
+                } catch (error) {
+                  hideResults();
+                }
+              };
+
+              const apply = () => {
+                runAjaxSearch();
               };
 
               /* Hide the "/" keyboard hint as soon as the user starts typing or
@@ -424,11 +523,39 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
               input.addEventListener('search', () => { apply(); toggleKbd(); });
               input.addEventListener('focus', toggleKbd);
               input.addEventListener('blur', toggleKbd);
+              input.addEventListener('keydown', (event) => {
+                if (!resultBox || resultBox.classList.contains('d-none')) return;
+                const nodes = Array.from(resultBox.querySelectorAll('.clms-navbar-search-result-item'));
+                if (nodes.length === 0) return;
+
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  const next = Math.min(nodes.length - 1, activeIndex + 1);
+                  setActive(next);
+                } else if (event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  const next = Math.max(0, activeIndex - 1);
+                  setActive(next);
+                } else if (event.key === 'Enter') {
+                  if (activeIndex >= 0 && nodes[activeIndex]) {
+                    event.preventDefault();
+                    window.location.href = nodes[activeIndex].getAttribute('href') || '#';
+                  }
+                }
+              });
+              document.addEventListener('click', (event) => {
+                if (!resultBox || !input) return;
+                const target = event.target;
+                if (!(target instanceof Node)) return;
+                if (!resultBox.contains(target) && target !== input) {
+                  hideResults();
+                }
+              });
               toggleKbd();
             })();
           </script>
 
-<?php if ($sessionRole === 'student') : ?>
+<?php if ($sessionRole === 'student' || $sessionRole === 'instructor') : ?>
           <script>
             /* Notification bell — live updates without a page reload.
                - Polls every 60s for new unread count (cheap: just returns
@@ -436,7 +563,10 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                - On dropdown open, marks all as read and clears the badge.
                - Single-item click also marks that one as read. */
             (() => {
-              const endpoint   = <?php echo json_encode($clmsWebBase . '/student/notifications.php', JSON_UNESCAPED_SLASHES); ?>;
+              const endpoint   = <?php echo json_encode(
+                  $clmsWebBase . ($sessionRole === 'instructor' ? '/instructor/notifications.php' : '/student/notifications.php'),
+                  JSON_UNESCAPED_SLASHES
+              ); ?>;
               const csrfToken  = <?php echo json_encode(clms_csrf_token()); ?>;
               const badge      = document.getElementById('clmsBellBadge');
               const markAllBtn = document.getElementById('clmsBellMarkAll');

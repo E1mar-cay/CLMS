@@ -28,8 +28,29 @@ foreach ([
 }
 
 $allowedLevels = ['', 'beginner', 'intermediate', 'advanced'];
+$thumbnailUploadWebDir = '/public/assets/uploads/course-thumbnails';
+$thumbnailUploadFsDir = dirname(__DIR__) . str_replace('/', DIRECTORY_SEPARATOR, $thumbnailUploadWebDir);
+$resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): string {
+    $path = trim((string) $rawPath);
+    if ($path === '') {
+        return '';
+    }
+    if (preg_match('/^(https?:)?\/\//i', $path) === 1 || str_starts_with($path, 'data:')) {
+        return $path;
+    }
+    if (str_starts_with($path, '/')) {
+        return rtrim((string) $clmsWebBase, '/') . $path;
+    }
+    return rtrim((string) $clmsWebBase, '/') . '/' . ltrim($path, '/');
+};
 
-$editId = (int) filter_input(INPUT_GET, 'edit', FILTER_VALIDATE_INT, ['options' => ['default' => 0, 'min_range' => 1]]);
+$editIdRaw = $_GET['edit'] ?? null;
+$editId = filter_var(
+    $editIdRaw,
+    FILTER_VALIDATE_INT,
+    ['options' => ['default' => 0, 'min_range' => 1]]
+);
+$editId = $editId === false ? 0 : (int) $editId;
 $formTitle = '';
 $formDescription = '';
 $formPassingScore = '75.00';
@@ -51,7 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $passingInput = trim((string) ($_POST['passing_score_percentage'] ?? ''));
                 $isPublishedInput = isset($_POST['is_published']) ? 1 : 0;
                 $levelInput = strtolower(trim((string) ($_POST['level'] ?? '')));
-                $thumbnailInput = trim((string) ($_POST['thumbnail_url'] ?? ''));
+                $existingThumbnailInput = trim((string) ($_POST['existing_thumbnail_url'] ?? ''));
+                $removeThumbnailInput = isset($_POST['remove_thumbnail']) && $_POST['remove_thumbnail'] !== '';
                 $finalExamDurationInput = trim((string) ($_POST['final_exam_duration_minutes'] ?? '45'));
 
                 if ($titleInput === '' || mb_strlen($titleInput) > 255) {
@@ -69,13 +91,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $levelValue = $levelInput === '' ? null : $levelInput;
 
-                if ($thumbnailInput !== '' && filter_var($thumbnailInput, FILTER_VALIDATE_URL) === false) {
-                    throw new RuntimeException('Thumbnail URL must be a valid http(s) link or left blank.');
+                $thumbnailValue = $existingThumbnailInput === '' ? null : $existingThumbnailInput;
+                if ($removeThumbnailInput) {
+                    if (
+                        $thumbnailValue !== null
+                        && str_starts_with($thumbnailValue, $thumbnailUploadWebDir . '/')
+                    ) {
+                        $oldFsPath = dirname(__DIR__) . str_replace('/', DIRECTORY_SEPARATOR, $thumbnailValue);
+                        if (is_file($oldFsPath)) {
+                            @unlink($oldFsPath);
+                        }
+                    }
+                    $thumbnailValue = null;
                 }
-                if (mb_strlen($thumbnailInput) > 500) {
-                    throw new RuntimeException('Thumbnail URL must be 500 characters or fewer.');
+                if (isset($_FILES['thumbnail_image']) && is_array($_FILES['thumbnail_image'])) {
+                    $thumbnailFile = $_FILES['thumbnail_image'];
+                    $uploadError = (int) ($thumbnailFile['error'] ?? UPLOAD_ERR_NO_FILE);
+
+                    if ($uploadError !== UPLOAD_ERR_NO_FILE) {
+                        if ($uploadError !== UPLOAD_ERR_OK) {
+                            throw new RuntimeException('Thumbnail upload failed. Please try again.');
+                        }
+
+                        $tmpName = (string) ($thumbnailFile['tmp_name'] ?? '');
+                        $fileSize = (int) ($thumbnailFile['size'] ?? 0);
+                        if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+                            throw new RuntimeException('Invalid thumbnail upload payload.');
+                        }
+                        if ($fileSize <= 0) {
+                            throw new RuntimeException('Uploaded thumbnail is empty.');
+                        }
+                        if ($fileSize > 5 * 1024 * 1024) {
+                            throw new RuntimeException('Thumbnail image must be 5MB or smaller.');
+                        }
+
+                        $finfo = new finfo(FILEINFO_MIME_TYPE);
+                        $mimeType = (string) $finfo->file($tmpName);
+                        $allowedMimes = [
+                            'image/jpeg' => 'jpg',
+                            'image/png' => 'png',
+                            'image/webp' => 'webp',
+                            'image/gif' => 'gif',
+                        ];
+                        if (!isset($allowedMimes[$mimeType])) {
+                            throw new RuntimeException('Thumbnail must be JPG, PNG, WEBP, or GIF.');
+                        }
+
+                        if (!is_dir($thumbnailUploadFsDir) && !mkdir($thumbnailUploadFsDir, 0775, true) && !is_dir($thumbnailUploadFsDir)) {
+                            throw new RuntimeException('Failed to prepare thumbnail upload directory.');
+                        }
+
+                        $ext = $allowedMimes[$mimeType];
+                        $filename = 'course-thumb-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $ext;
+                        $destinationFsPath = $thumbnailUploadFsDir . DIRECTORY_SEPARATOR . $filename;
+                        if (!move_uploaded_file($tmpName, $destinationFsPath)) {
+                            throw new RuntimeException('Failed to save uploaded thumbnail.');
+                        }
+
+                        // Replace old uploaded thumbnail file when a new one is provided.
+                        if (
+                            $thumbnailValue !== null
+                            && str_starts_with($thumbnailValue, $thumbnailUploadWebDir . '/')
+                        ) {
+                            $oldFsPath = dirname(__DIR__) . str_replace('/', DIRECTORY_SEPARATOR, $thumbnailValue);
+                            if (is_file($oldFsPath)) {
+                                @unlink($oldFsPath);
+                            }
+                        }
+
+                        $thumbnailValue = $thumbnailUploadWebDir . '/' . $filename;
+                    }
                 }
-                $thumbnailValue = $thumbnailInput === '' ? null : $thumbnailInput;
+
+                if ($thumbnailValue !== null && mb_strlen($thumbnailValue) > 500) {
+                    throw new RuntimeException('Thumbnail path is too long.');
+                }
 
                 if (!is_numeric($finalExamDurationInput)) {
                     throw new RuntimeException('Final exam time limit must be a whole number of minutes.');
@@ -101,7 +191,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                     $successMessage = 'Course created successfully.';
                 } else {
-                    $courseId = (int) filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
+                    $courseIdRaw = $_POST['course_id'] ?? null;
+                    $courseId = filter_var($courseIdRaw, FILTER_VALIDATE_INT);
+                    $courseId = $courseId === false ? 0 : (int) $courseId;
                     if ($courseId <= 0) {
                         throw new RuntimeException('Invalid course id.');
                     }
@@ -127,11 +219,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'final_exam_duration_minutes' => $finalExamDurationValue,
                         'id' => $courseId,
                     ]);
+
+                    // Keep currently in-progress attempts in sync with the
+                    // new course time limit so students immediately see the
+                    // updated duration when they reopen the exam.
+                    $syncDeadlineStmt = $pdo->prepare(
+                        'UPDATE exam_attempts
+                         SET deadline_at = DATE_ADD(attempted_at, INTERVAL :duration MINUTE)
+                         WHERE course_id = :course_id
+                           AND status = :status'
+                    );
+                    $syncDeadlineStmt->execute([
+                        'duration' => $finalExamDurationValue,
+                        'course_id' => $courseId,
+                        'status' => 'in_progress',
+                    ]);
+
                     $successMessage = 'Course updated successfully.';
                     clms_redirect('admin/courses.php?flash=updated');
                 }
             } elseif ($action === 'delete') {
-                $courseId = (int) filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
+                $courseIdRaw = $_POST['course_id'] ?? null;
+                $courseId = filter_var($courseIdRaw, FILTER_VALIDATE_INT);
+                $courseId = $courseId === false ? 0 : (int) $courseId;
                 if ($courseId <= 0) {
                     throw new RuntimeException('Invalid course id.');
                 }
@@ -206,7 +316,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $successMessage = 'Course and all related records deleted successfully.';
             } elseif ($action === 'toggle_publish') {
-                $courseId = (int) filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
+                $courseIdRaw = $_POST['course_id'] ?? null;
+                $courseId = filter_var($courseIdRaw, FILTER_VALIDATE_INT);
+                $courseId = $courseId === false ? 0 : (int) $courseId;
                 if ($courseId <= 0) {
                     throw new RuntimeException('Invalid course id.');
                 }
@@ -336,7 +448,7 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                           <td>
                             <div class="d-flex align-items-center gap-2">
 <?php if (!empty($course['thumbnail_url'])) : ?>
-                              <img src="<?php echo htmlspecialchars((string) $course['thumbnail_url'], ENT_QUOTES, 'UTF-8'); ?>" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:.35rem;" onerror="this.style.display='none';" />
+                              <img src="<?php echo htmlspecialchars($resolveThumbnailUrl((string) $course['thumbnail_url']), ENT_QUOTES, 'UTF-8'); ?>" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:.35rem;" onerror="this.style.display='none';" />
 <?php endif; ?>
                               <div>
                                 <div class="fw-semibold"><?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?></div>
@@ -421,6 +533,7 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                       method="post"
                       action="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>"
                       id="courseForm"
+                      enctype="multipart/form-data"
                       <?php if ($isEditMode) : ?>data-confirm-update="1"<?php endif; ?>>
                       <div class="modal-header">
                         <h5 class="modal-title" id="courseFormModalLabel">
@@ -435,6 +548,7 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                       <div class="modal-body">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                         <input type="hidden" name="action" value="<?php echo $isEditMode ? 'update' : 'create'; ?>" />
+                        <input type="hidden" name="existing_thumbnail_url" value="<?php echo htmlspecialchars($formThumbnailUrl, ENT_QUOTES, 'UTF-8'); ?>" />
 <?php if ($isEditMode) : ?>
                         <input type="hidden" name="course_id" value="<?php echo $editId; ?>" />
 <?php endif; ?>
@@ -470,16 +584,27 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                             </select>
                           </div>
                           <div class="col-md-6">
-                            <label for="thumbnail_url" class="form-label">Thumbnail URL</label>
+                            <label for="thumbnail_image" class="form-label">Thumbnail Image</label>
                             <input
-                              type="url"
-                              id="thumbnail_url"
-                              name="thumbnail_url"
-                              maxlength="500"
+                              type="file"
+                              id="thumbnail_image"
+                              name="thumbnail_image"
                               class="form-control"
-                              placeholder="https://example.com/cover.jpg"
-                              value="<?php echo htmlspecialchars($formThumbnailUrl, ENT_QUOTES, 'UTF-8'); ?>" />
-                            <small class="text-muted">Optional. Shown as the card image on the student catalog.</small>
+                              accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" />
+                            <small class="text-muted">Optional. Upload JPG/PNG/WEBP/GIF up to 5MB. Leave empty to keep current image.</small>
+<?php if ($formThumbnailUrl !== '') : ?>
+                            <div class="mt-2 d-flex align-items-center gap-2">
+                              <img
+                                src="<?php echo htmlspecialchars($resolveThumbnailUrl($formThumbnailUrl), ENT_QUOTES, 'UTF-8'); ?>"
+                                alt="Current thumbnail"
+                                style="width:52px;height:52px;object-fit:cover;border-radius:.35rem;border:1px solid rgba(15, 32, 75, .15);" />
+                              <small class="text-muted">Current thumbnail</small>
+                            </div>
+                            <div class="form-check mt-2">
+                              <input class="form-check-input" type="checkbox" id="remove_thumbnail" name="remove_thumbnail" value="1" />
+                              <label class="form-check-label" for="remove_thumbnail">Remove thumbnail</label>
+                            </div>
+<?php endif; ?>
                           </div>
                         </div>
                         <div class="row g-3 mb-3">
@@ -550,9 +675,17 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                   // validation error just came back, so the admin doesn't
                   // lose the form context.
                   const shouldAutoOpenModal = <?php echo $shouldAutoOpenModal ? 'true' : 'false'; ?>;
-                  const courseFormModalEl = document.getElementById('courseFormModal');
-                  if (shouldAutoOpenModal && courseFormModalEl && window.bootstrap && bootstrap.Modal) {
-                    bootstrap.Modal.getOrCreateInstance(courseFormModalEl).show();
+                  const openCourseModal = () => {
+                    const courseFormModalEl = document.getElementById('courseFormModal');
+                    if (!shouldAutoOpenModal || !courseFormModalEl) return;
+                    if (window.bootstrap && bootstrap.Modal) {
+                      bootstrap.Modal.getOrCreateInstance(courseFormModalEl).show();
+                    }
+                  };
+                  if (document.readyState === 'complete') {
+                    openCourseModal();
+                  } else {
+                    window.addEventListener('load', openCourseModal, { once: true });
                   }
 
                   const courseForm = document.getElementById('courseForm');

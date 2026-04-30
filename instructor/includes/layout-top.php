@@ -41,6 +41,18 @@ require_once dirname(__DIR__, 2) . '/includes/header.php';
                 <div class="text-truncate">Manage Content</div>
               </a>
             </li>
+            <li class="menu-item <?php echo $activeInstructorPage === 'rankings' ? 'active' : ''; ?>">
+              <a href="<?php echo htmlspecialchars($clmsWebBase . '/instructor/rankings.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+                <i class="menu-icon tf-icons bx bx-trophy"></i>
+                <div class="text-truncate">Course Rankings</div>
+              </a>
+            </li>
+            <li class="menu-item <?php echo $activeInstructorPage === 'student_activity' ? 'active' : ''; ?>">
+              <a href="<?php echo htmlspecialchars($clmsWebBase . '/instructor/student_activity.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+                <i class="menu-icon tf-icons bx bx-pulse"></i>
+                <div class="text-truncate">Student Activity</div>
+              </a>
+            </li>
           </ul>
           <div class="mt-auto border-top">
             <ul class="menu-inner py-1">
