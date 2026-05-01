@@ -34,6 +34,7 @@ $defaults = [
     'default_passing_score_percentage' => '75.00',
     'course_registrations_open' => '1',
     'administrator_contact_email' => 'admin@clms.local',
+    'admin_pending_alert_sound' => '1',
 ];
 
 function clms_load_settings(PDO $pdo, array $defaults): array
@@ -63,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $passingInput = trim((string) ($_POST['default_passing_score_percentage'] ?? ''));
             $registrationsInput = isset($_POST['course_registrations_open']) ? '1' : '0';
             $contactEmailInput = trim((string) ($_POST['administrator_contact_email'] ?? ''));
+            $adminPendingAlertSoundInput = isset($_POST['admin_pending_alert_sound']) ? '1' : '0';
 
             if (!is_numeric($passingInput)) {
                 throw new RuntimeException('Default passing score must be a number.');
@@ -99,6 +101,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'setting_key' => 'administrator_contact_email',
                 'setting_value' => $contactEmailInput,
             ]);
+            $upsertStmt->execute([
+                'setting_key' => 'admin_pending_alert_sound',
+                'setting_value' => $adminPendingAlertSoundInput,
+            ]);
             $pdo->commit();
 
             $successMessage = 'Settings saved successfully.';
@@ -117,6 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $settings['default_passing_score_percentage'] = (string) ($_POST['default_passing_score_percentage'] ?? $settings['default_passing_score_percentage']);
             $settings['course_registrations_open'] = isset($_POST['course_registrations_open']) ? '1' : '0';
             $settings['administrator_contact_email'] = (string) ($_POST['administrator_contact_email'] ?? $settings['administrator_contact_email']);
+            $settings['admin_pending_alert_sound'] = isset($_POST['admin_pending_alert_sound']) ? '1' : '0';
         }
     }
 }
@@ -204,6 +211,26 @@ require_once __DIR__ . '/includes/layout-top.php';
                         Used for system notifications and shown on support pages if students need to reach an admin.
                       </div>
                     </div>
+<?php if ((string) ($_SESSION['role'] ?? '') === 'admin') : ?>
+                    <div class="mb-4">
+                      <label class="form-label d-block">Admin Pending Account Alerts</label>
+                      <div class="form-check form-switch">
+                        <input
+                          class="form-check-input"
+                          type="checkbox"
+                          id="admin_pending_alert_sound"
+                          name="admin_pending_alert_sound"
+                          value="1"
+                          <?php echo ($settings['admin_pending_alert_sound'] ?? '1') === '1' ? 'checked' : ''; ?> />
+                        <label class="form-check-label" for="admin_pending_alert_sound">
+                          Play alert sound when new pending student accounts arrive
+                        </label>
+                      </div>
+                      <div class="form-text">
+                        Toast notifications remain enabled; this setting controls only the sound cue in the admin navbar.
+                      </div>
+                    </div>
+<?php endif; ?>
 
                     <div class="d-flex gap-2">
                       <button type="submit" class="btn btn-primary">

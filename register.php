@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/user-approval.php';
 require_once __DIR__ . '/database.php';
 
 clms_session_start();
 clms_redirect_if_logged_in();
+clms_user_approval_ensure_schema($pdo);
 
 $pageTitle = 'Register | Criminology LMS';
 $formError = '';
@@ -39,17 +41,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $formError = 'Registration could not be completed. Please try again.';
             } else {
                 try {
-                    $stmt = $pdo->prepare(
-                        'INSERT INTO users (first_name, last_name, email, password_hash, role) VALUES (:first_name, :last_name, :email, :password_hash, :role)'
-                    );
-                    $stmt->execute([
-                        'first_name' => $firstName,
-                        'last_name' => $lastName,
-                        'email' => $email,
-                        'password_hash' => $hash,
-                        'role' => 'student',
-                    ]);
-                    clms_redirect('login.php?registered=1');
+                    if (clms_users_has_approval_column($pdo)) {
+                        $stmt = $pdo->prepare(
+                            'INSERT INTO users (first_name, last_name, email, password_hash, role, account_approval_status, account_approved_at)
+                             VALUES (:first_name, :last_name, :email, :password_hash, :role, :account_approval_status, NULL)'
+                        );
+                        $stmt->execute([
+                            'first_name' => $firstName,
+                            'last_name' => $lastName,
+                            'email' => $email,
+                            'password_hash' => $hash,
+                            'role' => 'student',
+                            'account_approval_status' => 'pending',
+                        ]);
+                        clms_redirect('login.php?registered=1&pending=1');
+                    } else {
+                        $stmt = $pdo->prepare(
+                            'INSERT INTO users (first_name, last_name, email, password_hash, role) VALUES (:first_name, :last_name, :email, :password_hash, :role)'
+                        );
+                        $stmt->execute([
+                            'first_name' => $firstName,
+                            'last_name' => $lastName,
+                            'email' => $email,
+                            'password_hash' => $hash,
+                            'role' => 'student',
+                        ]);
+                        clms_redirect('login.php?registered=1');
+                    }
                 } catch (PDOException $e) {
                     if (isset($e->errorInfo[1]) && (int) $e->errorInfo[1] === 1062) {
                         $formError = 'An account with this email already exists.';

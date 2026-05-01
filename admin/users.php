@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/user-approval.php';
 require_once dirname(__DIR__) . '/database.php';
 
 clms_require_roles(['admin']);
+clms_user_approval_ensure_schema($pdo);
 
 $pageTitle = 'User Management | Criminology LMS';
 $activeAdminPage = 'users';
@@ -14,6 +16,7 @@ $isAjaxRequest = !empty($_GET['ajax']);
 
 $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
 $searchQuery = trim((string) ($_GET['q'] ?? ''));
+$pendingOnly = isset($_GET['pending']) && $_GET['pending'] === '1';
 $page = (int) filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
 $perPage = 15;
 $offset = ($page - 1) * $perPage;
@@ -82,6 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($searchQuery !== '') {
                     $redirectQuery['q'] = $searchQuery;
                 }
+                if ($pendingOnly) {
+                    $redirectQuery['pending'] = '1';
+                }
                 if ($page > 1) {
                     $redirectQuery['page'] = (string) $page;
                 }
@@ -118,6 +124,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $redirectQuery = ['deleted' => '1'];
                 if ($searchQuery !== '') {
                     $redirectQuery['q'] = $searchQuery;
+                }
+                if ($pendingOnly) {
+                    $redirectQuery['pending'] = '1';
+                }
+                if ($page > 1) {
+                    $redirectQuery['page'] = (string) $page;
+                }
+                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+            }
+
+            if ($action === 'update_approval_status') {
+                $userId = filter_input(INPUT_POST, 'user_id', FILTER_VALIDATE_INT);
+                $approvalStatusRaw = strtolower(trim((string) ($_POST['approval_status'] ?? '')));
+                if ($userId === false || $userId === null || $userId <= 0) {
+                    throw new RuntimeException('Invalid user.');
+                }
+                if (!in_array($approvalStatusRaw, ['pending', 'approved', 'rejected'], true)) {
+                    throw new RuntimeException('Invalid approval status.');
+                }
+                $approvalStatus = $approvalStatusRaw;
+
+                $userStmt = $pdo->prepare('SELECT id, role FROM users WHERE id = :id LIMIT 1');
+                $userStmt->execute(['id' => (int) $userId]);
+                $existing = $userStmt->fetch();
+                if (!$existing) {
+                    throw new RuntimeException('User not found.');
+                }
+                if ((string) ($existing['role'] ?? '') !== 'student') {
+                    throw new RuntimeException('Only student accounts require approval.');
+                }
+
+                $approveAt = $approvalStatus === 'approved' ? date('Y-m-d H:i:s') : null;
+                $updApproval = $pdo->prepare(
+                    'UPDATE users
+                     SET account_approval_status = :approval_status,
+                         account_approved_at = :account_approved_at
+                     WHERE id = :id'
+                );
+                $updApproval->execute([
+                    'approval_status' => $approvalStatus,
+                    'account_approved_at' => $approveAt,
+                    'id' => (int) $userId,
+                ]);
+
+                $redirectQuery = ['approval_saved' => '1'];
+                if ($searchQuery !== '') {
+                    $redirectQuery['q'] = $searchQuery;
+                }
+                if ($pendingOnly) {
+                    $redirectQuery['pending'] = '1';
                 }
                 if ($page > 1) {
                     $redirectQuery['page'] = (string) $page;
@@ -219,6 +275,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($searchQuery !== '') {
                 $redirectQuery['q'] = $searchQuery;
             }
+            if ($pendingOnly) {
+                $redirectQuery['pending'] = '1';
+            }
             if ($page > 1) {
                 $redirectQuery['page'] = (string) $page;
             }
@@ -257,6 +316,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
 $flashSuccess = '';
 if (!empty($_GET['saved'])) {
     $flashSuccess = 'User updated successfully.';
+} elseif (!empty($_GET['approval_saved'])) {
+    $flashSuccess = 'Student approval status updated.';
 } elseif (!empty($_GET['deleted'])) {
     $deletedCount = (int) ($_GET['deleted_count'] ?? 0);
     if ($deletedCount > 1) {
@@ -276,6 +337,10 @@ if ($searchQuery !== '') {
     $params['s3'] = $like;
     $params['s4'] = $like;
 }
+if ($pendingOnly) {
+    $whereSql .= " AND u.role = 'student' AND u.account_approval_status = :pending_status";
+    $params['pending_status'] = 'pending';
+}
 
 $countStmt = $pdo->prepare("SELECT COUNT(*) AS total_rows FROM users u {$whereSql}");
 $countStmt->execute($params);
@@ -287,7 +352,7 @@ if ($page > $totalPages) {
 }
 
 $listStmt = $pdo->prepare(
-    "SELECT u.id, u.first_name, u.last_name, u.email, u.role, u.created_at
+    "SELECT u.id, u.first_name, u.last_name, u.email, u.role, u.account_approval_status, u.created_at
      FROM users u
      {$whereSql}
      ORDER BY u.role ASC, u.last_name ASC, u.first_name ASC
@@ -302,10 +367,18 @@ $listStmt->execute();
 $userRows = $listStmt->fetchAll();
 
 $totalAdminCount = (int) ($pdo->query("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'")->fetch()['c'] ?? 0);
+$pendingApprovalCount = (int) ($pdo->query(
+    "SELECT COUNT(*) AS c
+     FROM users
+     WHERE role = 'student' AND account_approval_status = 'pending'"
+)->fetch()['c'] ?? 0);
 
 $queryBase = [];
 if ($searchQuery !== '') {
     $queryBase['q'] = $searchQuery;
+}
+if ($pendingOnly) {
+    $queryBase['pending'] = '1';
 }
 $paginationBase = $queryBase;
 if ($page > 1) {
@@ -385,6 +458,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                 <input type="hidden" name="action" value="delete_user" />
                 <input type="hidden" name="user_id" id="clms_delete_user_id" value="" />
               </form>
+              <form id="clmsApproveUserForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" class="d-none" aria-hidden="true">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                <input type="hidden" name="action" value="update_approval_status" />
+                <input type="hidden" name="user_id" id="clms_approval_user_id" value="" />
+                <input type="hidden" name="approval_status" id="clms_approval_status" value="" />
+              </form>
               <form id="clmsBulkDeleteUsersForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" class="d-none" aria-hidden="true">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                 <input type="hidden" name="action" value="bulk_delete_users" />
@@ -398,6 +477,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                     <button type="button" class="btn btn-sm btn-outline-danger" id="clms-bulk-delete-btn" disabled>
                       Delete Selected
                     </button>
+                    <a
+                      href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php' . ($searchQuery !== '' ? '?q=' . rawurlencode($searchQuery) : ''), ENT_QUOTES, 'UTF-8'); ?>"
+                      class="btn btn-sm <?php echo $pendingOnly ? 'btn-warning' : 'btn-outline-warning'; ?>">
+                      <?php echo $pendingOnly ? 'Pending Only: ON' : 'Pending Only'; ?>
+                      <span class="badge bg-white text-warning ms-1"><?php echo $pendingApprovalCount; ?></span>
+                    </a>
                     <form
                       method="get"
                       action="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php', ENT_QUOTES, 'UTF-8'); ?>"
@@ -414,6 +499,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                         value="<?php echo htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8'); ?>"
                         placeholder="Search by name or email..."
                         autocomplete="off" />
+                      <input type="hidden" name="pending" value="<?php echo $pendingOnly ? '1' : '0'; ?>" id="clms-users-pending-input" />
                       <span
                         class="spinner-border spinner-border-sm text-primary clms-users-search-spinner d-none"
                         id="clms-users-search-spinner"
@@ -482,8 +568,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                   const bulkDeleteForm = document.getElementById('clmsBulkDeleteUsersForm');
                   const bulkDeleteIdsInput = document.getElementById('clms_bulk_delete_user_ids');
                   const bulkDeleteBtn = document.getElementById('clms-bulk-delete-btn');
+                  const approvalForm = document.getElementById('clmsApproveUserForm');
+                  const approvalUserIdInput = document.getElementById('clms_approval_user_id');
+                  const approvalStatusInput = document.getElementById('clms_approval_status');
                   const usersForm = document.getElementById('clms-users-search-form');
                   const usersInput = document.getElementById('clms-users-search-input');
+                  const usersPendingInput = document.getElementById('clms-users-pending-input');
                   const usersSpinner = document.getElementById('clms-users-search-spinner');
                   const usersClearBtn = document.getElementById('clms-users-search-clear');
                   const usersPartial = document.getElementById('clms-users-partial');
@@ -507,6 +597,15 @@ require_once __DIR__ . '/includes/layout-top.php';
                       deleteIdInput.value = id;
                       deleteForm.submit();
                     });
+                  };
+                  const submitApprovalAction = (btn) => {
+                    if (!btn || btn.disabled || !approvalForm || !approvalUserIdInput || !approvalStatusInput) return;
+                    const id = btn.getAttribute('data-user-id');
+                    const status = btn.getAttribute('data-approval-status');
+                    if (!id || !status) return;
+                    approvalUserIdInput.value = id;
+                    approvalStatusInput.value = status;
+                    approvalForm.submit();
                   };
 
                   const getSelectedIds = () => {
@@ -589,6 +688,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                     const buildUrl = (ajax, data) => {
                       const params = new URLSearchParams();
                       if (data.q) params.set('q', data.q);
+                      if (data.pending) params.set('pending', '1');
                       if (data.page && data.page > 1) params.set('page', String(data.page));
                       if (ajax) params.set('ajax', '1');
                       const qs = params.toString();
@@ -601,20 +701,20 @@ require_once __DIR__ . '/includes/layout-top.php';
                       if (usersSpinner) usersSpinner.classList.toggle('d-none', !busy);
                     };
 
-                    const fetchAndSwap = async ({ q, page }) => {
+                    const fetchAndSwap = async ({ q, page, pending }) => {
                       if (inFlight) inFlight.abort();
                       const controller = new AbortController();
                       inFlight = controller;
                       setBusy(true);
                       try {
-                        const response = await fetch(buildUrl(true, { q, page }), {
+                        const response = await fetch(buildUrl(true, { q, page, pending }), {
                           signal: controller.signal,
                           credentials: 'same-origin'
                         });
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         const html = await response.text();
                         usersPartial.innerHTML = html;
-                        history.replaceState(null, '', buildUrl(false, { q, page }));
+                        history.replaceState(null, '', buildUrl(false, { q, page, pending }));
                         syncBulkSelectionUi();
                       } catch (err) {
                         if (err.name !== 'AbortError') {
@@ -631,14 +731,19 @@ require_once __DIR__ . '/includes/layout-top.php';
                     usersInput.addEventListener('input', () => {
                       clearTimeout(debounceId);
                       const q = usersInput.value.trim();
+                      const pending = usersPendingInput && usersPendingInput.value === '1';
                       if (usersClearBtn) usersClearBtn.classList.toggle('d-none', q === '');
-                      debounceId = setTimeout(() => fetchAndSwap({ q, page: 1 }), 250);
+                      debounceId = setTimeout(() => fetchAndSwap({ q, page: 1, pending }), 250);
                     });
 
                     usersForm.addEventListener('submit', (event) => {
                       event.preventDefault();
                       clearTimeout(debounceId);
-                      fetchAndSwap({ q: usersInput.value.trim(), page: 1 });
+                      fetchAndSwap({
+                        q: usersInput.value.trim(),
+                        page: 1,
+                        pending: usersPendingInput && usersPendingInput.value === '1'
+                      });
                     });
 
                     if (usersClearBtn) {
@@ -646,7 +751,11 @@ require_once __DIR__ . '/includes/layout-top.php';
                         usersInput.value = '';
                         usersClearBtn.classList.add('d-none');
                         clearTimeout(debounceId);
-                        fetchAndSwap({ q: '', page: 1 });
+                        fetchAndSwap({
+                          q: '',
+                          page: 1,
+                          pending: usersPendingInput && usersPendingInput.value === '1'
+                        });
                         usersInput.focus();
                       });
                     }
@@ -678,6 +787,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                         confirmDeleteButton(deleteBtn);
                         return;
                       }
+                      const approvalBtn = event.target.closest('.clms-approval-btn');
+                      if (approvalBtn) {
+                        event.preventDefault();
+                        submitApprovalAction(approvalBtn);
+                        return;
+                      }
 
                       const pageLink = event.target.closest('a[data-users-page]');
                       if (!pageLink) return;
@@ -688,7 +803,11 @@ require_once __DIR__ . '/includes/layout-top.php';
                       }
                       event.preventDefault();
                       const nextPage = parseInt(pageLink.getAttribute('data-users-page'), 10) || 1;
-                      fetchAndSwap({ q: usersInput.value.trim(), page: nextPage });
+                      fetchAndSwap({
+                        q: usersInput.value.trim(),
+                        page: nextPage,
+                        pending: usersPendingInput && usersPendingInput.value === '1'
+                      });
                     });
 
                     usersPartial.addEventListener('change', (event) => {

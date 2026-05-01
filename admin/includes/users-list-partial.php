@@ -11,14 +11,25 @@ if (!isset($clmsWebBase)) {
     Showing <?php echo $totalRows === 0 ? 0 : ($offset + 1); ?>&ndash;<?php echo min($offset + $perPage, $totalRows); ?> of <?php echo $totalRows; ?> user(s)<?php if ($searchQuery !== '') : ?>
       for &quot;<strong><?php echo htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8'); ?></strong>&quot;
     <?php endif; ?>
+    <?php if (!empty($pendingOnly)) : ?>
+      <span class="ms-1">(Pending approvals only)</span>
+    <?php endif; ?>
   </small>
 </div>
 
 <?php if ($userRows === []) : ?>
   <p class="mb-0 text-muted px-3 pb-3">
-    <?php echo $searchQuery !== ''
-        ? 'No users match your search.'
-        : 'No users found.'; ?>
+    <?php
+    if (!empty($pendingOnly)) {
+        echo $searchQuery !== ''
+            ? 'No pending students match your search.'
+            : 'No pending student approvals found.';
+    } else {
+        echo $searchQuery !== ''
+            ? 'No users match your search.'
+            : 'No users found.';
+    }
+    ?>
   </p>
 <?php else : ?>
   <div class="px-3 pb-2">
@@ -34,6 +45,7 @@ if (!isset($clmsWebBase)) {
           <th>Name</th>
           <th>Email</th>
           <th>Role</th>
+          <th>Approval</th>
           <th>Joined</th>
           <th></th>
         </tr>
@@ -42,6 +54,9 @@ if (!isset($clmsWebBase)) {
 <?php foreach ($userRows as $u) : ?>
 <?php
     $rowUserId = (int) $u['id'];
+    $role = (string) ($u['role'] ?? '');
+    $approvalStatus = clms_user_approval_normalize($u['account_approval_status'] ?? null);
+    $isStudent = $role === 'student';
     $isLastAdmin = (string) $u['role'] === 'admin' && $totalAdminCount < 2;
     $canDeleteRow = $rowUserId !== $currentUserId && !$isLastAdmin;
     $deleteDisabledTitle = $rowUserId === $currentUserId
@@ -59,10 +74,43 @@ if (!isset($clmsWebBase)) {
           </td>
           <td><?php echo htmlspecialchars(trim((string) $u['first_name'] . ' ' . (string) $u['last_name']), ENT_QUOTES, 'UTF-8'); ?></td>
           <td><?php echo htmlspecialchars((string) $u['email'], ENT_QUOTES, 'UTF-8'); ?></td>
-          <td><span class="badge bg-label-primary"><?php echo htmlspecialchars(ucfirst((string) $u['role']), ENT_QUOTES, 'UTF-8'); ?></span></td>
+          <td><span class="badge bg-label-primary"><?php echo htmlspecialchars(ucfirst($role), ENT_QUOTES, 'UTF-8'); ?></span></td>
+          <td>
+<?php if ($isStudent) : ?>
+<?php
+    $approvalBadgeClass = 'warning';
+    if ($approvalStatus === 'approved') {
+        $approvalBadgeClass = 'success';
+    } elseif ($approvalStatus === 'rejected') {
+        $approvalBadgeClass = 'danger';
+    }
+?>
+            <span class="badge bg-label-<?php echo $approvalBadgeClass; ?>"><?php echo htmlspecialchars(ucfirst($approvalStatus), ENT_QUOTES, 'UTF-8'); ?></span>
+<?php else : ?>
+            <span class="badge bg-label-success">Approved</span>
+<?php endif; ?>
+          </td>
           <td><small class="text-muted"><?php echo htmlspecialchars((string) date('M j, Y', strtotime((string) $u['created_at']) ?: time()), ENT_QUOTES, 'UTF-8'); ?></small></td>
           <td class="text-end">
             <div class="btn-group" role="group" aria-label="Actions">
+<?php if ($isStudent && $approvalStatus !== 'approved') : ?>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-success clms-approval-btn"
+                data-user-id="<?php echo $rowUserId; ?>"
+                data-approval-status="approved">
+                Approve
+              </button>
+<?php endif; ?>
+<?php if ($isStudent && $approvalStatus !== 'rejected') : ?>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-warning clms-approval-btn"
+                data-user-id="<?php echo $rowUserId; ?>"
+                data-approval-status="rejected">
+                Reject
+              </button>
+<?php endif; ?>
               <button
                 type="button"
                 class="btn btn-sm btn-outline-primary clms-edit-user-btn"
@@ -72,7 +120,7 @@ if (!isset($clmsWebBase)) {
                 data-edit-fn="<?php echo htmlspecialchars((string) $u['first_name'], ENT_QUOTES, 'UTF-8'); ?>"
                 data-edit-ln="<?php echo htmlspecialchars((string) $u['last_name'], ENT_QUOTES, 'UTF-8'); ?>"
                 data-edit-em="<?php echo htmlspecialchars((string) $u['email'], ENT_QUOTES, 'UTF-8'); ?>"
-                data-edit-role="<?php echo htmlspecialchars((string) $u['role'], ENT_QUOTES, 'UTF-8'); ?>">
+                data-edit-role="<?php echo htmlspecialchars($role, ENT_QUOTES, 'UTF-8'); ?>">
                 Edit
               </button>
               <button

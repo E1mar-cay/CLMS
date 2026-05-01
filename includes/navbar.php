@@ -34,6 +34,51 @@ if (($sessionRole === 'student' || $sessionRole === 'instructor') && $sessionUse
     $navbarNotifications = clms_notifications_list($pdo, $sessionUserId, 10);
     $navbarNotificationsUnread = clms_notifications_unread_count($pdo, $sessionUserId);
 }
+$adminPendingApprovalsCount = 0;
+$adminPendingApprovals = [];
+$adminPendingAlertSoundEnabled = true;
+if ($sessionRole === 'admin' && isset($pdo) && $pdo instanceof PDO) {
+    try {
+        require_once __DIR__ . '/user-approval.php';
+        clms_user_approval_ensure_schema($pdo);
+
+        try {
+            $soundSettingStmt = $pdo->prepare(
+                "SELECT setting_value
+                 FROM system_settings
+                 WHERE setting_key = :setting_key
+                 LIMIT 1"
+            );
+            $soundSettingStmt->execute(['setting_key' => 'admin_pending_alert_sound']);
+            $soundSetting = $soundSettingStmt->fetch();
+            if ($soundSetting && array_key_exists('setting_value', $soundSetting)) {
+                $adminPendingAlertSoundEnabled = (string) ($soundSetting['setting_value'] ?? '1') === '1';
+            }
+        } catch (Throwable $e) {
+            // Keep default enabled if settings table/row is unavailable.
+        }
+
+        $countStmt = $pdo->query(
+            "SELECT COUNT(*) AS c
+             FROM users
+             WHERE role = 'student' AND account_approval_status = 'pending'"
+        );
+        $adminPendingApprovalsCount = (int) ($countStmt->fetch()['c'] ?? 0);
+
+        $listStmt = $pdo->query(
+            "SELECT id, first_name, last_name, email, created_at
+             FROM users
+             WHERE role = 'student' AND account_approval_status = 'pending'
+             ORDER BY created_at DESC
+             LIMIT 10"
+        );
+        $adminPendingApprovals = $listStmt->fetchAll();
+    } catch (Throwable $e) {
+        error_log('admin pending navbar notifications: ' . $e->getMessage());
+        $adminPendingApprovalsCount = 0;
+        $adminPendingApprovals = [];
+    }
+}
 
 $displayName = $sessionFirstName !== '' ? $sessionFirstName : ($sessionEmail !== '' ? explode('@', $sessionEmail)[0] : 'User');
 
@@ -153,6 +198,72 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                         href="<?php echo htmlspecialchars($announcementLink, ENT_QUOTES, 'UTF-8'); ?>"
                         class="text-decoration-none small fw-semibold">
                         View all announcements
+                      </a>
+                    </div>
+                  </div>
+                </li>
+<?php endif; ?>
+<?php if ($sessionRole === 'admin') : ?>
+                <li class="nav-item dropdown-notifications navbar-dropdown dropdown me-1">
+                  <a
+                    class="nav-link dropdown-toggle hide-arrow clms-bell-btn"
+                    href="javascript:void(0);"
+                    data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside"
+                    aria-expanded="false"
+                    aria-label="Pending account approvals">
+                    <i class="bx bx-user-check icon-md"></i>
+                    <span
+                      class="clms-bell-badge<?php echo $adminPendingApprovalsCount === 0 ? ' d-none' : ''; ?>"
+                      id="clmsAdminBellBadge"
+                      aria-label="<?php echo (int) $adminPendingApprovalsCount; ?> pending account approvals">
+                      <?php echo $adminPendingApprovalsCount > 99 ? '99+' : (int) $adminPendingApprovalsCount; ?>
+                    </span>
+                  </a>
+                  <div class="dropdown-menu dropdown-menu-end clms-bell-menu p-0">
+                    <div class="dropdown-header d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                      <h6 class="mb-0 fw-semibold">Pending Accounts</h6>
+                      <span class="badge bg-label-warning" id="clmsAdminBellCountLabel">
+                        <?php echo (int) $adminPendingApprovalsCount; ?>
+                      </span>
+                    </div>
+                    <ul class="list-unstyled mb-0 clms-bell-list" id="clmsAdminBellList" role="list">
+<?php if ($adminPendingApprovals === []) : ?>
+                      <li class="clms-bell-empty">
+                        <div class="text-center text-muted py-4 px-3">
+                          <i class="bx bx-check-circle d-block mb-2" style="font-size:1.75rem;"></i>
+                          <small>No pending student accounts.</small>
+                        </div>
+                      </li>
+<?php else : ?>
+<?php foreach ($adminPendingApprovals as $pendingAccount) : ?>
+                      <li class="clms-bell-item">
+                        <a class="d-flex align-items-start gap-2 px-3 py-2 text-decoration-none text-body"
+                           href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php?pending=1&q=' . rawurlencode((string) $pendingAccount['email']), ENT_QUOTES, 'UTF-8'); ?>">
+                          <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-navy, #0f204b); box-shadow: 0 0 0 3px rgba(15, 32, 75, .12);"></span>
+                          <div class="flex-grow-1 min-w-0">
+                            <div class="d-flex justify-content-between align-items-baseline gap-2">
+                              <span class="fw-semibold text-body text-truncate">
+                                <?php echo htmlspecialchars(trim((string) $pendingAccount['first_name'] . ' ' . (string) $pendingAccount['last_name']), ENT_QUOTES, 'UTF-8'); ?>
+                              </span>
+                              <small class="text-muted flex-shrink-0">
+                                <?php echo htmlspecialchars((string) date('M j', strtotime((string) $pendingAccount['created_at']) ?: time()), ENT_QUOTES, 'UTF-8'); ?>
+                              </small>
+                            </div>
+                            <p class="mb-0 small text-muted clms-bell-body">
+                              <?php echo htmlspecialchars((string) $pendingAccount['email'], ENT_QUOTES, 'UTF-8'); ?>
+                            </p>
+                          </div>
+                        </a>
+                      </li>
+<?php endforeach; ?>
+<?php endif; ?>
+                    </ul>
+                    <div class="dropdown-footer border-top px-3 py-2 text-center">
+                      <a
+                        href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php?pending=1', ENT_QUOTES, 'UTF-8'); ?>"
+                        class="text-decoration-none small fw-semibold">
+                        Review pending accounts
                       </a>
                     </div>
                   </div>
@@ -706,6 +817,133 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
               document.addEventListener('visibilitychange', () => {
                 if (document.hidden) stopPoll();
                 else { refresh(); startPoll(); }
+              });
+              startPoll();
+            })();
+          </script>
+<?php endif; ?>
+<?php if ($sessionRole === 'admin') : ?>
+          <script>
+            (() => {
+              const endpoint = <?php echo json_encode($clmsWebBase . '/admin/notifications.php', JSON_UNESCAPED_SLASHES); ?>;
+              const badge = document.getElementById('clmsAdminBellBadge');
+              const list = document.getElementById('clmsAdminBellList');
+              const countLabel = document.getElementById('clmsAdminBellCountLabel');
+              const bellEl = document.querySelector('.dropdown-notifications');
+              if (!badge || !list || !countLabel || !bellEl) return;
+              const soundEnabled = <?php echo $adminPendingAlertSoundEnabled ? 'true' : 'false'; ?>;
+              let previousCount = <?php echo (int) $adminPendingApprovalsCount; ?>;
+              let hasPolledOnce = false;
+
+              const playPendingAlertSound = () => {
+                if (!soundEnabled) return;
+                try {
+                  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                  if (!AudioCtx) return;
+                  const ctx = new AudioCtx();
+                  const osc = ctx.createOscillator();
+                  const gain = ctx.createGain();
+                  osc.type = 'sine';
+                  osc.frequency.setValueAtTime(880, ctx.currentTime);
+                  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                  gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.01);
+                  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+                  osc.connect(gain);
+                  gain.connect(ctx.destination);
+                  osc.start();
+                  osc.stop(ctx.currentTime + 0.24);
+                  osc.onended = () => {
+                    if (typeof ctx.close === 'function') ctx.close();
+                  };
+                } catch (e) {
+                  // Audio might be blocked by browser autoplay policy.
+                }
+              };
+
+              const setCount = (count) => {
+                const n = Math.max(0, parseInt(count, 10) || 0);
+                countLabel.textContent = String(n);
+                if (n === 0) {
+                  badge.classList.add('d-none');
+                } else {
+                  badge.textContent = n > 99 ? '99+' : String(n);
+                  badge.classList.remove('d-none');
+                }
+              };
+
+              const escapeHtml = (s) => String(s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+              const renderItems = (items) => {
+                if (!Array.isArray(items) || items.length === 0) {
+                  list.innerHTML = `
+                    <li class="clms-bell-empty">
+                      <div class="text-center text-muted py-4 px-3">
+                        <i class="bx bx-check-circle d-block mb-2" style="font-size:1.75rem;"></i>
+                        <small>No pending student accounts.</small>
+                      </div>
+                    </li>`;
+                  return;
+                }
+                list.innerHTML = items.map((item) => `
+                  <li class="clms-bell-item">
+                    <a class="d-flex align-items-start gap-2 px-3 py-2 text-decoration-none text-body"
+                       href="${escapeHtml(item.url || '#')}">
+                      <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-navy, #0f204b); box-shadow: 0 0 0 3px rgba(15, 32, 75, .12);"></span>
+                      <div class="flex-grow-1 min-w-0">
+                        <div class="d-flex justify-content-between align-items-baseline gap-2">
+                          <span class="fw-semibold text-body text-truncate">${escapeHtml(item.name || '')}</span>
+                          <small class="text-muted flex-shrink-0">${escapeHtml(item.created_at_human || '')}</small>
+                        </div>
+                        <p class="mb-0 small text-muted clms-bell-body">${escapeHtml(item.email || '')}</p>
+                      </div>
+                    </a>
+                  </li>
+                `).join('');
+              };
+
+              const refresh = async () => {
+                try {
+                  const res = await fetch(`${endpoint}?action=list`, { credentials: 'same-origin' });
+                  if (!res.ok) return;
+                  const data = await res.json();
+                  if (!data || !data.ok) return;
+                  const nextCount = Math.max(0, parseInt(data.pending_count || 0, 10) || 0);
+                  if (hasPolledOnce && nextCount > previousCount) {
+                    const delta = nextCount - previousCount;
+                    if (typeof ClmsNotify !== 'undefined' && typeof ClmsNotify.info === 'function') {
+                      ClmsNotify.info(`New pending account${delta > 1 ? 's' : ''}: +${delta}`);
+                    }
+                    playPendingAlertSound();
+                  }
+                  previousCount = nextCount;
+                  hasPolledOnce = true;
+                  setCount(nextCount);
+                  renderItems(data.items || []);
+                } catch (e) { /* ignore transient network failures */ }
+              };
+
+              bellEl.addEventListener('shown.bs.dropdown', refresh);
+
+              const POLL_MS = 60000;
+              let pollId = null;
+              const startPoll = () => {
+                if (pollId) clearInterval(pollId);
+                pollId = setInterval(refresh, POLL_MS);
+              };
+              const stopPoll = () => {
+                if (pollId) {
+                  clearInterval(pollId);
+                  pollId = null;
+                }
+              };
+              document.addEventListener('visibilitychange', () => {
+                if (document.hidden) stopPoll();
+                else {
+                  refresh();
+                  startPoll();
+                }
               });
               startPoll();
             })();

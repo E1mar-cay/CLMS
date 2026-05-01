@@ -3,16 +3,19 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/user-approval.php';
 require_once __DIR__ . '/includes/remember.php';
 require_once __DIR__ . '/database.php';
 
 clms_session_start();
 clms_redirect_if_logged_in();
+clms_user_approval_ensure_schema($pdo);
 
 $pageTitle = 'Login | Criminology LMS';
 $formError = '';
 $emailValue = '';
 $registered = isset($_GET['registered']) && $_GET['registered'] === '1';
+$pendingApproval = isset($_GET['pending']) && $_GET['pending'] === '1';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $emailValue = trim((string) ($_POST['email'] ?? ''));
@@ -24,9 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($emailValue === '' || $password === '') {
             $formError = 'Please enter your email and password.';
         } else {
-            $stmt = $pdo->prepare(
-                'SELECT id, email, password_hash, role, first_name FROM users WHERE email = :email LIMIT 1'
-            );
+            $selectSql = clms_users_has_approval_column($pdo)
+                ? 'SELECT id, email, password_hash, role, first_name, account_approval_status FROM users WHERE email = :email LIMIT 1'
+                : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status FROM users WHERE email = :email LIMIT 1";
+            $stmt = $pdo->prepare($selectSql);
             $stmt->execute(['email' => $emailValue]);
             $user = $stmt->fetch();
 
@@ -40,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $role = $user['role'] ?? '';
                 if (!in_array($role, ['student', 'instructor', 'admin'], true)) {
                     $formError = 'Your account is not authorized.';
+                } elseif (!clms_user_approval_can_login((string) $role, $user['account_approval_status'] ?? null)) {
+                    $formError = clms_user_approval_login_error((string) ($user['account_approval_status'] ?? 'pending'));
                 } else {
                     session_regenerate_id(true);
                     $_SESSION['user_id'] = (int) $user['id'];
@@ -384,7 +390,12 @@ require_once __DIR__ . '/includes/auth-header.php';
       Swal.fire({
         icon: 'success',
         title: 'Account Created',
-        text: 'Registration successful. You can sign in below.',
+        text: <?php echo json_encode(
+            $pendingApproval
+                ? 'Registration successful. Your account is pending admin approval before you can sign in.'
+                : 'Registration successful. You can sign in below.',
+            JSON_UNESCAPED_SLASHES
+        ); ?>,
         confirmButtonColor: '#0f204b',
       });
     </script>
