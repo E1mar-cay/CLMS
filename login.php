@@ -28,8 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $formError = 'Please enter your email and password.';
         } else {
             $selectSql = clms_users_has_approval_column($pdo)
-                ? 'SELECT id, email, password_hash, role, first_name, account_approval_status FROM users WHERE email = :email LIMIT 1'
-                : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status FROM users WHERE email = :email LIMIT 1";
+                ? 'SELECT id, email, password_hash, role, first_name, account_approval_status, account_is_disabled FROM users WHERE email = :email LIMIT 1'
+                : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status, 0 AS account_is_disabled FROM users WHERE email = :email LIMIT 1";
             $stmt = $pdo->prepare($selectSql);
             $stmt->execute(['email' => $emailValue]);
             $user = $stmt->fetch();
@@ -44,8 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $role = $user['role'] ?? '';
                 if (!in_array($role, ['student', 'instructor', 'admin'], true)) {
                     $formError = 'Your account is not authorized.';
-                } elseif (!clms_user_approval_can_login((string) $role, $user['account_approval_status'] ?? null)) {
-                    $formError = clms_user_approval_login_error((string) ($user['account_approval_status'] ?? 'pending'));
+                } elseif (!clms_user_approval_can_login((string) $role, $user['account_approval_status'] ?? null, $user['account_is_disabled'] ?? 0)) {
+                    $formError = clms_user_approval_login_error(
+                        (string) ($user['account_approval_status'] ?? 'pending'),
+                        $user['account_is_disabled'] ?? 0
+                    );
                 } else {
                     session_regenerate_id(true);
                     $_SESSION['user_id'] = (int) $user['id'];

@@ -188,7 +188,7 @@ function clms_remember_try_autologin(): void
 
         $stmt = $pdo->prepare(
             'SELECT t.id, t.user_id, t.validator_hash, t.expires_at,
-                    u.email, u.role, u.first_name, u.account_approval_status
+                    u.email, u.role, u.first_name, u.account_approval_status, u.account_is_disabled
              FROM auth_remember_tokens t
              INNER JOIN users u ON u.id = t.user_id
              WHERE t.selector = :sel
@@ -225,7 +225,7 @@ function clms_remember_try_autologin(): void
         if (!in_array($role, ['student', 'instructor', 'admin'], true)) {
             return;
         }
-        if (!clms_user_approval_can_login($role, $row['account_approval_status'] ?? null)) {
+        if (!clms_user_approval_can_login($role, $row['account_approval_status'] ?? null, $row['account_is_disabled'] ?? 0)) {
             clms_remember_revoke_current();
             return;
         }

@@ -31,6 +31,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $action = (string) ($_POST['action'] ?? '');
         try {
+            if ($action === 'bulk_approve_users') {
+                $selectedRaw = $_POST['selected_user_ids'] ?? '[]';
+                $selectedIds = [];
+                if (is_string($selectedRaw)) {
+                    $decoded = json_decode($selectedRaw, true);
+                    if (is_array($decoded)) {
+                        $selectedIds = $decoded;
+                    }
+                } elseif (is_array($selectedRaw)) {
+                    $selectedIds = $selectedRaw;
+                }
+                $selectedIds = array_values(array_unique(array_filter(array_map(
+                    static fn ($v): int => (int) $v,
+                    $selectedIds
+                ), static fn (int $id): bool => $id > 0)));
+
+                if ($selectedIds === []) {
+                    throw new RuntimeException('Select at least one user to approve.');
+                }
+
+                $placeholders = implode(', ', array_fill(0, count($selectedIds), '?'));
+                $approveStmt = $pdo->prepare(
+                    "UPDATE users
+                     SET account_approval_status = 'approved',
+                         account_approved_at = NOW()
+                     WHERE id IN ({$placeholders})
+                       AND role = 'student'
+                       AND account_approval_status = 'pending'"
+                );
+                $approveStmt->execute($selectedIds);
+                $approvedCount = (int) $approveStmt->rowCount();
+                if ($approvedCount < 1) {
+                    throw new RuntimeException('No pending student accounts were approved.');
+                }
+
+                $redirectQuery = ['approved' => '1', 'approved_count' => (string) $approvedCount];
+                if ($searchQuery !== '') {
+                    $redirectQuery['q'] = $searchQuery;
+                }
+                if ($pendingOnly) {
+                    $redirectQuery['pending'] = '1';
+                }
+                if ($page > 1) {
+                    $redirectQuery['page'] = (string) $page;
+                }
+                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+            }
+
             if ($action === 'bulk_delete_users') {
                 $selectedRaw = $_POST['selected_user_ids'] ?? '[]';
                 $selectedIds = [];
@@ -82,6 +130,130 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $redirectQuery = ['deleted' => '1', 'deleted_count' => (string) $deletedCount];
+                if ($searchQuery !== '') {
+                    $redirectQuery['q'] = $searchQuery;
+                }
+                if ($pendingOnly) {
+                    $redirectQuery['pending'] = '1';
+                }
+                if ($page > 1) {
+                    $redirectQuery['page'] = (string) $page;
+                }
+                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+            }
+
+            if ($action === 'bulk_update_disable_status') {
+                $disableRaw = strtolower(trim((string) ($_POST['disable_account'] ?? '')));
+                if (!in_array($disableRaw, ['0', '1'], true)) {
+                    throw new RuntimeException('Invalid account status.');
+                }
+                $selectedRaw = $_POST['selected_user_ids'] ?? '[]';
+                $selectedIds = [];
+                if (is_string($selectedRaw)) {
+                    $decoded = json_decode($selectedRaw, true);
+                    if (is_array($decoded)) {
+                        $selectedIds = $decoded;
+                    }
+                } elseif (is_array($selectedRaw)) {
+                    $selectedIds = $selectedRaw;
+                }
+                $selectedIds = array_values(array_unique(array_filter(array_map(
+                    static fn ($v): int => (int) $v,
+                    $selectedIds
+                ), static fn (int $id): bool => $id > 0)));
+                if ($selectedIds === []) {
+                    throw new RuntimeException('Select at least one user.');
+                }
+                if ($disableRaw === '1' && in_array($currentUserId, $selectedIds, true)) {
+                    throw new RuntimeException('You cannot disable your own account while signed in.');
+                }
+
+                $placeholders = implode(', ', array_fill(0, count($selectedIds), '?'));
+                if ($disableRaw === '1') {
+                    $activeAdminCountStmt = $pdo->query("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND account_is_disabled = 0");
+                    $activeAdminCount = (int) ($activeAdminCountStmt->fetch()['c'] ?? 0);
+                    $selectedActiveAdminStmt = $pdo->prepare(
+                        "SELECT COUNT(*) AS c
+                         FROM users
+                         WHERE id IN ({$placeholders})
+                           AND role = 'admin'
+                           AND account_is_disabled = 0"
+                    );
+                    $selectedActiveAdminStmt->execute($selectedIds);
+                    $selectedActiveAdminCount = (int) ($selectedActiveAdminStmt->fetch()['c'] ?? 0);
+                    if (($activeAdminCount - $selectedActiveAdminCount) < 1) {
+                        throw new RuntimeException('Cannot disable the last active administrator account.');
+                    }
+                }
+
+                $disableAtExpr = $disableRaw === '1' ? 'NOW()' : 'NULL';
+                $bulkDisableStmt = $pdo->prepare(
+                    "UPDATE users
+                     SET account_is_disabled = ?,
+                         account_disabled_at = {$disableAtExpr}
+                     WHERE id IN ({$placeholders})"
+                );
+                $bulkDisableStmt->execute(array_merge([(int) $disableRaw], $selectedIds));
+                $affectedCount = (int) $bulkDisableStmt->rowCount();
+                if ($affectedCount < 1) {
+                    throw new RuntimeException('No accounts were updated.');
+                }
+
+                $redirectQuery = ['bulk_disabled_saved' => '1', 'bulk_disabled_count' => (string) $affectedCount, 'bulk_disabled_state' => $disableRaw];
+                if ($searchQuery !== '') {
+                    $redirectQuery['q'] = $searchQuery;
+                }
+                if ($pendingOnly) {
+                    $redirectQuery['pending'] = '1';
+                }
+                if ($page > 1) {
+                    $redirectQuery['page'] = (string) $page;
+                }
+                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+            }
+
+            if ($action === 'update_disable_status') {
+                $userId = filter_input(INPUT_POST, 'user_id', FILTER_VALIDATE_INT);
+                $disableRaw = strtolower(trim((string) ($_POST['disable_account'] ?? '')));
+                if ($userId === false || $userId === null || $userId <= 0) {
+                    throw new RuntimeException('Invalid user.');
+                }
+                if (!in_array($disableRaw, ['0', '1'], true)) {
+                    throw new RuntimeException('Invalid account status.');
+                }
+                $userId = (int) $userId;
+                if ($userId === $currentUserId && $disableRaw === '1') {
+                    throw new RuntimeException('You cannot disable your own account while signed in.');
+                }
+
+                $existingStmt = $pdo->prepare('SELECT id, role, account_is_disabled FROM users WHERE id = :id LIMIT 1');
+                $existingStmt->execute(['id' => $userId]);
+                $existing = $existingStmt->fetch();
+                if (!$existing) {
+                    throw new RuntimeException('User not found.');
+                }
+                if ((string) ($existing['role'] ?? '') === 'admin' && $disableRaw === '1') {
+                    $activeAdminCountStmt = $pdo->query("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND account_is_disabled = 0");
+                    $activeAdminCount = (int) ($activeAdminCountStmt->fetch()['c'] ?? 0);
+                    if ($activeAdminCount < 2) {
+                        throw new RuntimeException('Cannot disable the last active administrator account.');
+                    }
+                }
+
+                $disableAt = $disableRaw === '1' ? date('Y-m-d H:i:s') : null;
+                $disableStmt = $pdo->prepare(
+                    'UPDATE users
+                     SET account_is_disabled = :is_disabled,
+                         account_disabled_at = :disabled_at
+                     WHERE id = :id'
+                );
+                $disableStmt->execute([
+                    'is_disabled' => (int) $disableRaw,
+                    'disabled_at' => $disableAt,
+                    'id' => $userId,
+                ]);
+
+                $redirectQuery = ['disabled_saved' => '1'];
                 if ($searchQuery !== '') {
                     $redirectQuery['q'] = $searchQuery;
                 }
@@ -318,6 +490,25 @@ if (!empty($_GET['saved'])) {
     $flashSuccess = 'User updated successfully.';
 } elseif (!empty($_GET['approval_saved'])) {
     $flashSuccess = 'Student approval status updated.';
+} elseif (!empty($_GET['approved'])) {
+    $approvedCount = (int) ($_GET['approved_count'] ?? 0);
+    $flashSuccess = $approvedCount > 1
+        ? $approvedCount . ' student accounts approved.'
+        : 'Student account approved.';
+} elseif (!empty($_GET['disabled_saved'])) {
+    $flashSuccess = 'Account status updated.';
+} elseif (!empty($_GET['bulk_disabled_saved'])) {
+    $bulkCount = (int) ($_GET['bulk_disabled_count'] ?? 0);
+    $bulkState = (string) ($_GET['bulk_disabled_state'] ?? '1');
+    if ($bulkState === '0') {
+        $flashSuccess = $bulkCount > 1
+            ? $bulkCount . ' accounts enabled.'
+            : 'Account enabled.';
+    } else {
+        $flashSuccess = $bulkCount > 1
+            ? $bulkCount . ' accounts disabled.'
+            : 'Account disabled.';
+    }
 } elseif (!empty($_GET['deleted'])) {
     $deletedCount = (int) ($_GET['deleted_count'] ?? 0);
     if ($deletedCount > 1) {
@@ -352,10 +543,14 @@ if ($page > $totalPages) {
 }
 
 $listStmt = $pdo->prepare(
-    "SELECT u.id, u.first_name, u.last_name, u.email, u.role, u.account_approval_status, u.created_at
+    "SELECT u.id, u.first_name, u.last_name, u.email, u.role, u.account_approval_status, u.account_is_disabled, u.created_at
      FROM users u
      {$whereSql}
-     ORDER BY u.role ASC, u.last_name ASC, u.first_name ASC
+     ORDER BY
+        CASE WHEN u.role = 'student' AND u.account_approval_status = 'pending' THEN 0 ELSE 1 END ASC,
+        u.role ASC,
+        u.last_name ASC,
+        u.first_name ASC
      LIMIT :limit OFFSET :offset"
 );
 foreach ($params as $k => $v) {
@@ -464,6 +659,23 @@ require_once __DIR__ . '/includes/layout-top.php';
                 <input type="hidden" name="user_id" id="clms_approval_user_id" value="" />
                 <input type="hidden" name="approval_status" id="clms_approval_status" value="" />
               </form>
+              <form id="clmsDisableUserForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" class="d-none" aria-hidden="true">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                <input type="hidden" name="action" value="update_disable_status" />
+                <input type="hidden" name="user_id" id="clms_disable_user_id" value="" />
+                <input type="hidden" name="disable_account" id="clms_disable_account" value="" />
+              </form>
+              <form id="clmsBulkApproveUsersForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" class="d-none" aria-hidden="true">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                <input type="hidden" name="action" value="bulk_approve_users" />
+                <input type="hidden" name="selected_user_ids" id="clms_bulk_approve_user_ids" value="[]" />
+              </form>
+              <form id="clmsBulkDisableUsersForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" class="d-none" aria-hidden="true">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                <input type="hidden" name="action" value="bulk_update_disable_status" />
+                <input type="hidden" name="disable_account" id="clms_bulk_disable_state" value="1" />
+                <input type="hidden" name="selected_user_ids" id="clms_bulk_disable_user_ids" value="[]" />
+              </form>
               <form id="clmsBulkDeleteUsersForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" class="d-none" aria-hidden="true">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                 <input type="hidden" name="action" value="bulk_delete_users" />
@@ -473,7 +685,16 @@ require_once __DIR__ . '/includes/layout-top.php';
               <div class="card" id="clms-users-card">
                 <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                   <h5 class="mb-0">All users</h5>
-                  <div class="d-flex gap-2 align-items-center">
+                  <div class="clms-users-toolbar">
+                    <button type="button" class="btn btn-sm btn-outline-success" id="clms-bulk-approve-btn" disabled>
+                      Approve Selected
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="clms-bulk-disable-btn" disabled>
+                      Disable Selected
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-success" id="clms-bulk-enable-btn" disabled>
+                      Enable Selected
+                    </button>
                     <button type="button" class="btn btn-sm btn-outline-danger" id="clms-bulk-delete-btn" disabled>
                       Delete Selected
                     </button>
@@ -486,7 +707,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                     <form
                       method="get"
                       action="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php', ENT_QUOTES, 'UTF-8'); ?>"
-                      class="d-flex gap-2 align-items-center"
+                      class="clms-users-search-form"
                       id="clms-users-search-form"
                       role="search">
                     <div class="clms-users-search-field">
@@ -507,6 +728,21 @@ require_once __DIR__ . '/includes/layout-top.php';
                         aria-hidden="true"></span>
                     </div>
                     <style>
+                      .clms-users-toolbar {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: .5rem;
+                        align-items: center;
+                        justify-content: flex-end;
+                      }
+                      .clms-users-toolbar .btn {
+                        white-space: nowrap;
+                      }
+                      .clms-users-search-form {
+                        display: flex;
+                        gap: .5rem;
+                        align-items: center;
+                      }
                       .clms-users-search-field {
                         position: relative;
                         min-width: 260px;
@@ -534,6 +770,38 @@ require_once __DIR__ . '/includes/layout-top.php';
                         right: .6rem;
                         top: 50%;
                         transform: translateY(-50%);
+                      }
+                      @media (max-width: 991.98px) {
+                        .clms-users-toolbar {
+                          width: 100%;
+                          justify-content: flex-start;
+                        }
+                        .clms-users-toolbar > .btn,
+                        .clms-users-toolbar > a {
+                          flex: 1 1 calc(50% - .5rem);
+                          min-width: 160px;
+                          text-align: center;
+                        }
+                        .clms-users-search-form {
+                          flex: 1 1 100%;
+                          width: 100%;
+                        }
+                        .clms-users-search-field {
+                          min-width: 0;
+                          flex: 1 1 auto;
+                        }
+                      }
+                      @media (max-width: 575.98px) {
+                        .clms-users-toolbar > .btn,
+                        .clms-users-toolbar > a,
+                        .clms-users-search-form .btn {
+                          flex: 1 1 100%;
+                          width: 100%;
+                        }
+                        .clms-users-search-form {
+                          flex-direction: column;
+                          align-items: stretch;
+                        }
                       }
                     </style>
                     <button
@@ -565,12 +833,23 @@ require_once __DIR__ . '/includes/layout-top.php';
 
                   const deleteForm = document.getElementById('clmsDeleteUserForm');
                   const deleteIdInput = document.getElementById('clms_delete_user_id');
+                  const bulkApproveForm = document.getElementById('clmsBulkApproveUsersForm');
+                  const bulkApproveIdsInput = document.getElementById('clms_bulk_approve_user_ids');
+                  const bulkApproveBtn = document.getElementById('clms-bulk-approve-btn');
+                  const bulkDisableForm = document.getElementById('clmsBulkDisableUsersForm');
+                  const bulkDisableIdsInput = document.getElementById('clms_bulk_disable_user_ids');
+                  const bulkDisableStateInput = document.getElementById('clms_bulk_disable_state');
+                  const bulkDisableBtn = document.getElementById('clms-bulk-disable-btn');
+                  const bulkEnableBtn = document.getElementById('clms-bulk-enable-btn');
                   const bulkDeleteForm = document.getElementById('clmsBulkDeleteUsersForm');
                   const bulkDeleteIdsInput = document.getElementById('clms_bulk_delete_user_ids');
                   const bulkDeleteBtn = document.getElementById('clms-bulk-delete-btn');
                   const approvalForm = document.getElementById('clmsApproveUserForm');
                   const approvalUserIdInput = document.getElementById('clms_approval_user_id');
                   const approvalStatusInput = document.getElementById('clms_approval_status');
+                  const disableForm = document.getElementById('clmsDisableUserForm');
+                  const disableUserIdInput = document.getElementById('clms_disable_user_id');
+                  const disableAccountInput = document.getElementById('clms_disable_account');
                   const usersForm = document.getElementById('clms-users-search-form');
                   const usersInput = document.getElementById('clms-users-search-input');
                   const usersPendingInput = document.getElementById('clms-users-pending-input');
@@ -607,6 +886,15 @@ require_once __DIR__ . '/includes/layout-top.php';
                     approvalStatusInput.value = status;
                     approvalForm.submit();
                   };
+                  const submitDisableAction = (btn) => {
+                    if (!btn || btn.disabled || !disableForm || !disableUserIdInput || !disableAccountInput) return;
+                    const id = btn.getAttribute('data-user-id');
+                    const disableValue = btn.getAttribute('data-disable-account');
+                    if (!id || !disableValue) return;
+                    disableUserIdInput.value = id;
+                    disableAccountInput.value = disableValue;
+                    disableForm.submit();
+                  };
 
                   const getSelectedIds = () => {
                     if (!usersPartial) return [];
@@ -633,6 +921,24 @@ require_once __DIR__ . '/includes/layout-top.php';
                       bulkDeleteBtn.textContent = selectedIds.length > 0
                         ? 'Delete Selected (' + selectedIds.length + ')'
                         : 'Delete Selected';
+                    }
+                    if (bulkApproveBtn) {
+                      bulkApproveBtn.disabled = selectedIds.length === 0;
+                      bulkApproveBtn.textContent = selectedIds.length > 0
+                        ? 'Approve Selected (' + selectedIds.length + ')'
+                        : 'Approve Selected';
+                    }
+                    if (bulkDisableBtn) {
+                      bulkDisableBtn.disabled = selectedIds.length === 0;
+                      bulkDisableBtn.textContent = selectedIds.length > 0
+                        ? 'Disable Selected (' + selectedIds.length + ')'
+                        : 'Disable Selected';
+                    }
+                    if (bulkEnableBtn) {
+                      bulkEnableBtn.disabled = selectedIds.length === 0;
+                      bulkEnableBtn.textContent = selectedIds.length > 0
+                        ? 'Enable Selected (' + selectedIds.length + ')'
+                        : 'Enable Selected';
                     }
                   };
 
@@ -779,6 +1085,63 @@ require_once __DIR__ . '/includes/layout-top.php';
                       });
                     });
                   }
+                  if (bulkApproveBtn) {
+                    bulkApproveBtn.addEventListener('click', () => {
+                      const selectedIds = getSelectedIds();
+                      if (selectedIds.length === 0) return;
+                      if (typeof ClmsNotify === 'undefined' || typeof Swal === 'undefined') return;
+                      ClmsNotify.confirm({
+                        icon: 'question',
+                        title: 'Approve selected accounts?',
+                        text: 'Approve pending student accounts in the selected rows.',
+                        confirmButtonText: 'Approve selected',
+                        cancelButtonText: 'Cancel',
+                      }).then((r) => {
+                        if (!r.isConfirmed || !bulkApproveForm || !bulkApproveIdsInput) return;
+                        bulkApproveIdsInput.value = JSON.stringify(selectedIds);
+                        bulkApproveForm.submit();
+                      });
+                    });
+                  }
+                  if (bulkDisableBtn) {
+                    bulkDisableBtn.addEventListener('click', () => {
+                      const selectedIds = getSelectedIds();
+                      if (selectedIds.length === 0) return;
+                      if (typeof ClmsNotify === 'undefined' || typeof Swal === 'undefined') return;
+                      ClmsNotify.confirm({
+                        icon: 'warning',
+                        title: 'Disable selected accounts?',
+                        text: 'Selected users will no longer be able to sign in until re-enabled.',
+                        danger: true,
+                        confirmButtonText: 'Disable selected',
+                        cancelButtonText: 'Cancel',
+                      }).then((r) => {
+                        if (!r.isConfirmed || !bulkDisableForm || !bulkDisableIdsInput || !bulkDisableStateInput) return;
+                        bulkDisableStateInput.value = '1';
+                        bulkDisableIdsInput.value = JSON.stringify(selectedIds);
+                        bulkDisableForm.submit();
+                      });
+                    });
+                  }
+                  if (bulkEnableBtn) {
+                    bulkEnableBtn.addEventListener('click', () => {
+                      const selectedIds = getSelectedIds();
+                      if (selectedIds.length === 0) return;
+                      if (typeof ClmsNotify === 'undefined' || typeof Swal === 'undefined') return;
+                      ClmsNotify.confirm({
+                        icon: 'question',
+                        title: 'Enable selected accounts?',
+                        text: 'Selected users will be allowed to sign in again.',
+                        confirmButtonText: 'Enable selected',
+                        cancelButtonText: 'Cancel',
+                      }).then((r) => {
+                        if (!r.isConfirmed || !bulkDisableForm || !bulkDisableIdsInput || !bulkDisableStateInput) return;
+                        bulkDisableStateInput.value = '0';
+                        bulkDisableIdsInput.value = JSON.stringify(selectedIds);
+                        bulkDisableForm.submit();
+                      });
+                    });
+                  }
 
                     usersPartial.addEventListener('click', (event) => {
                       const deleteBtn = event.target.closest('.clms-delete-user-btn');
@@ -791,6 +1154,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                       if (approvalBtn) {
                         event.preventDefault();
                         submitApprovalAction(approvalBtn);
+                        return;
+                      }
+                      const disableBtn = event.target.closest('.clms-disable-user-btn');
+                      if (disableBtn) {
+                        event.preventDefault();
+                        submitDisableAction(disableBtn);
                         return;
                       }
 

@@ -35,6 +35,20 @@ if (!isset($clmsWebBase)) {
   <div class="px-3 pb-2">
     <small class="text-muted" id="clms-users-selection-meta">0 selected</small>
   </div>
+  <style>
+    .clms-actions-group .clms-action-btn {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .clms-actions-group .clms-action-btn i {
+      font-size: 1rem;
+      line-height: 1;
+    }
+  </style>
   <div class="table-responsive">
     <table class="table table-hover mb-0">
       <thead>
@@ -46,8 +60,9 @@ if (!isset($clmsWebBase)) {
           <th>Email</th>
           <th>Role</th>
           <th>Approval</th>
+          <th>Account</th>
           <th>Joined</th>
-          <th></th>
+          <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -56,6 +71,7 @@ if (!isset($clmsWebBase)) {
     $rowUserId = (int) $u['id'];
     $role = (string) ($u['role'] ?? '');
     $approvalStatus = clms_user_approval_normalize($u['account_approval_status'] ?? null);
+    $isDisabled = clms_user_is_disabled($u['account_is_disabled'] ?? 0);
     $isStudent = $role === 'student';
     $isLastAdmin = (string) $u['role'] === 'admin' && $totalAdminCount < 2;
     $canDeleteRow = $rowUserId !== $currentUserId && !$isLastAdmin;
@@ -90,47 +106,70 @@ if (!isset($clmsWebBase)) {
             <span class="badge bg-label-success">Approved</span>
 <?php endif; ?>
           </td>
+          <td>
+<?php if ($isDisabled) : ?>
+            <span class="badge bg-label-danger">Disabled</span>
+<?php else : ?>
+            <span class="badge bg-label-success">Active</span>
+<?php endif; ?>
+          </td>
           <td><small class="text-muted"><?php echo htmlspecialchars((string) date('M j, Y', strtotime((string) $u['created_at']) ?: time()), ENT_QUOTES, 'UTF-8'); ?></small></td>
           <td class="text-end">
-            <div class="btn-group" role="group" aria-label="Actions">
+            <div class="btn-group clms-actions-group" role="group" aria-label="Actions">
 <?php if ($isStudent && $approvalStatus !== 'approved') : ?>
               <button
                 type="button"
-                class="btn btn-sm btn-outline-success clms-approval-btn"
+                class="btn btn-sm btn-outline-success clms-action-btn clms-approval-btn"
                 data-user-id="<?php echo $rowUserId; ?>"
-                data-approval-status="approved">
-                Approve
+                data-approval-status="approved"
+                title="Approve"
+                aria-label="Approve">
+                <i class="bx bx-check"></i>
               </button>
 <?php endif; ?>
 <?php if ($isStudent && $approvalStatus !== 'rejected') : ?>
               <button
                 type="button"
-                class="btn btn-sm btn-outline-warning clms-approval-btn"
+                class="btn btn-sm btn-outline-warning clms-action-btn clms-approval-btn"
                 data-user-id="<?php echo $rowUserId; ?>"
-                data-approval-status="rejected">
-                Reject
+                data-approval-status="rejected"
+                title="Reject"
+                aria-label="Reject">
+                <i class="bx bx-x"></i>
               </button>
 <?php endif; ?>
               <button
                 type="button"
-                class="btn btn-sm btn-outline-primary clms-edit-user-btn"
+                class="btn btn-sm <?php echo $isDisabled ? 'btn-outline-success' : 'btn-outline-secondary'; ?> clms-action-btn clms-disable-user-btn"
+                data-user-id="<?php echo $rowUserId; ?>"
+                data-disable-account="<?php echo $isDisabled ? '0' : '1'; ?>"
+                <?php echo $rowUserId === $currentUserId ? 'disabled title="You cannot disable your own account while signed in."' : 'title="' . ($isDisabled ? 'Enable account' : 'Disable account') . '"'; ?>
+                aria-label="<?php echo $isDisabled ? 'Enable account' : 'Disable account'; ?>">
+                <i class="bx <?php echo $isDisabled ? 'bx-check-circle' : 'bx-block'; ?>"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary clms-action-btn clms-edit-user-btn"
                 data-bs-toggle="modal"
                 data-bs-target="#editUserModal"
                 data-edit-id="<?php echo (int) $u['id']; ?>"
                 data-edit-fn="<?php echo htmlspecialchars((string) $u['first_name'], ENT_QUOTES, 'UTF-8'); ?>"
                 data-edit-ln="<?php echo htmlspecialchars((string) $u['last_name'], ENT_QUOTES, 'UTF-8'); ?>"
                 data-edit-em="<?php echo htmlspecialchars((string) $u['email'], ENT_QUOTES, 'UTF-8'); ?>"
-                data-edit-role="<?php echo htmlspecialchars($role, ENT_QUOTES, 'UTF-8'); ?>">
-                Edit
+                data-edit-role="<?php echo htmlspecialchars($role, ENT_QUOTES, 'UTF-8'); ?>"
+                title="Edit"
+                aria-label="Edit">
+                <i class="bx bx-pencil"></i>
               </button>
               <button
                 type="button"
-                class="btn btn-sm btn-outline-danger clms-delete-user-btn"
+                class="btn btn-sm btn-outline-danger clms-action-btn clms-delete-user-btn"
                 data-user-id="<?php echo $rowUserId; ?>"
                 data-display-name="<?php echo htmlspecialchars(trim((string) $u['first_name'] . ' ' . (string) $u['last_name']), ENT_QUOTES, 'UTF-8'); ?>"
                 data-user-email="<?php echo htmlspecialchars((string) $u['email'], ENT_QUOTES, 'UTF-8'); ?>"
-                <?php echo $canDeleteRow ? '' : 'disabled title="' . htmlspecialchars($deleteDisabledTitle, ENT_QUOTES, 'UTF-8') . '"'; ?>>
-                Delete
+                <?php echo $canDeleteRow ? 'title="Delete"' : 'disabled title="' . htmlspecialchars($deleteDisabledTitle, ENT_QUOTES, 'UTF-8') . '"'; ?>
+                aria-label="Delete">
+                <i class="bx bx-trash"></i>
               </button>
             </div>
           </td>
