@@ -112,6 +112,15 @@ $clmsSidebarRole = function_exists('clms_current_role') ? clms_current_role() : 
       </a>
     </li>
 
+<?php if ($clmsSidebarRole === 'admin') : ?>
+    <li class="menu-item <?php echo $activeAdminPage === 'audit_log' ? 'active' : ''; ?>">
+      <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/audit_log.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+        <i class="menu-icon tf-icons bx bx-list-check"></i>
+        <div class="text-truncate">Audit trail</div>
+      </a>
+    </li>
+<?php endif; ?>
+
     <li class="menu-item <?php echo $activeAdminPage === 'settings' ? 'active' : ''; ?>">
       <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/settings.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
         <i class="menu-icon tf-icons bx bx-cog"></i>

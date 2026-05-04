@@ -16,6 +16,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/user-approval.php';
 require_once __DIR__ . '/avatar-helpers.php';
+require_once __DIR__ . '/mfa.php';
 
 const CLMS_REMEMBER_COOKIE = 'clms_remember';
 const CLMS_REMEMBER_LIFETIME_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -187,11 +188,12 @@ function clms_remember_try_autologin(): void
         clms_remember_init_schema($pdo);
         clms_user_approval_ensure_schema($pdo);
         clms_avatar_ensure_schema($pdo);
+        clms_mfa_ensure_schema($pdo);
 
         $stmt = $pdo->prepare(
             'SELECT t.id, t.user_id, t.validator_hash, t.expires_at,
                     u.email, u.role, u.first_name, u.account_approval_status, u.account_is_disabled,
-                    u.avatar_url
+                    u.avatar_url, u.mfa_enabled, u.mfa_totp_secret
              FROM auth_remember_tokens t
              INNER JOIN users u ON u.id = t.user_id
              WHERE t.selector = :sel
@@ -230,6 +232,14 @@ function clms_remember_try_autologin(): void
         }
         if (!clms_user_approval_can_login($role, $row['account_approval_status'] ?? null, $row['account_is_disabled'] ?? 0)) {
             clms_remember_revoke_current();
+            return;
+        }
+
+        if (clms_mfa_user_must_challenge($pdo, $row)) {
+            // "Remember me" cannot satisfy MFA; force a full password + OTP sign-in.
+            $purge = $pdo->prepare('DELETE FROM auth_remember_tokens WHERE id = :id');
+            $purge->execute(['id' => (int) $row['id']]);
+            clms_remember_clear_cookie();
             return;
         }
 

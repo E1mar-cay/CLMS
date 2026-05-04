@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/audit-log.php';
 require_once dirname(__DIR__) . '/database.php';
 
 clms_require_roles(['admin', 'instructor']);
@@ -246,6 +247,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Invalid course id.');
                 }
 
+                $courseTitleStmt = $pdo->prepare('SELECT title FROM courses WHERE id = :id LIMIT 1');
+                $courseTitleStmt->execute(['id' => $courseId]);
+                $courseTitleRow = $courseTitleStmt->fetch();
+                $deletedCourseTitle = (string) ($courseTitleRow['title'] ?? '');
+
                 $pdo->beginTransaction();
                 try {
                     $deleteResponsesStmt = $pdo->prepare(
@@ -315,6 +321,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $successMessage = 'Course and all related records deleted successfully.';
+                clms_audit_ensure_schema($pdo);
+                clms_audit_log(
+                    $pdo,
+                    'course_deleted',
+                    'course',
+                    $courseId,
+                    ['title' => $deletedCourseTitle],
+                    (int) ($_SESSION['user_id'] ?? 0)
+                );
             } elseif ($action === 'toggle_publish') {
                 $courseIdRaw = $_POST['course_id'] ?? null;
                 $courseId = filter_var($courseIdRaw, FILTER_VALIDATE_INT);

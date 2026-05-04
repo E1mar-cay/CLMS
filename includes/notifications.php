@@ -39,12 +39,84 @@ if (!function_exists('clms_notifications_init')) {
                         REFERENCES announcements(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB'
             );
+            $pdo->exec(
+                'CREATE TABLE IF NOT EXISTS user_prompt_dismissals (
+                    user_id INT NOT NULL,
+                    prompt_key VARCHAR(64) NOT NULL,
+                    dismissed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, prompt_key),
+                    INDEX idx_prompt_dismiss_user (user_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+            );
             $initialized = true;
         } catch (Throwable $e) {
             /* Most likely cause: `announcements` table hasn't been created
                yet because no admin has opened admin/announcements.php. The
                notification bell will just be empty until then — not fatal. */
             error_log('announcement_reads init failed: ' . $e->getMessage());
+        }
+    }
+}
+
+const CLMS_MFA_NUDGE_PROMPT_KEY = 'mfa_optional_nudge';
+const CLMS_MFA_NUDGE_ITEM_ID = -1;
+
+if (!function_exists('clms_mfa_nudge_should_show')) {
+    function clms_mfa_nudge_should_show(PDO $pdo, int $userId): bool
+    {
+        if ($userId <= 0) {
+            return false;
+        }
+        try {
+            clms_notifications_init($pdo);
+            require_once __DIR__ . '/mfa.php';
+            clms_mfa_ensure_schema($pdo);
+            if (!clms_mfa_globally_allowed($pdo)) {
+                return false;
+            }
+            $dStmt = $pdo->prepare(
+                'SELECT 1 FROM user_prompt_dismissals WHERE user_id = :uid AND prompt_key = :pk LIMIT 1'
+            );
+            $dStmt->execute(['uid' => $userId, 'pk' => CLMS_MFA_NUDGE_PROMPT_KEY]);
+            if ($dStmt->fetch()) {
+                return false;
+            }
+            $uStmt = $pdo->prepare(
+                'SELECT mfa_enabled, mfa_totp_secret FROM users WHERE id = :id LIMIT 1'
+            );
+            $uStmt->execute(['id' => $userId]);
+            $row = $uStmt->fetch();
+            if (!$row) {
+                return false;
+            }
+            if (!empty($row['mfa_enabled']) && (int) $row['mfa_enabled'] === 1) {
+                return false;
+            }
+            $secret = trim((string) ($row['mfa_totp_secret'] ?? ''));
+
+            return $secret === '';
+        } catch (Throwable $e) {
+            error_log('clms_mfa_nudge_should_show: ' . $e->getMessage());
+
+            return false;
+        }
+    }
+}
+
+if (!function_exists('clms_mfa_prompt_dismiss')) {
+    function clms_mfa_prompt_dismiss(PDO $pdo, int $userId): void
+    {
+        if ($userId <= 0) {
+            return;
+        }
+        try {
+            clms_notifications_init($pdo);
+            $stmt = $pdo->prepare(
+                'INSERT IGNORE INTO user_prompt_dismissals (user_id, prompt_key) VALUES (:uid, :pk)'
+            );
+            $stmt->execute(['uid' => $userId, 'pk' => CLMS_MFA_NUDGE_PROMPT_KEY]);
+        } catch (Throwable $e) {
+            error_log('clms_mfa_prompt_dismiss: ' . $e->getMessage());
         }
     }
 }
@@ -63,6 +135,9 @@ if (!function_exists('clms_notifications_list')) {
         $limit = max(1, min(50, $limit));
 
         try {
+            $includeMfa = clms_mfa_nudge_should_show($pdo, $userId);
+            $announceLimit = $includeMfa ? max(1, $limit - 1) : $limit;
+
             $stmt = $pdo->prepare(
                 'SELECT
                     a.id,
@@ -78,19 +153,33 @@ if (!function_exists('clms_notifications_list')) {
                  LIMIT :lim'
             );
             $stmt->bindValue(':uid', $userId, PDO::PARAM_INT);
-            $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+            $stmt->bindValue(':lim', $announceLimit, PDO::PARAM_INT);
             $stmt->execute();
 
             $rows = $stmt->fetchAll();
-            return array_map(static function (array $row): array {
+            $out = array_map(static function (array $row): array {
                 return [
                     'id' => (int) $row['id'],
                     'title' => (string) $row['title'],
                     'body' => (string) $row['body'],
                     'created_at' => (string) $row['created_at'],
                     'is_read' => (int) $row['is_read'] === 1,
+                    'is_mfa_nudge' => false,
                 ];
             }, $rows);
+
+            if ($includeMfa) {
+                array_unshift($out, [
+                    'id' => CLMS_MFA_NUDGE_ITEM_ID,
+                    'title' => 'Add extra sign-in security (optional)',
+                    'body' => 'Turn on two-factor authentication so your password alone is not enough if someone else gets it. You can set it up in Account security (profile menu).',
+                    'created_at' => gmdate('Y-m-d H:i:s'),
+                    'is_read' => false,
+                    'is_mfa_nudge' => true,
+                ]);
+            }
+
+            return $out;
         } catch (Throwable $e) {
             error_log('clms_notifications_list failed: ' . $e->getMessage());
             return [];
@@ -114,7 +203,12 @@ if (!function_exists('clms_notifications_unread_count')) {
                  WHERE a.is_active = 1 AND ar.announcement_id IS NULL'
             );
             $stmt->execute(['uid' => $userId]);
-            return (int) $stmt->fetchColumn();
+            $n = (int) $stmt->fetchColumn();
+            if (clms_mfa_nudge_should_show($pdo, $userId)) {
+                $n++;
+            }
+
+            return $n;
         } catch (Throwable $e) {
             return 0;
         }
@@ -141,7 +235,12 @@ if (!function_exists('clms_notifications_mark_all_read')) {
                  WHERE a.is_active = 1'
             );
             $stmt->execute(['uid' => $userId]);
-            return $stmt->rowCount();
+            $inserted = $stmt->rowCount();
+            if (clms_mfa_nudge_should_show($pdo, $userId)) {
+                clms_mfa_prompt_dismiss($pdo, $userId);
+            }
+
+            return $inserted;
         } catch (Throwable $e) {
             error_log('clms_notifications_mark_all_read failed: ' . $e->getMessage());
             return 0;
@@ -152,7 +251,15 @@ if (!function_exists('clms_notifications_mark_all_read')) {
 if (!function_exists('clms_notifications_mark_read')) {
     function clms_notifications_mark_read(PDO $pdo, int $userId, int $announcementId): bool
     {
-        if ($userId <= 0 || $announcementId <= 0) {
+        if ($userId <= 0) {
+            return false;
+        }
+        if ($announcementId === CLMS_MFA_NUDGE_ITEM_ID) {
+            clms_mfa_prompt_dismiss($pdo, $userId);
+
+            return true;
+        }
+        if ($announcementId <= 0) {
             return false;
         }
         clms_notifications_init($pdo);

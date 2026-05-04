@@ -5,10 +5,14 @@ declare(strict_types=1);
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/user-approval.php';
 require_once __DIR__ . '/includes/remember.php';
+require_once __DIR__ . '/includes/audit-log.php';
+require_once __DIR__ . '/includes/mfa.php';
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/includes/avatar-helpers.php';
 
 clms_avatar_ensure_schema($pdo);
+clms_audit_ensure_schema($pdo);
+clms_mfa_ensure_schema($pdo);
 
 clms_session_start();
 clms_redirect_if_logged_in();
@@ -31,8 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $formError = 'Please enter your email and password.';
         } else {
             $selectSql = clms_users_has_approval_column($pdo)
-                ? 'SELECT id, email, password_hash, role, first_name, account_approval_status, account_is_disabled, avatar_url FROM users WHERE email = :email LIMIT 1'
-                : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status, 0 AS account_is_disabled, avatar_url FROM users WHERE email = :email LIMIT 1";
+                ? 'SELECT id, email, password_hash, role, first_name, account_approval_status, account_is_disabled, avatar_url, mfa_totp_secret, mfa_enabled FROM users WHERE email = :email LIMIT 1'
+                : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status, 0 AS account_is_disabled, avatar_url, mfa_totp_secret, mfa_enabled FROM users WHERE email = :email LIMIT 1";
             $stmt = $pdo->prepare($selectSql);
             $stmt->execute(['email' => $emailValue]);
             $user = $stmt->fetch();
@@ -43,15 +47,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 || !password_verify($password, $user['password_hash'])
             ) {
                 $formError = 'Invalid email or password.';
+                clms_audit_log(
+                    $pdo,
+                    'login_failed',
+                    'user',
+                    $user && isset($user['id']) ? (int) $user['id'] : null,
+                    ['email' => $emailValue],
+                    null
+                );
             } else {
                 $role = $user['role'] ?? '';
                 if (!in_array($role, ['student', 'instructor', 'admin'], true)) {
                     $formError = 'Your account is not authorized.';
+                    clms_audit_log($pdo, 'login_failed', 'user', (int) $user['id'], ['reason' => 'invalid_role'], null);
                 } elseif (!clms_user_approval_can_login((string) $role, $user['account_approval_status'] ?? null, $user['account_is_disabled'] ?? 0)) {
                     $formError = clms_user_approval_login_error(
                         (string) ($user['account_approval_status'] ?? 'pending'),
                         $user['account_is_disabled'] ?? 0
                     );
+                    clms_audit_log($pdo, 'login_denied', 'user', (int) $user['id'], ['reason' => 'approval'], null);
+                } elseif (clms_mfa_user_must_challenge($pdo, $user)) {
+                    session_regenerate_id(true);
+                    $_SESSION['clms_mfa_pending'] = [
+                        'user_id' => (int) $user['id'],
+                        'remember' => isset($_POST['remember']) && $_POST['remember'] !== '',
+                        'ts' => time(),
+                    ];
+                    clms_redirect('login_mfa.php');
                 } else {
                     session_regenerate_id(true);
                     $_SESSION['user_id'] = (int) $user['id'];
@@ -60,19 +82,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['first_name'] = (string) ($user['first_name'] ?? '');
                     $_SESSION['avatar_url'] = (string) ($user['avatar_url'] ?? '');
 
-                    // Honour the "Keep me signed in" checkbox: mint a
-                    // long-lived token so the session can be rebuilt after
-                    // the browser is closed. Must be set before we emit
-                    // the redirect headers below.
                     $rememberChecked = isset($_POST['remember']) && $_POST['remember'] !== '';
                     if ($rememberChecked) {
                         clms_remember_issue_token((int) $user['id']);
                     } else {
-                        // If the user previously opted in but is now
-                        // un-checking, make sure we kill any existing
-                        // cookie on this browser too.
                         clms_remember_revoke_current();
                     }
+
+                    clms_audit_log($pdo, 'login_success', 'user', (int) $user['id'], ['via' => 'password'], (int) $user['id']);
 
                     if ($role === 'admin') {
                         clms_redirect('admin/dashboard.php');

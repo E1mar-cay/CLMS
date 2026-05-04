@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/audit-log.php';
 require_once dirname(__DIR__) . '/database.php';
 
 clms_require_roles(['instructor']);
@@ -544,6 +545,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $successMessage = 'Module video and all related content deleted.';
+            clms_audit_ensure_schema($pdo);
+            clms_audit_log(
+                $pdo,
+                'module_deleted',
+                'module',
+                (int) $deleteModuleId,
+                [
+                    'course_id' => (int) $moduleRow['course_id'],
+                    'title' => (string) ($moduleRow['title'] ?? ''),
+                ],
+                (int) ($_SESSION['user_id'] ?? 0)
+            );
         } catch (Throwable $e) {
             $errorMessage = $e instanceof RuntimeException ? $e->getMessage() : 'Unable to delete module video.';
             if (!($e instanceof RuntimeException)) {

@@ -185,12 +185,12 @@ $levelStyleFor = static function (?string $raw): array {
 };
 
 $placeholderGradients = [
-    'linear-gradient(135deg, #0a1736 0%, #0f204b 100%)',
-    'linear-gradient(135deg, #0f204b 0%, #1a2f6b 100%)',
-    'linear-gradient(135deg, #1a2f6b 0%, #243d82 100%)',
-    'linear-gradient(135deg, #12295b 0%, #0f204b 100%)',
-    'linear-gradient(135deg, #0f204b 0%, #2b467f 100%)',
-    'linear-gradient(135deg, #0a1736 0%, #1a2f6b 100%)',
+    'linear-gradient(135deg, #4d0614 0%, #7a0920 45%, #b01030 100%)',
+    'linear-gradient(135deg, #5c0718 0%, #9b0c28 50%, #dc143c 100%)',
+    'linear-gradient(135deg, #3d050f 0%, #6b081c 40%, #9b0c28 100%)',
+    'linear-gradient(135deg, #6b081c 0%, #b01030 55%, #e85a6e 100%)',
+    'linear-gradient(135deg, #4d0614 0%, #9b0c28 35%, #c41e3a 100%)',
+    'linear-gradient(135deg, #7a0920 0%, #dc143c 60%, #9b0c28 100%)',
 ];
 
 $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): string {
@@ -314,12 +314,12 @@ try {
 
 require_once __DIR__ . '/includes/layout-top.php';
 ?>
-              <div class="clms-dashboard">
+              <div class="clms-dashboard clms-student-dashboard">
 
-              <div class="clms-hero p-4 p-md-4 mb-4">
+              <div class="clms-hero clms-hero--student p-4 p-md-4 mb-4">
                 <div class="row g-3 align-items-center clms-hero-content">
                   <div class="col-md-8">
-                    <small class="text-white-50 d-block mb-1">Welcome back</small>
+                    <small class="text-white-50 d-block mb-1 text-uppercase" style="letter-spacing: .12em; font-size: .72rem;">Welcome back</small>
                     <h4 class="fw-bold mb-2"><?php echo htmlspecialchars($firstNameOnly, ENT_QUOTES, 'UTF-8'); ?>, ready to level up?</h4>
                     <p class="mb-3 text-white-50" style="max-width: 640px;">
                       Pick up where you left off, explore new courses, and earn certificates as you go. Every finished module brings you closer to the board exam.
@@ -339,7 +339,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                     </div>
                   </div>
                   <div class="col-md-4 d-none d-md-block text-center">
-                    <i class="bx bx-book-reader" style="font-size: 8rem; opacity: .35;"></i>
+                    <i class="bx bx-book-reader text-white" style="font-size: 8rem; opacity: .22;"></i>
                   </div>
                 </div>
               </div>
@@ -429,9 +429,9 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php endif; ?>
 
 <?php if ($inProgressCourses !== []) : ?>
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="fw-semibold mb-0">
-                  <i class="bx bx-play-circle text-primary me-1"></i>Continue Learning
+              <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <h5 class="fw-semibold mb-0 clms-student-section-title">
+                  <i class="bx bx-play-circle text-primary me-1"></i>Continue learning
                 </h5>
                 <small class="text-muted">Jump right back in</small>
               </div>
@@ -482,8 +482,8 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php endif; ?>
 
               <div id="catalogSection" class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-                <h5 class="fw-semibold mb-0">
-                  <i class="bx bx-book-open text-primary me-1"></i>Course Catalog
+                <h5 class="fw-semibold mb-0 clms-student-section-title">
+                  <i class="bx bx-book-open text-primary me-1"></i>Course catalog
                 </h5>
                 <div class="d-flex flex-wrap gap-2" id="clmsCatalogFilters" role="group" aria-label="Catalog filter">
                   <button type="button" class="btn btn-sm btn-primary clms-filter-chip" data-filter="all">All</button>
@@ -657,9 +657,9 @@ require_once __DIR__ . '/includes/layout-top.php';
               </div>
 <?php endif; ?>
 
-              <div class="d-flex justify-content-between align-items-center mb-3 mt-2">
-                <h5 class="fw-semibold mb-0">
-                  <i class="bx bx-award text-warning me-1"></i>My Certificates
+              <div class="d-flex justify-content-between align-items-center mb-3 mt-2 flex-wrap gap-2">
+                <h5 class="fw-semibold mb-0 clms-student-section-title clms-student-section-title--cert">
+                  <i class="bx bx-award text-warning me-1"></i>My certificates
                 </h5>
 <?php if ($certificateCount > 0) : ?>
                 <small class="text-muted"><?php echo $certificateCount; ?> earned</small>
@@ -712,7 +712,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                         </div>
                       </div>
                       <a
-                        class="btn btn-sm btn-warning mt-3 w-100"
+                        class="btn btn-sm btn-primary mt-3 w-100"
                         href="<?php echo htmlspecialchars($certDownloadHref, ENT_QUOTES, 'UTF-8'); ?>">
                         <i class="bx bx-download me-1"></i>Download
                       </a>

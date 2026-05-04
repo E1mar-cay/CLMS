@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/audit-log.php';
 require_once dirname(__DIR__) . '/database.php';
 
 clms_require_roles(['admin', 'instructor']);
@@ -35,6 +36,7 @@ $defaults = [
     'course_registrations_open' => '1',
     'administrator_contact_email' => 'admin@clms.local',
     'admin_pending_alert_sound' => '1',
+    'mfa_allowed' => '1',
 ];
 
 function clms_load_settings(PDO $pdo, array $defaults): array
@@ -51,6 +53,7 @@ function clms_load_settings(PDO $pdo, array $defaults): array
             $loaded[$key] = (string) ($row['setting_value'] ?? '');
         }
     }
+
     return $loaded;
 }
 
@@ -65,6 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $registrationsInput = isset($_POST['course_registrations_open']) ? '1' : '0';
             $contactEmailInput = trim((string) ($_POST['administrator_contact_email'] ?? ''));
             $adminPendingAlertSoundInput = isset($_POST['admin_pending_alert_sound']) ? '1' : '0';
+            $isAdmin = (string) ($_SESSION['role'] ?? '') === 'admin';
+            $mfaAllowedInput = $isAdmin && isset($_POST['mfa_allowed']) ? '1' : '0';
 
             if (!is_numeric($passingInput)) {
                 throw new RuntimeException('Default passing score must be a number.');
@@ -105,9 +110,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'setting_key' => 'admin_pending_alert_sound',
                 'setting_value' => $adminPendingAlertSoundInput,
             ]);
+            if ($isAdmin) {
+                $upsertStmt->execute([
+                    'setting_key' => 'mfa_allowed',
+                    'setting_value' => $mfaAllowedInput,
+                ]);
+            }
             $pdo->commit();
 
             $successMessage = 'Settings saved successfully.';
+            clms_audit_log(
+                $pdo,
+                'settings_updated',
+                'system',
+                null,
+                [
+                    'passing_score' => $passingNormalized,
+                    'course_registrations_open' => $registrationsInput,
+                    'admin_pending_sound' => $adminPendingAlertSoundInput,
+                    'mfa_allowed' => $isAdmin ? $mfaAllowedInput : '(unchanged)',
+                ],
+                (int) ($_SESSION['user_id'] ?? 0)
+            );
             $settings = clms_load_settings($pdo, $defaults);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
@@ -124,6 +148,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $settings['course_registrations_open'] = isset($_POST['course_registrations_open']) ? '1' : '0';
             $settings['administrator_contact_email'] = (string) ($_POST['administrator_contact_email'] ?? $settings['administrator_contact_email']);
             $settings['admin_pending_alert_sound'] = isset($_POST['admin_pending_alert_sound']) ? '1' : '0';
+            if ((string) ($_SESSION['role'] ?? '') === 'admin') {
+                $settings['mfa_allowed'] = isset($_POST['mfa_allowed']) ? '1' : '0';
+            }
         }
     }
 }
@@ -230,6 +257,25 @@ require_once __DIR__ . '/includes/layout-top.php';
                         Toast notifications remain enabled; this setting controls only the sound cue in the admin navbar.
                       </div>
                     </div>
+                    <div class="mb-4">
+                      <label class="form-label d-block">Multi-factor authentication (MFA)</label>
+                      <div class="form-check form-switch">
+                        <input
+                          class="form-check-input"
+                          type="checkbox"
+                          id="mfa_allowed"
+                          name="mfa_allowed"
+                          value="1"
+                          <?php echo ($settings['mfa_allowed'] ?? '1') === '1' ? 'checked' : ''; ?> />
+                        <label class="form-check-label" for="mfa_allowed">
+                          Allow users to enroll authenticator apps for sign-in
+                        </label>
+                      </div>
+                      <div class="form-text">
+                        When off, nobody can enroll MFA and existing users are <strong>not</strong> prompted for a code at sign-in (administrative override). Turn back on to restore second-step checks for enrolled accounts.
+                        Users enroll under <strong>Account security</strong> in the profile menu.
+                      </div>
+                    </div>
 <?php endif; ?>
 
                     <div class="d-flex gap-2">
@@ -255,6 +301,33 @@ require_once __DIR__ . '/includes/layout-top.php';
                   </p>
                 </div>
               </div>
+
+<?php if ((string) ($_SESSION['role'] ?? '') === 'admin') : ?>
+              <div class="card mt-4">
+                <h5 class="card-header">Backup &amp; export</h5>
+                <div class="card-body">
+                  <p class="text-muted small mb-3">
+                    Download core LMS tables for disaster recovery. Password hashes are <strong>not</strong> included in exports. Store files securely; they contain personal data.
+                  </p>
+                  <div class="d-flex flex-wrap gap-2">
+                    <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/admin/backup_export.php', ENT_QUOTES, 'UTF-8'); ?>">
+                      <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                      <input type="hidden" name="backup_format" value="csv_zip" />
+                      <button type="submit" class="btn btn-outline-primary">
+                        <i class="bx bx-download me-1"></i>CSV (ZIP)
+                      </button>
+                    </form>
+                    <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/admin/backup_export.php', ENT_QUOTES, 'UTF-8'); ?>">
+                      <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                      <input type="hidden" name="backup_format" value="sql" />
+                      <button type="submit" class="btn btn-outline-secondary">
+                        <i class="bx bx-data me-1"></i>SQL dump
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+<?php endif; ?>
 
               <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
               <script>

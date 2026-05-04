@@ -183,10 +183,14 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                         </div>
                       </li>
 <?php else : ?>
-<?php foreach ($navbarNotifications as $note) : ?>
+<?php foreach ($navbarNotifications as $note) :
+    $noteId = (int) $note['id'];
+    $isMfaNudge = !empty($note['is_mfa_nudge']) || $noteId === -1;
+    $mfaSecurityHref = $clmsWebBase . '/account_security.php';
+?>
                       <li
-                        class="clms-bell-item<?php echo $note['is_read'] ? '' : ' is-unread'; ?>"
-                        data-announcement-id="<?php echo (int) $note['id']; ?>">
+                        class="clms-bell-item<?php echo $note['is_read'] ? '' : ' is-unread'; ?><?php echo $isMfaNudge ? ' clms-bell-item--mfa' : ''; ?>"
+                        data-announcement-id="<?php echo $noteId; ?>">
                         <div class="d-flex align-items-start gap-2 px-3 py-2">
                           <span class="clms-bell-dot" aria-hidden="true"></span>
                           <div class="flex-grow-1 min-w-0">
@@ -198,9 +202,18 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                                 <?php echo htmlspecialchars(clms_notifications_format_time_ago((string) $note['created_at']), ENT_QUOTES, 'UTF-8'); ?>
                               </small>
                             </div>
+<?php if ($isMfaNudge) : ?>
+                            <p class="mb-1 small text-muted clms-bell-body">
+                              <?php echo nl2br(htmlspecialchars((string) $note['body'], ENT_QUOTES, 'UTF-8')); ?>
+                            </p>
+                            <a href="<?php echo htmlspecialchars($mfaSecurityHref, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-sm btn-primary" onclick="event.stopPropagation();">
+                              <i class="bx bx-shield-quarter me-1"></i>Account security
+                            </a>
+<?php else : ?>
                             <p class="mb-0 small text-muted clms-bell-body">
                               <?php echo nl2br(htmlspecialchars((string) $note['body'], ENT_QUOTES, 'UTF-8')); ?>
                             </p>
+<?php endif; ?>
                           </div>
                         </div>
                       </li>
@@ -338,6 +351,11 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                     <li>
                       <a class="dropdown-item" href="<?php echo htmlspecialchars($profileHref, ENT_QUOTES, 'UTF-8'); ?>">
                         <i class="bx bx-user-circle me-2"></i>My Profile
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item" href="<?php echo htmlspecialchars($clmsWebBase . '/account_security.php', ENT_QUOTES, 'UTF-8'); ?>">
+                        <i class="bx bx-shield-quarter me-2"></i>Account security
                       </a>
                     </li>
                   </ul>
@@ -537,6 +555,9 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
               background: var(--clms-navy, #0f204b);
               box-shadow: 0 0 0 3px rgba(15, 32, 75, .12);
             }
+            .clms-bell-item--mfa {
+              border-left: 3px solid var(--clms-navy, #0f204b);
+            }
             .clms-bell-body {
               display: -webkit-box;
               -webkit-line-clamp: 2;
@@ -712,6 +733,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                   $clmsWebBase . ($sessionRole === 'instructor' ? '/instructor/notifications.php' : '/student/notifications.php'),
                   JSON_UNESCAPED_SLASHES
               ); ?>;
+              const mfaSetupHref = <?php echo json_encode($clmsWebBase . '/account_security.php', JSON_UNESCAPED_SLASHES); ?>;
               const csrfToken  = <?php echo json_encode(clms_csrf_token()); ?>;
               const badge      = document.getElementById('clmsBellBadge');
               const markAllBtn = document.getElementById('clmsBellMarkAll');
@@ -746,8 +768,15 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                     </li>`;
                   return;
                 }
-                list.innerHTML = items.map((n) => `
-                  <li class="clms-bell-item${n.is_read ? '' : ' is-unread'}" data-announcement-id="${n.id}">
+                list.innerHTML = items.map((n) => {
+                  const isMfa = Boolean(n.is_mfa_nudge) || Number(n.id) === -1;
+                  const bodyHtml = isMfa
+                    ? `<p class="mb-1 small text-muted clms-bell-body">${escapeHtml(n.body).replace(/\n/g, '<br>')}</p>`
+                      + `<a href="${escapeHtml(mfaSetupHref)}" class="btn btn-sm btn-primary" onclick="event.stopPropagation();">`
+                      + '<i class="bx bx-shield-quarter me-1"></i>Account security</a>'
+                    : `<p class="mb-0 small text-muted clms-bell-body">${escapeHtml(n.body).replace(/\n/g, '<br>')}</p>`;
+                  return `
+                  <li class="clms-bell-item${n.is_read ? '' : ' is-unread'}${isMfa ? ' clms-bell-item--mfa' : ''}" data-announcement-id="${n.id}">
                     <div class="d-flex align-items-start gap-2 px-3 py-2">
                       <span class="clms-bell-dot" aria-hidden="true"></span>
                       <div class="flex-grow-1 min-w-0">
@@ -755,11 +784,11 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                           <span class="fw-semibold text-body text-truncate">${escapeHtml(n.title)}</span>
                           <small class="text-muted flex-shrink-0">${escapeHtml(n.time_ago || '')}</small>
                         </div>
-                        <p class="mb-0 small text-muted clms-bell-body">${escapeHtml(n.body).replace(/\n/g, '<br>')}</p>
+                        ${bodyHtml}
                       </div>
                     </div>
-                  </li>
-                `).join('');
+                  </li>`;
+                }).join('');
               };
 
               const refresh = async () => {
@@ -787,8 +816,8 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                   if (!res.ok) return;
                   const data = await res.json();
                   setUnread(data.unread || 0);
-                  /* Visually flip all unread rows to read without a re-fetch. */
-                  list.querySelectorAll('.clms-bell-item.is-unread').forEach((el) => el.classList.remove('is-unread'));
+                  /* Re-fetch so the MFA nudge (and counts) stay in sync after dismissals. */
+                  await refresh();
                 } catch (e) { /* silent */ }
               };
 
@@ -807,6 +836,9 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                   if (!res.ok) return;
                   const data = await res.json();
                   setUnread(data.unread || 0);
+                  if (announcementId === -1) {
+                    await refresh();
+                  }
                 } catch (e) { /* silent */ }
               };
 
@@ -825,7 +857,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                 const item = event.target.closest('.clms-bell-item');
                 if (!item) return;
                 const id = parseInt(item.getAttribute('data-announcement-id'), 10);
-                if (!id) return;
+                if (!Number.isFinite(id) || id === 0) return;
                 if (item.classList.contains('is-unread')) {
                   item.classList.remove('is-unread');
                   markOne(id);

@@ -1,14 +1,14 @@
 :root {
   --clms-radius: 0.375rem;
-  --clms-shadow: 0 4px 6px -1px rgba(15, 32, 75, 0.10), 0 2px 4px -1px rgba(15, 32, 75, 0.06);
-  --clms-shadow-hover: 0 10px 15px -3px rgba(15, 32, 75, 0.12), 0 4px 6px -2px rgba(15, 32, 75, 0.08);
+  --clms-shadow: 0 4px 6px -1px rgba(122, 9, 32, 0.08), 0 2px 4px -1px rgba(15, 32, 75, 0.05);
+  --clms-shadow-hover: 0 12px 20px -4px rgba(122, 9, 32, 0.12), 0 4px 8px -2px rgba(15, 32, 75, 0.07);
   --clms-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .clms-dashboard .card {
   border-radius: var(--clms-radius);
   box-shadow: var(--clms-shadow);
-  border: 1px solid rgba(15, 32, 75, .08);
+  border: 1px solid rgba(122, 9, 32, 0.08);
 }
 
 .clms-dashboard .card:hover {
@@ -16,7 +16,7 @@
 }
 
 .clms-dashboard .clms-metric-card {
-  border-left: 1px solid rgba(15, 32, 75, .08) !important;
+  border-left: 1px solid rgba(122, 9, 32, 0.1) !important;
 }
 
 .clms-dashboard .btn,
@@ -42,25 +42,25 @@
 }
 
 .clms-dashboard .btn-primary {
-  background-color: #0f204b;
-  border-color: #0f204b;
+  background-color: var(--clms-navy);
+  border-color: var(--clms-navy);
 }
 
 .clms-dashboard .btn-primary:hover,
 .clms-dashboard .btn-primary:focus {
-  background-color: #0a1736;
-  border-color: #0a1736;
+  background-color: #9b0c28;
+  border-color: #9b0c28;
 }
 
 .clms-dashboard .btn-outline-primary {
-  color: #0f204b;
-  border-color: #0f204b;
+  color: var(--clms-navy);
+  border-color: var(--clms-navy);
 }
 
 .clms-dashboard .btn-outline-primary:hover,
 .clms-dashboard .btn-outline-primary:focus {
-  background-color: #0f204b;
-  border-color: #0f204b;
+  background-color: var(--clms-navy);
+  border-color: var(--clms-navy);
   color: #fff;
 }
 
@@ -68,9 +68,9 @@
 .clms-dashboard .btn-outline-secondary:focus,
 .clms-dashboard .btn-outline-light:hover,
 .clms-dashboard .btn-outline-light:focus {
-  color: #0f204b;
-  background-color: #f3f5fb;
-  border-color: #c9d0e4;
+  color: var(--clms-navy);
+  background-color: rgba(220, 20, 60, 0.06);
+  border-color: rgba(220, 20, 60, 0.22);
 }
 
 .clms-dashboard .btn-warning {
@@ -91,17 +91,17 @@
 .clms-dashboard .form-check-input:focus-visible,
 .clms-dashboard .form-control:focus-visible,
 .clms-dashboard .btn-close:focus-visible {
-  outline: 2px solid #0f204b;
+  outline: 2px solid var(--clms-navy);
   outline-offset: 2px;
-  box-shadow: 0 0 0 3px rgba(15, 32, 75, 0.2);
+  box-shadow: 0 0 0 3px rgba(var(--clms-navy-rgb), 0.22);
 }
 
 .clms-dashboard .table {
-  --bs-table-hover-bg: rgba(15, 32, 75, 0.04);
+  --bs-table-hover-bg: rgba(220, 20, 60, 0.05);
 }
 
 .clms-dashboard .table > :not(caption) > * > * {
-  border-color: rgba(15, 32, 75, 0.08);
+  border-color: rgba(122, 9, 32, 0.08);
 }
 
 .clms-dashboard .table tbody tr {
@@ -109,7 +109,7 @@
 }
 
 .clms-dashboard .table tbody tr:hover {
-  box-shadow: inset 3px 0 0 rgba(15, 32, 75, 0.35);
+  box-shadow: inset 3px 0 0 rgba(220, 20, 60, 0.45);
 }
 
 .clms-dashboard small.text-muted,
@@ -122,20 +122,20 @@
 }
 
 .clms-dashboard .clms-highlight {
-  background: linear-gradient(135deg, #dceefb 0%, #cfe9fc 100%) !important;
-  color: #1a2b4a;
-  border: 1px solid #b6daf6;
+  background: linear-gradient(135deg, rgba(220, 20, 60, 0.08) 0%, rgba(253, 252, 240, 0.95) 100%) !important;
+  color: #1a2340;
+  border: 1px solid rgba(220, 20, 60, 0.18);
 }
 .clms-dashboard .clms-highlight h6,
 .clms-dashboard .clms-highlight p {
   color: inherit;
 }
 .clms-dashboard .clms-highlight .opacity-75 {
-  color: #4a5a72 !important;
+  color: #5c6578 !important;
 }
 
 .clms-dashboard .clms-list-item {
-  border: 1px solid rgba(15, 32, 75, .1);
+  border: 1px solid rgba(122, 9, 32, 0.12);
   border-radius: var(--clms-radius);
   padding: .75rem;
   box-shadow: var(--clms-shadow);
@@ -153,7 +153,7 @@
   letter-spacing: .01em;
 }
 
-.clms-dashboard .bg-label-primary { border-color: rgba(15, 32, 75, 0.22); }
+.clms-dashboard .bg-label-primary { border-color: rgba(var(--clms-navy-rgb), 0.28); }
 .clms-dashboard .bg-label-info { border-color: rgba(3, 175, 217, 0.25); }
 .clms-dashboard .bg-label-success { border-color: rgba(40, 199, 111, 0.25); }
 .clms-dashboard .bg-label-warning { border-color: rgba(255, 171, 0, 0.28); }
@@ -163,7 +163,7 @@
 .clms-dashboard .progress {
   border-radius: 999px;
   height: 8px !important;
-  background-color: rgba(15, 32, 75, 0.10);
+  background-color: rgba(122, 9, 32, 0.1);
   overflow: hidden;
 }
 

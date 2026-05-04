@@ -42,12 +42,12 @@ try {
         }
 
         if ($action === 'mark_read') {
-            $announcementId = (int) filter_input(
-                INPUT_POST,
-                'announcement_id',
-                FILTER_VALIDATE_INT,
-                ['options' => ['default' => 0, 'min_range' => 1]]
-            );
+            $announcementId = (int) ($_POST['announcement_id'] ?? 0);
+            if ($announcementId !== -1 && $announcementId < 1) {
+                http_response_code(400);
+                echo json_encode(['ok' => false, 'error' => 'Invalid announcement id.']);
+                exit;
+            }
             clms_notifications_mark_read($pdo, $userId, $announcementId);
             echo json_encode([
                 'ok' => true,
@@ -75,6 +75,7 @@ try {
                 'created_at' => $item['created_at'],
                 'time_ago' => clms_notifications_format_time_ago($item['created_at']),
                 'is_read' => $item['is_read'],
+                'is_mfa_nudge' => !empty($item['is_mfa_nudge']),
             ];
         }, $items),
     ]);

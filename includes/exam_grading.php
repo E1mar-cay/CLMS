@@ -272,6 +272,7 @@ function clms_finalize_exam_attempt(
     $shouldIssueCertificate = (bool) $isPassed;
     $certificateHash = null;
     $certificateJustIssued = false;
+    $gradingCommitted = false;
 
     try {
         $pdo->beginTransaction();
@@ -374,12 +375,30 @@ function clms_finalize_exam_attempt(
         }
 
         $pdo->commit();
+        $gradingCommitted = true;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
         error_log('clms_finalize_exam_attempt: ' . $e->getMessage());
         return ['ok' => false, 'error' => 'grading_failed'];
+    }
+
+    if ($gradingCommitted) {
+        require_once __DIR__ . '/audit-log.php';
+        clms_audit_log(
+            $pdo,
+            'exam_attempt_finalized',
+            'exam_attempt',
+            $attemptId,
+            [
+                'course_id' => $courseId,
+                'total_awarded_points' => $totalAwardedPoints,
+                'total_possible_points' => $totalPossiblePoints,
+                'is_passed' => (int) $isPassed,
+            ],
+            $userId
+        );
     }
 
     return [
