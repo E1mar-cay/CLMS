@@ -90,11 +90,11 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <link rel="stylesheet" href="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/css/custom.css', ENT_QUOTES, 'UTF-8'); ?>">
   <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
   <style>
+    /* Landing-only layout; brand palette + Bootstrap primary come from custom.css */
     :root {
-      --clms-navy: #0f204b;
-      --clms-cream: #fdfcf0;
       --clms-radius: 0.375rem;
       --clms-shadow: 0 4px 6px -1px rgba(15, 32, 75, 0.10), 0 2px 4px -1px rgba(15, 32, 75, 0.06);
       --clms-shadow-hover: 0 10px 15px -3px rgba(15, 32, 75, 0.12), 0 4px 6px -2px rgba(15, 32, 75, 0.08);
@@ -103,7 +103,6 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
     body {
       font-family: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background-color: var(--clms-cream);
       color: #1f2a44;
       line-height: 1.6;
     }
@@ -133,7 +132,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .brand-logo:hover {
-      color: #0a1736;
+      color: #9b0c28;
     }
 
     .site-navbar .navbar-toggler {
@@ -178,8 +177,8 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .btn-clms-primary:hover {
-      background-color: #0a1736;
-      border-color: #0a1736;
+      background-color: #9b0c28;
+      border-color: #9b0c28;
       color: #fff;
     }
 
@@ -272,7 +271,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       box-shadow: var(--clms-shadow);
       margin-bottom: 1rem;
       aspect-ratio: 16 / 9;
-      background: linear-gradient(135deg, #e8ebf5 0%, #dde3f2 100%);
+      background: linear-gradient(135deg, #fdeef1 0%, #f0e4e8 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -340,7 +339,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     .landing-catalog-media {
       position: relative;
       aspect-ratio: 16 / 9;
-      background: linear-gradient(135deg, #0f204b 0%, #1a2f6b 100%);
+      background: linear-gradient(135deg, #6a0818 0%, #b01030 45%, #dc143c 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -385,7 +384,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       top: .6rem;
       right: .6rem;
       border-radius: var(--clms-radius);
-      background: rgba(15, 32, 75, 0.92);
+      background: rgba(107, 12, 32, 0.92);
       color: #fff;
       border: 1px solid rgba(255, 255, 255, 0.25);
       font-size: .72rem;
@@ -436,9 +435,9 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .landing-modal-chip-info {
-      background: #e9efff;
-      color: #0f204b;
-      border-color: #cfdcff;
+      background: #fdeef1;
+      color: #9b0c28;
+      border-color: #f5c4cd;
     }
 
     .landing-modal-chip-meta {
@@ -533,11 +532,11 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .site-footer a:hover {
-      color: #d8deef;
+      color: #ffc9d4;
     }
 
     .cta-strip {
-      background: linear-gradient(135deg, #0f204b 0%, #1a2f6b 100%);
+      background: linear-gradient(135deg, #5c0718 0%, #9b0c28 45%, #dc143c 100%);
       color: #fff;
       border-top: 1px solid rgba(255, 255, 255, 0.08);
       border-bottom: 1px solid rgba(15, 32, 75, 0.18);
@@ -560,9 +559,9 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .btn-cta-light:hover {
-      background-color: #eef2ff;
-      border-color: #eef2ff;
-      color: #0a1736;
+      background-color: #fff5f6;
+      border-color: #fff5f6;
+      color: #7a0920;
     }
 
     @media (max-width: 767.98px) {

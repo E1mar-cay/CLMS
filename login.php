@@ -6,6 +6,9 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/user-approval.php';
 require_once __DIR__ . '/includes/remember.php';
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/includes/avatar-helpers.php';
+
+clms_avatar_ensure_schema($pdo);
 
 clms_session_start();
 clms_redirect_if_logged_in();
@@ -28,8 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $formError = 'Please enter your email and password.';
         } else {
             $selectSql = clms_users_has_approval_column($pdo)
-                ? 'SELECT id, email, password_hash, role, first_name, account_approval_status, account_is_disabled FROM users WHERE email = :email LIMIT 1'
-                : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status, 0 AS account_is_disabled FROM users WHERE email = :email LIMIT 1";
+                ? 'SELECT id, email, password_hash, role, first_name, account_approval_status, account_is_disabled, avatar_url FROM users WHERE email = :email LIMIT 1'
+                : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status, 0 AS account_is_disabled, avatar_url FROM users WHERE email = :email LIMIT 1";
             $stmt = $pdo->prepare($selectSql);
             $stmt->execute(['email' => $emailValue]);
             $user = $stmt->fetch();
@@ -55,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['role'] = $role;
                     $_SESSION['email'] = (string) $user['email'];
                     $_SESSION['first_name'] = (string) ($user['first_name'] ?? '');
+                    $_SESSION['avatar_url'] = (string) ($user['avatar_url'] ?? '');
 
                     // Honour the "Keep me signed in" checkbox: mint a
                     // long-lived token so the session can be rebuilt after
@@ -91,10 +95,8 @@ require_once __DIR__ . '/includes/auth-header.php';
 ?>
     <style>
       /* --- Login hero layout (scoped to this page) ------------------
-         Two-column branded shell: navy hero on the left carries the
-         brand story, cream/white form card on the right carries the
-         UI. Collapses to a single column at <992px so mobile users
-         get the form immediately. */
+         Two-column branded shell: crimson hero on the left, form card
+         on the right. Collapses to a single column at <992px. */
       html, body { height: 100%; }
       body.clms-auth-body {
         background-color: var(--clms-cream, #fdfcf0);
@@ -115,7 +117,7 @@ require_once __DIR__ . '/includes/auth-header.php';
         position: relative;
         color: #fff;
         padding: 3rem 2.75rem;
-        background: linear-gradient(135deg, #0a1736 0%, #0f204b 45%, #1a2f6b 100%);
+        background: linear-gradient(135deg, #4d0614 0%, #9b0c28 42%, #dc143c 88%);
         overflow: hidden;
         display: flex;
         flex-direction: column;
@@ -399,7 +401,7 @@ require_once __DIR__ . '/includes/auth-header.php';
                 : 'Registration successful. You can sign in below.',
             JSON_UNESCAPED_SLASHES
         ); ?>,
-        confirmButtonColor: '#0f204b',
+        confirmButtonColor: '#b01030',
       });
     </script>
 <?php endif; ?>

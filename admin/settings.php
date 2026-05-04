@@ -278,7 +278,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                         showCancelButton: true,
                         confirmButtonText: 'Yes, save',
                         cancelButtonText: 'Cancel',
-                        confirmButtonColor: '#0f204b',
+                        confirmButtonColor: '#b01030',
                       }).then((result) => {
                         if (result.isConfirmed) {
                           settingsForm.dataset.confirmed = '1';

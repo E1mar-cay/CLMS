@@ -8,14 +8,16 @@
    ============================================================ */
 
 /* ---- 1. Brand palette --------------------------------------
-   Navy is the new primary. Cream is the app canvas. The -rgb
+   Primary brand: crimson. Cream is the app canvas. The -rgb
    triplets are what Bootstrap uses internally for
    rgba(var(--bs-primary-rgb), .5) style alpha mixes, so we
    must override both the hex and the triplet.
+   Hard-coded rgba(15, 32, 75, …) shadows and tints are left
+   unchanged for a consistent soft depth (per design review).
 ------------------------------------------------------------- */
 :root {
-  --clms-navy: #0f204b;
-  --clms-navy-rgb: 15, 32, 75;
+  --clms-navy: #dc143c;
+  --clms-navy-rgb: 220, 20, 60;
   --clms-cream: #fdfcf0;
   --clms-cream-rgb: 253, 252, 240;
 
@@ -45,7 +47,7 @@ body {
 
 /* ---- 3. Primary button / link recolour ---------------------
    Sneat hard-codes the old purple (#696cff) into a handful of
-   component classes, so we repoint them at the navy token.
+   component classes, so we repoint them at the brand token.
 ------------------------------------------------------------- */
 .btn-primary,
 .bg-primary {
@@ -56,8 +58,8 @@ body {
 .btn-primary:hover,
 .btn-primary:focus,
 .btn-primary:active {
-  background-color: #0a1736 !important;
-  border-color: #0a1736 !important;
+  background-color: #9b0c28 !important;
+  border-color: #9b0c28 !important;
 }
 
 .text-primary {
@@ -80,7 +82,7 @@ a {
 }
 
 a:hover {
-  color: #0a1736;
+  color: #7a0920;
 }
 
 /* ---- 4. SweetAlert2 stacking context -----------------------
@@ -192,7 +194,7 @@ a:hover {
   text-align: center;
   padding: 2.25rem 1.5rem 1.75rem;
   color: #fff;
-  background: linear-gradient(135deg, #0a1736 0%, #0f204b 60%, #1a2f6b 100%);
+  background: linear-gradient(135deg, #7a0920 0%, #b01030 55%, #dc143c 100%);
 }
 .clms-exam-result__hero::after {
   content: '';
@@ -203,7 +205,7 @@ a:hover {
   opacity: .9;
 }
 .clms-exam-result--success .clms-exam-result__hero {
-  background: linear-gradient(135deg, #0a1736 0%, #0f204b 55%, #1d5f3e 130%);
+  background: linear-gradient(135deg, #5c0718 0%, #9b0c28 55%, #1d5f3e 130%);
 }
 .clms-exam-result--warning .clms-exam-result__hero {
   background: linear-gradient(135deg, #3a1d1d 0%, #7a2e2e 55%, #a23b3b 130%);
@@ -212,7 +214,7 @@ a:hover {
   background: linear-gradient(90deg, #ffd86b, #ff8b4d, #ffd86b);
 }
 .clms-exam-result--info .clms-exam-result__hero {
-  background: linear-gradient(135deg, #0a1736 0%, #1a2f6b 60%, #2f4ba0 130%);
+  background: linear-gradient(135deg, #6a0820 0%, #a62944 60%, #4a6dad 130%);
 }
 
 .clms-exam-result__hero-icon {
@@ -276,7 +278,7 @@ a:hover {
 }
 .clms-exam-result--success .clms-exam-result__percent { color: #1d6f43; }
 .clms-exam-result--warning .clms-exam-result__percent { color: #a23b3b; }
-.clms-exam-result--info    .clms-exam-result__percent { color: var(--clms-navy); }
+.clms-exam-result--info    .clms-exam-result__percent { color: #9b0c28; }
 
 .clms-exam-result__score-label {
   margin-top: .35rem;
@@ -305,7 +307,7 @@ a:hover {
   background: linear-gradient(90deg, #a23b3b, #e05a5a);
 }
 .clms-exam-result--info .clms-exam-result__bar-fill {
-  background: linear-gradient(90deg, var(--clms-navy), #2f4ba0);
+  background: linear-gradient(90deg, #b01030, #5b7cba);
 }
 /* Marker lives OUTSIDE the clipping fill so it paints over the full track. */
 .clms-exam-result__bar-marker {
@@ -509,4 +511,14 @@ a:hover {
 }
 .clms-cert-icon i { line-height: 1; }
 .min-width-0 { min-width: 0; }
+
+/* ---- 9. Announcement callouts (student dashboard card) ---- */
+.clms-announcement-board {
+  background-color: #e8f4fd !important;
+  border-color: #b6daf6 !important;
+  color: #1a2b4a;
+}
+.clms-announcement-board .text-muted {
+  color: #4a5a72 !important;
+}
 

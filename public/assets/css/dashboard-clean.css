@@ -122,8 +122,16 @@
 }
 
 .clms-dashboard .clms-highlight {
-  background: linear-gradient(135deg, #0a1736 0%, #0f204b 100%) !important;
-  color: #fff;
+  background: linear-gradient(135deg, #dceefb 0%, #cfe9fc 100%) !important;
+  color: #1a2b4a;
+  border: 1px solid #b6daf6;
+}
+.clms-dashboard .clms-highlight h6,
+.clms-dashboard .clms-highlight p {
+  color: inherit;
+}
+.clms-dashboard .clms-highlight .opacity-75 {
+  color: #4a5a72 !important;
 }
 
 .clms-dashboard .clms-list-item {

@@ -1,5 +1,8 @@
+/* Login / register (public auth) — pairs with custom.css (brand) + Sneat page-auth */
 :root {
-  --clms-navy: #0f204b;
+  /* Mirror custom.css so auth works if custom fails to load; custom.css final wins for --clms-navy */
+  --clms-navy: #dc143c;
+  --clms-navy-rgb: 220, 20, 60;
   --clms-cream: #fdfcf0;
   --clms-radius: 0.375rem;
   --clms-shadow: 0 4px 6px -1px rgba(15, 32, 75, 0.10), 0 2px 4px -1px rgba(15, 32, 75, 0.06);
@@ -31,10 +34,15 @@
 }
 
 .form-control:focus {
-  border-color: rgba(15, 32, 75, 0.4);
-  box-shadow: 0 0 0 .18rem rgba(15, 32, 75, 0.12);
+  border-color: rgba(220, 20, 60, 0.45);
+  box-shadow: 0 0 0 0.18rem rgba(220, 20, 60, 0.12);
 }
 
+.form-check-input:focus {
+  border-color: rgba(220, 20, 60, 0.55);
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem rgba(220, 20, 60, 0.15);
+}
 .form-check-input:checked {
   background-color: var(--clms-navy);
   border-color: var(--clms-navy);
@@ -58,8 +66,8 @@
 }
 
 .btn.btn-clms-primary:hover {
-  background-color: #0a1736;
-  border-color: #0a1736;
+  background-color: #9b0c28;
+  border-color: #9b0c28;
   color: #fff !important;
   opacity: 1;
   box-shadow: var(--clms-shadow-hover);
@@ -88,7 +96,7 @@
 
 .clms-auth-footer-link:hover,
 .clms-auth-card a:not(.btn):hover {
-  color: #0a1736;
+  color: #7a0920;
 }
 
 .buy-now {

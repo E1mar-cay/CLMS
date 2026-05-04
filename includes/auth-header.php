@@ -44,6 +44,7 @@ $clmsAssetsPath = $clmsSneatBase . '/assets/';
 
     <link rel="stylesheet" href="<?php echo htmlspecialchars($clmsSneatBase, ENT_QUOTES, 'UTF-8'); ?>/assets/vendor/css/pages/page-auth.css" />
     <link rel="stylesheet" href="<?php echo htmlspecialchars($clmsWebBase, ENT_QUOTES, 'UTF-8'); ?>/public/assets/css/auth-public.css" />
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($clmsWebBase, ENT_QUOTES, 'UTF-8'); ?>/public/assets/css/custom.css" />
 
     <script src="<?php echo htmlspecialchars($clmsSneatBase, ENT_QUOTES, 'UTF-8'); ?>/assets/vendor/js/helpers.js"></script>
     <script src="<?php echo htmlspecialchars($clmsSneatBase, ENT_QUOTES, 'UTF-8'); ?>/assets/js/config.js"></script>

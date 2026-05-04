@@ -88,7 +88,7 @@ $showUpgradeToPro = false;
 ?>
     <style>
       body {
-        background: linear-gradient(180deg, var(--clms-cream) 0%, #f4f1df 100%);
+        background: linear-gradient(180deg, var(--clms-cream, #fdfcf0) 0%, #faf5f6 55%, #f4f1df 100%) !important;
       }
 
       .clms-auth-shell {
@@ -106,10 +106,25 @@ $showUpgradeToPro = false;
       }
 
       .clms-auth-panel {
-        background: linear-gradient(135deg, #0f204b 0%, #1a2f6b 100%);
+        background: linear-gradient(160deg, #4d0614 0%, #9b0c28 40%, #dc143c 92%);
         color: #fff;
         height: 100%;
         padding: 2rem;
+        position: relative;
+      }
+
+      .clms-auth-panel::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.07) 1px, transparent 0);
+        background-size: 22px 22px;
+        opacity: 0.45;
+        pointer-events: none;
+      }
+
+      .clms-auth-panel > * {
+        position: relative;
       }
 
       .clms-auth-panel h2 {
@@ -119,7 +134,7 @@ $showUpgradeToPro = false;
       }
 
       .clms-auth-panel p {
-        color: rgba(255, 255, 255, 0.85);
+        color: rgba(255, 255, 255, 0.88);
       }
 
       .clms-point {
@@ -127,13 +142,14 @@ $showUpgradeToPro = false;
         gap: .5rem;
         align-items: flex-start;
         margin-bottom: .9rem;
-        color: rgba(255, 255, 255, 0.9);
+        color: rgba(255, 255, 255, 0.92);
       }
 
       .clms-point i {
-        color: #cdd8ff;
+        color: #d4af37;
         font-size: 1.1rem;
         line-height: 1.2;
+        flex-shrink: 0;
       }
 
       .clms-auth-form {
@@ -142,7 +158,7 @@ $showUpgradeToPro = false;
       }
 
       .clms-auth-form h1 {
-        color: var(--clms-navy);
+        color: var(--clms-navy, #dc143c);
         font-size: 1.55rem;
         font-weight: 700;
         line-height: 1.2;
@@ -150,7 +166,7 @@ $showUpgradeToPro = false;
 
       @media (max-width: 991.98px) {
         .clms-auth-panel {
-          border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.2);
         }
       }
 
@@ -263,7 +279,7 @@ $showUpgradeToPro = false;
         icon: 'error',
         title: 'Registration Failed',
         text: <?php echo json_encode($formError, JSON_UNESCAPED_SLASHES); ?>,
-        confirmButtonColor: '#0f204b',
+        confirmButtonColor: '#b01030',
       });
     </script>
 <?php endif; ?>

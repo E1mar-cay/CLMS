@@ -25,6 +25,11 @@ if ($userFullName !== '') {
 if ($initials === '') {
     $initials = 'U';
 }
+
+$profileAvatarHref = '';
+if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) {
+    $profileAvatarHref = clms_avatar_resolve_url($profileUser['avatar_url'], $clmsWebBase);
+}
 ?>
               <div class="d-flex flex-wrap justify-content-between align-items-center py-3 mb-3 gap-2">
                 <div>
@@ -52,10 +57,24 @@ if ($initials === '') {
                 <div class="col-xl-4">
                   <div class="card">
                     <div class="card-body text-center">
-                      <div class="mx-auto mb-3 d-inline-flex align-items-center justify-content-center rounded-circle bg-label-primary"
+                      <div class="mx-auto mb-3 clms-profile-photo rounded-circle overflow-hidden bg-label-primary d-inline-flex align-items-center justify-content-center"
                            style="width: 96px; height: 96px; font-size: 2rem; font-weight: 600;">
+<?php if ($profileAvatarHref !== '') : ?>
+                        <img src="<?php echo htmlspecialchars($profileAvatarHref, ENT_QUOTES, 'UTF-8'); ?>" alt="" class="w-100 h-100" style="object-fit: cover;" width="96" height="96" />
+<?php else : ?>
                         <?php echo htmlspecialchars($initials, ENT_QUOTES, 'UTF-8'); ?>
+<?php endif; ?>
                       </div>
+                      <form method="post" enctype="multipart/form-data" action="" class="mb-3" id="profileAvatarForm">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                        <input type="hidden" name="action" value="upload_avatar" />
+                        <label for="avatar" class="form-label small text-muted mb-1">Profile photo</label>
+                        <input type="file" class="form-control form-control-sm" id="avatar" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required />
+                        <div class="form-text small">JPG, PNG, WEBP, or GIF. Square crop is applied automatically. Max 2MB.</div>
+                        <button type="submit" class="btn btn-sm btn-outline-primary mt-2">
+                          <i class="bx bx-upload me-1"></i>Upload photo
+                        </button>
+                      </form>
                       <h5 class="mb-1"><?php echo htmlspecialchars($userFullName !== '' ? $userFullName : 'Your Name', ENT_QUOTES, 'UTF-8'); ?></h5>
                       <p class="text-muted mb-2 small">
                         <?php echo htmlspecialchars((string) ($profileUser['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
@@ -214,11 +233,47 @@ if ($initials === '') {
                         showCancelButton: true,
                         confirmButtonText: 'Yes, save',
                         cancelButtonText: 'Cancel',
-                        confirmButtonColor: '#0f204b',
+                        confirmButtonColor: '#b01030',
                       }).then((result) => {
                         if (result.isConfirmed) {
                           infoForm.dataset.confirmed = '1';
                           infoForm.submit();
+                        }
+                      });
+                    });
+                  }
+
+                  const avatarForm = document.getElementById('profileAvatarForm');
+                  if (avatarForm) {
+                    avatarForm.addEventListener('submit', (event) => {
+                      if (avatarForm.dataset.confirmed === '1') return;
+                      event.preventDefault();
+                      const fileInput = document.getElementById('avatar');
+                      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                        return;
+                      }
+                      const maxBytes = 2097152;
+                      if (fileInput.files[0].size > maxBytes) {
+                        Swal.fire({
+                          icon: 'error',
+                          title: 'File too large',
+                          text: 'Please choose an image that is 2MB or smaller.',
+                          confirmButtonColor: '#b01030',
+                        });
+                        return;
+                      }
+                      Swal.fire({
+                        title: 'Update profile photo?',
+                        text: 'Your new picture will appear in the header for every page.',
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, upload',
+                        cancelButtonText: 'Cancel',
+                        confirmButtonColor: '#b01030',
+                      }).then((result) => {
+                        if (result.isConfirmed) {
+                          avatarForm.dataset.confirmed = '1';
+                          avatarForm.submit();
                         }
                       });
                     });
@@ -237,7 +292,7 @@ if ($initials === '') {
                           icon: 'error',
                           title: 'Passwords do not match',
                           text: 'New password and confirmation must be identical.',
-                          confirmButtonColor: '#0f204b',
+                          confirmButtonColor: '#b01030',
                         });
                         return;
                       }
@@ -249,7 +304,7 @@ if ($initials === '') {
                         showCancelButton: true,
                         confirmButtonText: 'Yes, change it',
                         cancelButtonText: 'Cancel',
-                        confirmButtonColor: '#0f204b',
+                        confirmButtonColor: '#b01030',
                       }).then((result) => {
                         if (result.isConfirmed) {
                           pwForm.dataset.confirmed = '1';

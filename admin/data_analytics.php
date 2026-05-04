@@ -109,6 +109,11 @@ foreach ($scoreBands as $band) {
     ];
 }
 
+$scoreBandChartLabels = [];
+for ($i = 0, $n = count($scoreBandCourses); $i < $n; $i++) {
+    $scoreBandChartLabels[] = 'module' . ($i + 1);
+}
+
 /**
  * Monthly pass-rate trend (GROUP BY year-month).
  */
@@ -261,6 +266,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                     overallFailed: <?php echo (int) $overallFailed; ?>,
                     scoreBandSeries: <?php echo json_encode($scoreBandSeries, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
                     scoreBandCourses: <?php echo json_encode($scoreBandCourses, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+                    scoreBandChartLabels: <?php echo json_encode($scoreBandChartLabels, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
                     passedPerCourse: <?php echo json_encode($passedPerCourse, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
                     failedPerCourse: <?php echo json_encode($failedPerCourse, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
                     trendLabels: <?php echo json_encode($trendLabels, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
@@ -313,7 +319,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                       plotOptions: { bar: { horizontal: false, columnWidth: '55%', borderRadius: 4 } },
                       dataLabels: { enabled: false },
                       series: chartData.scoreBandSeries,
-                      xaxis: { categories: chartData.scoreBandCourses },
+                      xaxis: { categories: chartData.scoreBandChartLabels },
                       colors: ['#71dd37', '#03c3ec', '#696cff', '#ffab00', '#ff3e1d'],
                       legend: { position: 'bottom' }
                     });

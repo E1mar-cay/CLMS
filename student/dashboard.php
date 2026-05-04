@@ -405,7 +405,7 @@ require_once __DIR__ . '/includes/layout-top.php';
               </div>
 
 <?php if ($activeAnnouncements !== []) : ?>
-              <div class="card mb-4 border-start border-primary border-3">
+              <div class="card mb-4 border-start border-primary border-3 clms-announcement-board">
                 <div class="card-body">
                   <div class="d-flex align-items-center mb-3">
                     <i class="bx bx-bell text-primary me-2"></i>

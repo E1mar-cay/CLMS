@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/avatar-helpers.php';
+
 /**
  * Shared layout navbar used by admin/instructor/student dashboards.
  *
@@ -83,6 +85,23 @@ if ($sessionRole === 'admin' && isset($pdo) && $pdo instanceof PDO) {
 $displayName = $sessionFirstName !== '' ? $sessionFirstName : ($sessionEmail !== '' ? explode('@', $sessionEmail)[0] : 'User');
 
 $initial = mb_strtoupper(mb_substr($displayName, 0, 1) ?: 'U');
+
+$sessionAvatarRelative = '';
+if ($sessionUserId > 0 && isset($pdo) && $pdo instanceof PDO) {
+    if (!array_key_exists('avatar_url', $_SESSION)) {
+        try {
+            clms_avatar_ensure_schema($pdo);
+            $avStmt = $pdo->prepare('SELECT avatar_url FROM users WHERE id = :id LIMIT 1');
+            $avStmt->execute(['id' => $sessionUserId]);
+            $avRow = $avStmt->fetch();
+            $_SESSION['avatar_url'] = (string) ($avRow['avatar_url'] ?? '');
+        } catch (Throwable $e) {
+            $_SESSION['avatar_url'] = '';
+        }
+    }
+    $sessionAvatarRelative = (string) ($_SESSION['avatar_url'] ?? '');
+}
+$sessionAvatarHref = $sessionAvatarRelative !== '' ? clms_avatar_resolve_url($sessionAvatarRelative, $clmsWebBase) : '';
 
 $roleLabelMap = [
     'admin' => 'Administrator',
@@ -282,7 +301,11 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                     aria-expanded="false">
                     <div class="d-flex align-items-center gap-2">
                       <div class="clms-avatar">
+<?php if ($sessionAvatarHref !== '') : ?>
+                        <img class="clms-avatar__img" src="<?php echo htmlspecialchars($sessionAvatarHref, ENT_QUOTES, 'UTF-8'); ?>" alt="" width="38" height="38" />
+<?php else : ?>
                         <?php echo htmlspecialchars($initial, ENT_QUOTES, 'UTF-8'); ?>
+<?php endif; ?>
                       </div>
                       <div class="d-none d-md-flex flex-column lh-sm text-start">
                         <span class="fw-semibold text-body"><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></span>
@@ -297,7 +320,11 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                       <div class="dropdown-item-text">
                         <div class="d-flex align-items-center gap-2">
                           <div class="clms-avatar clms-avatar-lg">
+<?php if ($sessionAvatarHref !== '') : ?>
+                            <img class="clms-avatar__img" src="<?php echo htmlspecialchars($sessionAvatarHref, ENT_QUOTES, 'UTF-8'); ?>" alt="" width="46" height="46" />
+<?php else : ?>
                             <?php echo htmlspecialchars($initial, ENT_QUOTES, 'UTF-8'); ?>
+<?php endif; ?>
                           </div>
                           <div class="flex-grow-1">
                             <div class="fw-semibold"><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -357,12 +384,12 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
             }
             .clms-navbar-search .clms-navbar-search-input.form-control:focus {
               background-color: #fff;
-              border-color: var(--clms-navy, #0f204b);
+              border-color: var(--clms-navy, #dc143c);
               box-shadow: 0 0 0 .15rem rgba(15, 32, 75, 0.12);
             }
             .clms-navbar-search-input:focus + .clms-navbar-search-kbd,
             .clms-navbar-search-wrapper:focus-within .clms-navbar-search-icon {
-              color: var(--clms-navy, #0f204b);
+              color: var(--clms-navy, #dc143c);
             }
             /* Hide the native search input clear "x" (we have our own UX) */
             .clms-navbar-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
@@ -390,10 +417,17 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
               justify-content: center;
               font-weight: 600;
               color: #fff;
-              background: linear-gradient(135deg, #0f204b 0%, #1f3a7a 100%);
+              background: linear-gradient(135deg, #b01030 0%, #dc143c 100%);
               box-shadow: 0 2px 6px rgba(15, 32, 75, 0.35);
               font-size: 1rem;
               user-select: none;
+              overflow: hidden;
+            }
+            .clms-avatar__img {
+              display: block;
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
             }
             .clms-avatar-lg { width: 46px; height: 46px; font-size: 1.15rem; }
             [data-search-hidden="true"] { display: none !important; }

@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/user-approval.php';
+require_once __DIR__ . '/avatar-helpers.php';
 
 const CLMS_REMEMBER_COOKIE = 'clms_remember';
 const CLMS_REMEMBER_LIFETIME_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -185,10 +186,12 @@ function clms_remember_try_autologin(): void
     try {
         clms_remember_init_schema($pdo);
         clms_user_approval_ensure_schema($pdo);
+        clms_avatar_ensure_schema($pdo);
 
         $stmt = $pdo->prepare(
             'SELECT t.id, t.user_id, t.validator_hash, t.expires_at,
-                    u.email, u.role, u.first_name, u.account_approval_status, u.account_is_disabled
+                    u.email, u.role, u.first_name, u.account_approval_status, u.account_is_disabled,
+                    u.avatar_url
              FROM auth_remember_tokens t
              INNER JOIN users u ON u.id = t.user_id
              WHERE t.selector = :sel
@@ -235,6 +238,7 @@ function clms_remember_try_autologin(): void
         $_SESSION['role'] = $role;
         $_SESSION['email'] = (string) ($row['email'] ?? '');
         $_SESSION['first_name'] = (string) ($row['first_name'] ?? '');
+        $_SESSION['avatar_url'] = (string) ($row['avatar_url'] ?? '');
 
         // Rotate: every successful auto-login gets a fresh token. Limits the
         // window a leaked cookie stays usable and lets us detect replays.

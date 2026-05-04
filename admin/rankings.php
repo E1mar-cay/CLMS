@@ -276,8 +276,8 @@ require_once __DIR__ . '/includes/layout-top.php';
 
                 <div class="card mb-4">
                   <div class="card-body">
-                    <form method="get" class="row g-2 align-items-end">
-                      <div class="col-md-6 col-lg-4">
+                    <form method="get" class="row g-3 align-items-end">
+                      <div class="col-12 col-xl-4">
                         <label for="course_id" class="form-label">Course</label>
                         <select id="course_id" name="course_id" class="form-select" onchange="this.form.submit()">
 <?php foreach ($courses as $course) : ?>
@@ -287,7 +287,7 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php endforeach; ?>
                         </select>
                       </div>
-                      <div class="col-md-3 col-lg-2">
+                      <div class="col-12 col-md-6 col-xl-2">
                         <label for="range" class="form-label">Date Range</label>
                         <select id="range" name="range" class="form-select" onchange="this.form.submit()">
                           <option value="this_semester" <?php echo $range === 'this_semester' ? 'selected' : ''; ?>>This Semester</option>
@@ -296,20 +296,23 @@ require_once __DIR__ . '/includes/layout-top.php';
                           <option value="custom" <?php echo $range === 'custom' ? 'selected' : ''; ?>>Custom</option>
                         </select>
                       </div>
-                      <div class="col-md-3 col-lg-2">
+                      <div class="col-12 col-md-6 col-xl-2">
                         <label for="date_from" class="form-label">From</label>
                         <input id="date_from" type="date" name="date_from" class="form-control" value="<?php echo htmlspecialchars($dateFromInput, ENT_QUOTES, 'UTF-8'); ?>" />
                       </div>
-                      <div class="col-md-3 col-lg-2">
+                      <div class="col-12 col-md-6 col-xl-2">
                         <label for="date_to" class="form-label">To</label>
                         <input id="date_to" type="date" name="date_to" class="form-control" value="<?php echo htmlspecialchars($dateToInput, ENT_QUOTES, 'UTF-8'); ?>" />
                       </div>
-                      <div class="col-md-3 col-lg-2 d-flex gap-2">
-                        <button type="submit" class="btn btn-outline-primary w-100">Apply</button>
-                        <a class="btn btn-outline-secondary w-100"
-                           href="<?php echo htmlspecialchars($clmsWebBase . '/admin/rankings.php?course_id=' . (int) $selectedCourseId . '&range=' . urlencode($range) . '&date_from=' . urlencode($dateFromInput) . '&date_to=' . urlencode($dateToInput) . '&export=csv', ENT_QUOTES, 'UTF-8'); ?>">
-                          Export CSV
-                        </a>
+                      <div class="col-12 col-md-6 col-xl-2">
+                        <span class="form-label d-none d-md-block" aria-hidden="true">&nbsp;</span>
+                        <div class="d-flex flex-column flex-sm-row gap-2">
+                          <button type="submit" class="btn btn-outline-primary flex-grow-1">Apply</button>
+                          <a class="btn btn-outline-secondary flex-grow-1 text-nowrap"
+                             href="<?php echo htmlspecialchars($clmsWebBase . '/admin/rankings.php?course_id=' . (int) $selectedCourseId . '&range=' . urlencode($range) . '&date_from=' . urlencode($dateFromInput) . '&date_to=' . urlencode($dateToInput) . '&export=csv', ENT_QUOTES, 'UTF-8'); ?>">
+                            Export CSV
+                          </a>
+                        </div>
                       </div>
                     </form>
                   </div>

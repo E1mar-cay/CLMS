@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/sneat-paths.php';
+require_once __DIR__ . '/avatar-helpers.php';
+
 /**
  * Shared profile logic for admin/instructor/student profile pages.
  *
@@ -10,7 +13,7 @@ declare(strict_types=1);
  *  - called clms_require_roles(...)
  *
  * Provides these variables to the following view:
- *  - $profileUser        array|null  current DB row (id, role, first_name, last_name, email)
+ *  - $profileUser        array|null  current DB row (id, role, first_name, last_name, email, avatar_url)
  *  - $profileSuccess     string      success flash
  *  - $profileError       string      error message
  *  - $profileFormValues  array       sticky form values
@@ -30,8 +33,10 @@ if ($currentUserId <= 0) {
     clms_redirect('login.php');
 }
 
+clms_avatar_ensure_schema($pdo);
+
 try {
-    $userStmt = $pdo->prepare('SELECT id, role, first_name, last_name, email FROM users WHERE id = :id LIMIT 1');
+    $userStmt = $pdo->prepare('SELECT id, role, first_name, last_name, email, avatar_url FROM users WHERE id = :id LIMIT 1');
     $userStmt->execute(['id' => $currentUserId]);
     $profileUser = $userStmt->fetch();
 } catch (Throwable $e) {
@@ -56,7 +61,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $profileUser) {
         $action = (string) ($_POST['action'] ?? '');
 
         try {
-            if ($action === 'update_profile') {
+            if ($action === 'upload_avatar') {
+                $avatarWebDir = '/public/assets/uploads/avatars';
+                $avatarFsDir = dirname(__DIR__) . str_replace('/', DIRECTORY_SEPARATOR, $avatarWebDir);
+                if (!isset($_FILES['avatar']) || !is_array($_FILES['avatar'])) {
+                    throw new RuntimeException('Choose an image file to upload.');
+                }
+                $err = clms_avatar_save_uploaded_file($currentUserId, $_FILES['avatar'], $avatarFsDir);
+                if ($err !== '') {
+                    throw new RuntimeException($err);
+                }
+                $relative = $avatarWebDir . '/user-' . $currentUserId . '.jpg';
+                $updateAvatarStmt = $pdo->prepare('UPDATE users SET avatar_url = :u WHERE id = :id');
+                $updateAvatarStmt->execute(['u' => $relative, 'id' => $currentUserId]);
+                $_SESSION['avatar_url'] = $relative;
+                $profileUser['avatar_url'] = $relative;
+                $profileSuccess = 'Profile photo updated.';
+            } elseif ($action === 'update_profile') {
                 $firstName = trim((string) ($_POST['first_name'] ?? ''));
                 $lastName = trim((string) ($_POST['last_name'] ?? ''));
                 $email = trim((string) ($_POST['email'] ?? ''));
