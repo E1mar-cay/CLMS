@@ -6,7 +6,8 @@ declare(strict_types=1);
  * Replaceable partial for the "All Students" card body.
  *
  * Rendered both as part of the full page and as a standalone response when
- * `admin/students.php?ajax=1` is requested. Keeping it in its own file means
+ * `admin/students.php?ajax=1` is requested (list only; not `progress=1`).
+ * Keeping it in its own file means
  * the markup stays in one place and server-side rendering drives the AJAX
  * swap (no duplicate HTML templates on the client).
  *
@@ -14,6 +15,7 @@ declare(strict_types=1);
  *   - $students (array), $totalRows (int), $totalPages (int), $page (int)
  *   - $offset (int), $perPage (int), $totalModulesOverall (int)
  *   - $searchQuery (string), $queryBase (array), $paginationBase (array)
+ *   - $filterBatch (string), $filterAccount (string), $filterApproval (string)
  *   - $clmsWebBase (string, from includes/sneat-paths.php via header.php OR
  *       manually required here for standalone AJAX calls)
  */
@@ -23,20 +25,44 @@ if (!isset($clmsWebBase)) {
        not run yet, so derive the web base the same way header.php does. */
     require_once dirname(__DIR__, 2) . '/includes/sneat-paths.php';
 }
+
+$filterBatch = $filterBatch ?? '';
+$filterAccount = $filterAccount ?? '';
+$filterApproval = $filterApproval ?? '';
 ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
   <small class="text-muted">
     Showing <?php echo $totalRows === 0 ? 0 : ($offset + 1); ?>&ndash;<?php echo min($offset + $perPage, $totalRows); ?> of <?php echo $totalRows; ?> student(s)<?php if ($searchQuery !== '') : ?>
       for &quot;<strong><?php echo htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8'); ?></strong>&quot;
     <?php endif; ?>
+    <?php if ($filterBatch === '__none__') : ?>
+      <span class="ms-1">· Unspecified batch</span>
+    <?php elseif ($filterBatch !== '') : ?>
+      <span class="ms-1">· Batch <strong><?php echo htmlspecialchars($filterBatch, ENT_QUOTES, 'UTF-8'); ?></strong></span>
+    <?php endif; ?>
+    <?php if ($filterAccount === 'active') : ?>
+      <span class="ms-1">· Active accounts</span>
+    <?php elseif ($filterAccount === 'disabled') : ?>
+      <span class="ms-1">· Disabled accounts</span>
+    <?php endif; ?>
+    <?php if ($filterApproval !== '') : ?>
+      <span class="ms-1">· Approval: <strong><?php echo htmlspecialchars(ucfirst($filterApproval), ENT_QUOTES, 'UTF-8'); ?></strong></span>
+    <?php endif; ?>
   </small>
 </div>
 
 <?php if ($students === []) : ?>
   <p class="mb-0 text-muted">
-    <?php echo $searchQuery !== ''
-        ? 'No students match your search.'
-        : 'No students found.'; ?>
+    <?php
+    $hasOtherFilters = $filterBatch !== '' || $filterAccount !== '' || $filterApproval !== '';
+    if ($searchQuery !== '') {
+        echo 'No students match your search.';
+    } elseif ($hasOtherFilters) {
+        echo 'No students match the current filters.';
+    } else {
+        echo 'No students found.';
+    }
+    ?>
   </p>
 <?php else : ?>
   <div class="table-responsive">
@@ -59,17 +85,12 @@ if (!isset($clmsWebBase)) {
     $rowNumber = $offset + $index + 1;
     $modulesDone = (int) $student['modules_completed'];
     $avgScore = (float) $student['avg_score'];
-    $detailParams = $queryBase;
-    $detailParams['student_id'] = (int) $student['id'];
-    if ($page > 1) {
-        $detailParams['page'] = $page;
-    }
-    $detailUrl = $clmsWebBase . '/admin/students.php?' . http_build_query($detailParams);
     $fullName = trim((string) $student['first_name'] . ' ' . (string) $student['last_name']);
+    $studentEmail = (string) $student['email'];
 ?>
         <tr
           data-search-item
-          data-search-text="<?php echo htmlspecialchars($fullName . ' ' . (string) $student['email'], ENT_QUOTES, 'UTF-8'); ?>">
+          data-search-text="<?php echo htmlspecialchars($fullName . ' ' . $studentEmail, ENT_QUOTES, 'UTF-8'); ?>">
           <td><?php echo $rowNumber; ?></td>
           <td><?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?></td>
           <td><?php echo htmlspecialchars((string) $student['email'], ENT_QUOTES, 'UTF-8'); ?></td>
@@ -78,9 +99,14 @@ if (!isset($clmsWebBase)) {
           <td><?php echo (int) $student['attempts_total']; ?></td>
           <td><?php echo (int) $student['certificates_count']; ?></td>
           <td class="text-end">
-            <a href="<?php echo htmlspecialchars($detailUrl, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-sm btn-outline-primary">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary clms-student-progress-btn"
+              data-student-id="<?php echo (int) $student['id']; ?>"
+              data-student-name="<?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?>"
+              data-student-email="<?php echo htmlspecialchars($studentEmail, ENT_QUOTES, 'UTF-8'); ?>">
               <i class="bx bx-show"></i> View Progress
-            </a>
+            </button>
           </td>
         </tr>
 <?php endforeach; ?>

@@ -4,23 +4,52 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
+require_once dirname(__DIR__) . '/includes/user-approval.php';
+require_once dirname(__DIR__) . '/includes/student-batch-schema.php';
 
 clms_require_roles(['admin', 'instructor']);
+clms_user_approval_ensure_schema($pdo);
+clms_ensure_users_student_batch_column($pdo);
 
 $pageTitle = 'Students | Criminology LMS';
 $activeAdminPage = 'students';
 
-/* AJAX partial mode: when `?ajax=1` is passed we skip the page chrome and
-   render only the students-list card body (rows + pagination). This is what
-   the real-time search JS fetches to swap into the DOM without a reload. */
-$isAjaxRequest = !empty($_GET['ajax']);
+/* AJAX modes:
+   - `?ajax=1` — list partial for #clms-students-partial (search / pagination).
+   - `?ajax=1&progress=1&student_id=N` — modal body HTML for View Progress. */
+$isListAjax = !empty($_GET['ajax']) && empty($_GET['progress']);
+$isProgressAjax = !empty($_GET['ajax']) && isset($_GET['progress']) && (string) $_GET['progress'] === '1';
 
 $searchQuery = trim((string) ($_GET['q'] ?? ''));
 $page = (int) filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
 $perPage = 10;
 $offset = ($page - 1) * $perPage;
 
-$selectedStudentId = (int) filter_input(INPUT_GET, 'student_id', FILTER_VALIDATE_INT, ['options' => ['default' => 0, 'min_range' => 1]]);
+$studentsPageUrlStudentId = (int) filter_input(INPUT_GET, 'student_id', FILTER_VALIDATE_INT, ['options' => ['default' => 0, 'min_range' => 1]]);
+
+$filterAccount = trim((string) ($_GET['account'] ?? ''));
+if ($filterAccount !== '' && !in_array($filterAccount, ['active', 'disabled'], true)) {
+    $filterAccount = '';
+}
+$filterApproval = strtolower(trim((string) ($_GET['approval'] ?? '')));
+if ($filterApproval !== '' && !in_array($filterApproval, ['pending', 'approved', 'rejected'], true)) {
+    $filterApproval = '';
+}
+$filterBatchRaw = (string) ($_GET['batch'] ?? '');
+$filterBatch = '';
+if ($filterBatchRaw === '__none__') {
+    $filterBatch = '__none__';
+} else {
+    $filterBatchTrim = trim($filterBatchRaw);
+    if ($filterBatchTrim !== '') {
+        $blen = function_exists('mb_strlen')
+            ? mb_strlen($filterBatchTrim, 'UTF-8')
+            : strlen($filterBatchTrim);
+        if ($blen <= 80) {
+            $filterBatch = $filterBatchTrim;
+        }
+    }
+}
 
 $whereSql = "WHERE u.role = 'student'";
 $params = [];
@@ -31,6 +60,25 @@ if ($searchQuery !== '') {
     $params['search_last'] = $likeValue;
     $params['search_email'] = $likeValue;
     $params['search_full'] = $likeValue;
+}
+if ($filterAccount === 'active') {
+    $whereSql .= ' AND (COALESCE(u.account_is_disabled, 0) = 0)';
+} elseif ($filterAccount === 'disabled') {
+    $whereSql .= ' AND u.account_is_disabled = 1';
+}
+if ($filterApproval !== '') {
+    $whereSql .= ' AND u.account_approval_status = :f_approval';
+    $params['f_approval'] = $filterApproval;
+}
+if ($filterBatch !== '') {
+    if ($filterBatch === '__none__') {
+        $whereSql .= " AND (u.student_batch IS NULL OR TRIM(COALESCE(u.student_batch, '')) = '')";
+    } else {
+        $whereSql .= ' AND LOWER(TRIM(COALESCE(u.student_batch, \'\'))) = :f_batch_lc';
+        $params['f_batch_lc'] = function_exists('mb_strtolower')
+            ? mb_strtolower($filterBatch, 'UTF-8')
+            : strtolower($filterBatch);
+    }
 }
 
 $countStmt = $pdo->prepare(
@@ -77,17 +125,59 @@ $students = $studentStmt->fetchAll();
 $totalModulesStmt = $pdo->query('SELECT COUNT(*) AS total FROM modules');
 $totalModulesOverall = (int) ($totalModulesStmt->fetch()['total'] ?? 0);
 
-$selectedStudent = null;
-$courseProgress = [];
-$recentAttempts = [];
-if ($selectedStudentId > 0) {
+$studentBatchFilterOptions = [];
+try {
+    $sbStmt = $pdo->query(
+        "SELECT DISTINCT TRIM(student_batch) AS b
+         FROM users
+         WHERE role = 'student'
+           AND TRIM(COALESCE(student_batch, '')) <> ''
+         ORDER BY b ASC"
+    );
+    foreach ($sbStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $b = (string) ($row['b'] ?? '');
+        if ($b !== '') {
+            $studentBatchFilterOptions[] = $b;
+        }
+    }
+} catch (Throwable $e) {
+    $studentBatchFilterOptions = [];
+}
+
+$queryBase = [];
+if ($searchQuery !== '') {
+    $queryBase['q'] = $searchQuery;
+}
+if ($filterAccount !== '') {
+    $queryBase['account'] = $filterAccount;
+}
+if ($filterApproval !== '') {
+    $queryBase['approval'] = $filterApproval;
+}
+if ($filterBatch !== '') {
+    $queryBase['batch'] = $filterBatch;
+}
+$paginationBase = $queryBase;
+
+if ($isProgressAjax) {
+    header('Content-Type: text/html; charset=UTF-8');
+    header('Cache-Control: no-store');
+    $progressStudentId = (int) filter_input(INPUT_GET, 'student_id', FILTER_VALIDATE_INT, ['options' => ['default' => 0, 'min_range' => 1]]);
+    $selectedStudent = null;
+    $courseProgress = [];
+    $recentAttempts = [];
+    if ($progressStudentId <= 0) {
+        http_response_code(400);
+        echo '<p class="text-danger mb-0">Invalid student.</p>';
+        return;
+    }
     $selectedStmt = $pdo->prepare(
         "SELECT id, first_name, last_name, email, created_at
          FROM users
          WHERE id = :id AND role = 'student'
          LIMIT 1"
     );
-    $selectedStmt->execute(['id' => $selectedStudentId]);
+    $selectedStmt->execute(['id' => $progressStudentId]);
     $selectedStudent = $selectedStmt->fetch() ?: null;
 
     if ($selectedStudent !== null) {
@@ -107,8 +197,8 @@ if ($selectedStudentId > 0) {
              ORDER BY c.title ASC"
         );
         $progressStmt->execute([
-            'user_id_progress' => $selectedStudentId,
-            'user_id_attempt' => $selectedStudentId,
+            'user_id_progress' => $progressStudentId,
+            'user_id_attempt' => $progressStudentId,
         ]);
         $courseProgress = $progressStmt->fetchAll();
 
@@ -120,21 +210,14 @@ if ($selectedStudentId > 0) {
              ORDER BY ea.attempted_at DESC
              LIMIT 5"
         );
-        $attemptsStmt->execute(['user_id' => $selectedStudentId]);
+        $attemptsStmt->execute(['user_id' => $progressStudentId]);
         $recentAttempts = $attemptsStmt->fetchAll();
     }
+    require __DIR__ . '/includes/students-progress-modal-body.php';
+    return;
 }
 
-$queryBase = [];
-if ($searchQuery !== '') {
-    $queryBase['q'] = $searchQuery;
-}
-$paginationBase = $queryBase;
-
-if ($isAjaxRequest) {
-    /* Partial response: just the replaceable card body. No layout, no
-       selected-student card, no headers — the client swaps this into
-       #clms-students-partial. */
+if ($isListAjax) {
     header('Content-Type: text/html; charset=UTF-8');
     header('Cache-Control: no-store');
     require __DIR__ . '/includes/students-list-partial.php';
@@ -150,119 +233,25 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
               </div>
 
-<?php if ($selectedStudent !== null) : ?>
-              <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                  <div>
-                    <h5 class="mb-0">
-                      <?php echo htmlspecialchars(trim((string) $selectedStudent['first_name'] . ' ' . (string) $selectedStudent['last_name']), ENT_QUOTES, 'UTF-8'); ?>
-                    </h5>
-                    <small class="text-muted"><?php echo htmlspecialchars((string) $selectedStudent['email'], ENT_QUOTES, 'UTF-8'); ?></small>
+              <div class="modal fade" id="clmsStudentProgressModal" tabindex="-1" aria-labelledby="clmsStudentProgressModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <div class="pe-3">
+                        <h5 class="modal-title" id="clmsStudentProgressModalLabel">Student progress</h5>
+                        <small class="text-muted d-block d-none" id="clmsStudentProgressModalEmail"></small>
+                      </div>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="clmsStudentProgressModalBody">
+                      <div class="text-center py-4 text-muted" id="clmsStudentProgressModalPlaceholder">
+                        <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                        <span class="visually-hidden">Loading…</span>
+                      </div>
+                    </div>
                   </div>
-                  <a
-                    href="<?php echo htmlspecialchars($clmsWebBase . '/admin/students.php' . ($queryBase !== [] ? '?' . http_build_query($queryBase) : ''), ENT_QUOTES, 'UTF-8'); ?>"
-                    class="btn btn-outline-secondary btn-sm">
-                    <i class="bx bx-x"></i> Close
-                  </a>
-                </div>
-                <div class="card-body">
-                  <h6 class="mb-3">Course Progress</h6>
-<?php if ($courseProgress === []) : ?>
-                  <p class="text-muted mb-4">No course progress yet.</p>
-<?php else : ?>
-                  <div class="table-responsive mb-4">
-                    <table class="table table-sm align-middle">
-                      <thead>
-                        <tr>
-                          <th>Course</th>
-                          <th>Modules</th>
-                          <th>Completion</th>
-                          <th>Best Score</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-<?php foreach ($courseProgress as $progressRow) : ?>
-<?php
-    $totalModules = (int) $progressRow['total_modules'];
-    $completedModules = (int) $progressRow['completed_modules'];
-    $percent = $totalModules > 0 ? (int) round(($completedModules / $totalModules) * 100) : 0;
-    $bestScore = $progressRow['best_score'] !== null ? (float) $progressRow['best_score'] : null;
-    $hasPassed = (int) $progressRow['has_passed'] === 1;
-?>
-                        <tr>
-                          <td><?php echo htmlspecialchars((string) $progressRow['course_title'], ENT_QUOTES, 'UTF-8'); ?></td>
-                          <td><?php echo $completedModules; ?> / <?php echo $totalModules; ?></td>
-                          <td style="min-width: 160px;">
-                            <div class="progress" style="height: 6px;">
-                              <div class="progress-bar bg-primary" role="progressbar" style="width: <?php echo $percent; ?>%;" aria-valuenow="<?php echo $percent; ?>" aria-valuemin="0" aria-valuemax="100"></div>
-                            </div>
-                            <small class="text-muted"><?php echo $percent; ?>%</small>
-                          </td>
-                          <td><?php echo $bestScore !== null ? number_format($bestScore, 2) . '%' : '—'; ?></td>
-                          <td>
-                            <span class="badge <?php echo $hasPassed ? 'bg-label-success' : 'bg-label-warning'; ?>">
-                              <?php echo $hasPassed ? 'Passed' : 'In Progress'; ?>
-                            </span>
-                          </td>
-                        </tr>
-<?php endforeach; ?>
-                      </tbody>
-                    </table>
-                  </div>
-<?php endif; ?>
-
-                  <h6 class="mb-3">Recent Exam Attempts</h6>
-<?php if ($recentAttempts === []) : ?>
-                  <p class="text-muted mb-0">No exam attempts recorded.</p>
-<?php else : ?>
-                  <div class="table-responsive">
-                    <table class="table table-sm align-middle">
-                      <thead>
-                        <tr>
-                          <th>Course</th>
-                          <th>Status</th>
-                          <th>Score</th>
-                          <th>Started</th>
-                          <th>Completed</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-<?php foreach ($recentAttempts as $attempt) : ?>
-                        <tr>
-                          <td><?php echo htmlspecialchars((string) $attempt['course_title'], ENT_QUOTES, 'UTF-8'); ?></td>
-                          <td>
-                            <span class="badge bg-label-<?php echo (string) $attempt['status'] === 'completed' ? 'success' : ((string) $attempt['status'] === 'in_progress' ? 'info' : 'warning'); ?>">
-                              <?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', (string) $attempt['status'])), ENT_QUOTES, 'UTF-8'); ?>
-                            </span>
-                          </td>
-                          <td>
-<?php if ($attempt['total_score'] !== null) : ?>
-                            <?php echo number_format((float) $attempt['total_score'], 2); ?>%
-                            <?php if ((int) $attempt['is_passed'] === 1) : ?>
-                              <i class="bx bx-check-circle text-success"></i>
-                            <?php endif; ?>
-<?php else : ?>
-                            —
-<?php endif; ?>
-                          </td>
-                          <td><?php echo htmlspecialchars((string) date('M j, Y g:i A', strtotime((string) $attempt['attempted_at']) ?: time()), ENT_QUOTES, 'UTF-8'); ?></td>
-                          <td>
-<?php if ($attempt['completed_at'] !== null) : ?>
-                            <?php echo htmlspecialchars((string) date('M j, Y g:i A', strtotime((string) $attempt['completed_at']) ?: time()), ENT_QUOTES, 'UTF-8'); ?>
-<?php else : ?>
-                            —
-<?php endif; ?>
-                          </td>
-                        </tr>
-<?php endforeach; ?>
-                      </tbody>
-                    </table>
-                  </div>
-<?php endif; ?>
                 </div>
               </div>
-<?php endif; ?>
 
               <div class="card" id="clms-students-card">
                 <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -270,9 +259,32 @@ require_once __DIR__ . '/includes/layout-top.php';
                   <form
                     method="get"
                     action="<?php echo htmlspecialchars($clmsWebBase . '/admin/students.php', ENT_QUOTES, 'UTF-8'); ?>"
-                    class="d-flex gap-2 align-items-center"
+                    class="d-flex flex-wrap gap-2 align-items-center clms-students-toolbar-form"
                     id="clms-students-search-form"
                     role="search">
+                    <div class="d-flex flex-wrap gap-2 align-items-center clms-students-filters">
+                      <label class="visually-hidden" for="clms-students-filter-batch">Batch</label>
+                      <select class="form-select form-select-sm clms-students-filter-select" name="batch" id="clms-students-filter-batch" title="Batch / cohort">
+                        <option value=""<?php echo $filterBatch === '' ? ' selected' : ''; ?>>All batches</option>
+                        <option value="__none__"<?php echo $filterBatch === '__none__' ? ' selected' : ''; ?>>Unspecified batch</option>
+<?php foreach ($studentBatchFilterOptions as $batchOpt) : ?>
+                        <option value="<?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $filterBatch === $batchOpt ? ' selected' : ''; ?>><?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?></option>
+<?php endforeach; ?>
+                      </select>
+                      <label class="visually-hidden" for="clms-students-filter-account">Account</label>
+                      <select class="form-select form-select-sm clms-students-filter-select" name="account" id="clms-students-filter-account" title="Account status">
+                        <option value=""<?php echo $filterAccount === '' ? ' selected' : ''; ?>>All accounts</option>
+                        <option value="active"<?php echo $filterAccount === 'active' ? ' selected' : ''; ?>>Active only</option>
+                        <option value="disabled"<?php echo $filterAccount === 'disabled' ? ' selected' : ''; ?>>Disabled only</option>
+                      </select>
+                      <label class="visually-hidden" for="clms-students-filter-approval">Approval</label>
+                      <select class="form-select form-select-sm clms-students-filter-select" name="approval" id="clms-students-filter-approval" title="Registration approval">
+                        <option value=""<?php echo $filterApproval === '' ? ' selected' : ''; ?>>All approval states</option>
+                        <option value="pending"<?php echo $filterApproval === 'pending' ? ' selected' : ''; ?>>Pending</option>
+                        <option value="approved"<?php echo $filterApproval === 'approved' ? ' selected' : ''; ?>>Approved</option>
+                        <option value="rejected"<?php echo $filterApproval === 'rejected' ? ' selected' : ''; ?>>Rejected</option>
+                      </select>
+                    </div>
                     <div class="clms-students-search-field">
                       <i class="bx bx-search clms-students-search-icon"></i>
                       <input
@@ -323,6 +335,18 @@ require_once __DIR__ . '/includes/layout-top.php';
                         top: 50%;
                         transform: translateY(-50%);
                       }
+                      .clms-students-toolbar-form {
+                        justify-content: flex-end;
+                      }
+                      .clms-students-filter-select {
+                        width: auto;
+                        min-width: 7.5rem;
+                        max-width: 12rem;
+                      }
+                      #clms-students-filter-batch {
+                        min-width: 9.5rem;
+                        max-width: 14rem;
+                      }
                     </style>
                     <button
                       type="button"
@@ -342,28 +366,79 @@ require_once __DIR__ . '/includes/layout-top.php';
 
               <script>
                 (() => {
-                  const form      = document.getElementById('clms-students-search-form');
-                  const input     = document.getElementById('clms-students-search-input');
-                  const spinner   = document.getElementById('clms-students-search-spinner');
-                  const clearBtn  = document.getElementById('clms-students-search-clear');
-                  const partial   = document.getElementById('clms-students-partial');
+                  const form = document.getElementById('clms-students-search-form');
+                  const input = document.getElementById('clms-students-search-input');
+                  const spinner = document.getElementById('clms-students-search-spinner');
+                  const clearBtn = document.getElementById('clms-students-search-clear');
+                  const partial = document.getElementById('clms-students-partial');
+                  const batchSel = document.getElementById('clms-students-filter-batch');
+                  const accountSel = document.getElementById('clms-students-filter-account');
+                  const approvalSel = document.getElementById('clms-students-filter-approval');
+                  const progressModalEl = document.getElementById('clmsStudentProgressModal');
+                  const progressModalBody = document.getElementById('clmsStudentProgressModalBody');
+                  const progressModalTitle = document.getElementById('clmsStudentProgressModalLabel');
+                  const progressModalEmail = document.getElementById('clmsStudentProgressModalEmail');
                   if (!form || !input || !partial) return;
 
                   const endpoint = <?php echo json_encode($clmsWebBase . '/admin/students.php', JSON_UNESCAPED_SLASHES); ?>;
                   let currentPage = <?php echo (int) $page; ?>;
-                  let debounceId  = null;
-                  let inFlight    = null;
+                  let debounceId = null;
+                  let inFlight = null;
+                  let progressInFlight = null;
 
-                  /* Build the URL for both the AJAX fetch and the address-bar
-                     history update. They differ only by the `ajax=1` flag. */
-                  const buildUrl = (ajax, { q, page, studentId }) => {
+                  const loadingProgressHtml =
+                    '<div class="text-center py-4 text-muted" id="clmsStudentProgressModalPlaceholder">' +
+                    '<div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>' +
+                    '<span class="visually-hidden">Loading…</span></div>';
+
+                  const readListFilters = () => ({
+                    q: input.value.trim(),
+                    batch: batchSel ? batchSel.value : '',
+                    account: accountSel ? accountSel.value : '',
+                    approval: approvalSel ? approvalSel.value : ''
+                  });
+
+                  const buildListFetchUrl = (f) => {
                     const params = new URLSearchParams();
-                    if (q) params.set('q', q);
-                    if (page && page > 1) params.set('page', String(page));
-                    if (studentId) params.set('student_id', String(studentId));
-                    if (ajax) params.set('ajax', '1');
+                    if (f.q) params.set('q', f.q);
+                    if (f.page > 1) params.set('page', String(f.page));
+                    if (f.batch) params.set('batch', f.batch);
+                    if (f.account) params.set('account', f.account);
+                    if (f.approval) params.set('approval', f.approval);
+                    params.set('ajax', '1');
+                    return `${endpoint}?${params.toString()}`;
+                  };
+
+                  const buildPageUrl = (f) => {
+                    const params = new URLSearchParams();
+                    if (f.q) params.set('q', f.q);
+                    if (f.page > 1) params.set('page', String(f.page));
+                    if (f.batch) params.set('batch', f.batch);
+                    if (f.account) params.set('account', f.account);
+                    if (f.approval) params.set('approval', f.approval);
+                    if (f.studentId) params.set('student_id', String(f.studentId));
                     const qs = params.toString();
                     return qs ? `${endpoint}?${qs}` : endpoint;
+                  };
+
+                  const buildProgressFetchUrl = (studentId) =>
+                    `${endpoint}?ajax=1&progress=1&student_id=${encodeURIComponent(String(studentId))}`;
+
+                  const applyProgressHeaderFromMeta = (bodyEl) => {
+                    if (!progressModalTitle || !progressModalEmail) return;
+                    const meta = bodyEl.querySelector('[data-clms-progress-name]');
+                    if (meta) {
+                      const n = meta.getAttribute('data-clms-progress-name') || '';
+                      const e = meta.getAttribute('data-clms-progress-email') || '';
+                      progressModalTitle.textContent = n || 'Student progress';
+                      if (e) {
+                        progressModalEmail.textContent = e;
+                        progressModalEmail.classList.remove('d-none');
+                      } else {
+                        progressModalEmail.textContent = '';
+                        progressModalEmail.classList.add('d-none');
+                      }
+                    }
                   };
 
                   const setBusy = (busy) => {
@@ -372,27 +447,24 @@ require_once __DIR__ . '/includes/layout-top.php';
                     if (spinner) spinner.classList.toggle('d-none', !busy);
                   };
 
-                  const fetchAndSwap = async ({ q, page }) => {
+                  const fetchAndSwap = async (patch = {}) => {
                     if (inFlight) inFlight.abort();
                     const controller = new AbortController();
                     inFlight = controller;
+                    const f = { ...readListFilters(), page: currentPage, ...patch };
+                    if (f.page < 1) f.page = 1;
                     setBusy(true);
                     try {
-                      const response = await fetch(
-                        buildUrl(true, { q, page }),
-                        { signal: controller.signal, credentials: 'same-origin' }
-                      );
+                      const response = await fetch(buildListFetchUrl(f), {
+                        signal: controller.signal,
+                        credentials: 'same-origin'
+                      });
                       if (!response.ok) throw new Error(`HTTP ${response.status}`);
                       const html = await response.text();
                       partial.innerHTML = html;
-                      currentPage = page || 1;
+                      currentPage = f.page;
+                      history.replaceState(null, '', buildPageUrl({ ...f, studentId: 0 }));
 
-                      /* Keep the address bar in sync so refresh / share still
-                         land on the same filtered view. */
-                      history.replaceState(null, '', buildUrl(false, { q, page }));
-
-                      /* Let the navbar search (data-search-item) re-apply any
-                         active client-side filter against the new rows. */
                       const navbarSearch = document.getElementById('clmsNavbarSearch');
                       if (navbarSearch && navbarSearch.value) {
                         navbarSearch.dispatchEvent(new Event('input'));
@@ -410,36 +482,111 @@ require_once __DIR__ . '/includes/layout-top.php';
                     }
                   };
 
-                  /* Debounced input: 250ms feels responsive without hammering
-                     the DB on every keystroke. Each new keystroke resets the
-                     page to 1 (starting a new search should always land on
-                     the first page). */
+                  const openProgressModal = async (studentId, nameHint, emailHint) => {
+                    if (!progressModalEl || !progressModalBody || studentId < 1) return;
+                    if (progressModalTitle) {
+                      progressModalTitle.textContent = nameHint || 'Student progress';
+                    }
+                    if (progressModalEmail) {
+                      if (emailHint) {
+                        progressModalEmail.textContent = emailHint;
+                        progressModalEmail.classList.remove('d-none');
+                      } else {
+                        progressModalEmail.textContent = '';
+                        progressModalEmail.classList.add('d-none');
+                      }
+                    }
+                    progressModalBody.innerHTML = loadingProgressHtml;
+                    history.replaceState(
+                      null,
+                      '',
+                      buildPageUrl({ ...readListFilters(), page: currentPage, studentId })
+                    );
+                    if (window.bootstrap && bootstrap.Modal) {
+                      bootstrap.Modal.getOrCreateInstance(progressModalEl).show();
+                    }
+                    if (progressInFlight) progressInFlight.abort();
+                    const controller = new AbortController();
+                    progressInFlight = controller;
+                    try {
+                      const response = await fetch(buildProgressFetchUrl(studentId), {
+                        signal: controller.signal,
+                        credentials: 'same-origin'
+                      });
+                      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                      const html = await response.text();
+                      progressModalBody.innerHTML = html;
+                      applyProgressHeaderFromMeta(progressModalBody);
+                    } catch (err) {
+                      if (err.name !== 'AbortError') {
+                        progressModalBody.innerHTML =
+                          '<p class="text-danger mb-0"><i class="bx bx-error-circle me-1"></i>Could not load progress. Please try again.</p>';
+                      }
+                    } finally {
+                      if (progressInFlight === controller) progressInFlight = null;
+                    }
+                  };
+
+                  if (progressModalEl) {
+                    progressModalEl.addEventListener('hidden.bs.modal', () => {
+                      if (progressInFlight) progressInFlight.abort();
+                      progressModalBody.innerHTML = loadingProgressHtml;
+                      history.replaceState(null, '', buildPageUrl({ ...readListFilters(), page: currentPage }));
+                    });
+                  }
+
                   input.addEventListener('input', () => {
                     clearTimeout(debounceId);
                     const q = input.value.trim();
-                    clearBtn.classList.toggle('d-none', q === '');
+                    if (clearBtn) clearBtn.classList.toggle('d-none', q === '');
                     debounceId = setTimeout(() => fetchAndSwap({ q, page: 1 }), 250);
                   });
 
-                  /* Enter on the input should just flush the pending request
-                     immediately rather than submit the form (full reload). */
                   form.addEventListener('submit', (event) => {
                     event.preventDefault();
                     clearTimeout(debounceId);
-                    fetchAndSwap({ q: input.value.trim(), page: 1 });
+                    fetchAndSwap({ page: 1 });
                   });
 
-                  clearBtn.addEventListener('click', () => {
-                    input.value = '';
-                    clearBtn.classList.add('d-none');
-                    clearTimeout(debounceId);
-                    fetchAndSwap({ q: '', page: 1 });
-                    input.focus();
-                  });
+                  if (batchSel) {
+                    batchSel.addEventListener('change', () => {
+                      clearTimeout(debounceId);
+                      fetchAndSwap({ page: 1 });
+                    });
+                  }
+                  if (accountSel) {
+                    accountSel.addEventListener('change', () => {
+                      clearTimeout(debounceId);
+                      fetchAndSwap({ page: 1 });
+                    });
+                  }
+                  if (approvalSel) {
+                    approvalSel.addEventListener('change', () => {
+                      clearTimeout(debounceId);
+                      fetchAndSwap({ page: 1 });
+                    });
+                  }
 
-                  /* Delegate pagination clicks so links inserted by the AJAX
-                     swap keep working without re-binding on every render. */
+                  if (clearBtn) {
+                    clearBtn.addEventListener('click', () => {
+                      input.value = '';
+                      clearBtn.classList.add('d-none');
+                      clearTimeout(debounceId);
+                      fetchAndSwap({ q: '', page: 1 });
+                      input.focus();
+                    });
+                  }
+
                   partial.addEventListener('click', (event) => {
+                    const progBtn = event.target.closest('.clms-student-progress-btn');
+                    if (progBtn) {
+                      event.preventDefault();
+                      const sid = parseInt(progBtn.getAttribute('data-student-id'), 10) || 0;
+                      const nm = progBtn.getAttribute('data-student-name') || '';
+                      const em = progBtn.getAttribute('data-student-email') || '';
+                      openProgressModal(sid, nm, em);
+                      return;
+                    }
                     const link = event.target.closest('a[data-students-page]');
                     if (!link) return;
                     const li = link.closest('.page-item');
@@ -449,9 +596,14 @@ require_once __DIR__ . '/includes/layout-top.php';
                     }
                     event.preventDefault();
                     const nextPage = parseInt(link.getAttribute('data-students-page'), 10) || 1;
-                    fetchAndSwap({ q: input.value.trim(), page: nextPage });
+                    fetchAndSwap({ page: nextPage });
                     window.scrollTo({ top: form.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
                   });
+
+                  const initialStudentId = <?php echo (int) $studentsPageUrlStudentId; ?>;
+                  if (initialStudentId > 0) {
+                    openProgressModal(initialStudentId, '', '');
+                  }
                 })();
               </script>
 

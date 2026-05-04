@@ -115,29 +115,168 @@ $recentActivityStmt = $pdo->query(
 $recentActivities = $recentActivityStmt->fetchAll();
 
 if (isset($_GET['export']) && $_GET['export'] === 'summary') {
+    if ((string) ($_SESSION['role'] ?? '') !== 'admin') {
+        http_response_code(403);
+        echo 'Export is available to administrators only.';
+        exit;
+    }
+
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
     header('Content-Type: text/csv; charset=UTF-8');
-    header('Content-Disposition: attachment; filename="admin_dashboard_summary.csv"');
+    header('Content-Disposition: attachment; filename="clms_system_summary_' . date('Y-m-d') . '.csv"');
+    echo "\xEF\xBB\xBF";
 
     $out = fopen('php://output', 'wb');
-    if ($out !== false) {
-        fputcsv($out, ['Metric', 'Value']);
-        fputcsv($out, ['Active Students', $activeStudents]);
-        fputcsv($out, ['Modules Available', $modulesAvailable]);
-        fputcsv($out, ['Tasks Completed This Week', $tasksCompletedThisWeek]);
-        fputcsv($out, ['Average Pass Rate (%)', number_format($avgPassRate, 2)]);
-        fputcsv($out, []);
-        fputcsv($out, ['Top Students']);
-        fputcsv($out, ['Name', 'Average Score', 'Modules Done', 'Status']);
-        foreach ($topStudents as $student) {
-            fputcsv($out, [
-                trim((string) $student['first_name'] . ' ' . (string) $student['last_name']),
-                number_format((float) $student['avg_score'], 2) . '%',
-                (int) $student['modules_done'] . '/' . $globalTotalModules,
-                (string) $student['status_label'],
-            ]);
-        }
-        fclose($out);
+    if ($out === false) {
+        exit;
     }
+
+    fputcsv($out, ['CLMS — System summary export']);
+    fputcsv($out, ['Generated (server)', date('Y-m-d H:i:s')]);
+    fputcsv($out, []);
+
+    fputcsv($out, ['=== Executive metrics ===']);
+    fputcsv($out, ['Metric', 'Value']);
+    fputcsv($out, ['Students (accounts)', $activeStudents]);
+    require_once dirname(__DIR__) . '/includes/student-batch-schema.php';
+    clms_ensure_users_student_batch_column($pdo);
+
+    $instructorCount = (int) ($pdo->query("SELECT COUNT(*) AS c FROM users WHERE role = 'instructor'")->fetch()['c'] ?? 0);
+    $adminCount = (int) ($pdo->query("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'")->fetch()['c'] ?? 0);
+    fputcsv($out, ['Instructors', $instructorCount]);
+    fputcsv($out, ['Administrators', $adminCount]);
+    fputcsv($out, ['Modules (rows)', $modulesAvailable]);
+    fputcsv($out, ['Courses', (int) ($pdo->query('SELECT COUNT(*) AS c FROM courses')->fetch()['c'] ?? 0)]);
+    fputcsv($out, ['Final exam attempts completed (all time)', (int) ($pdo->query("SELECT COUNT(*) AS c FROM exam_attempts WHERE status = 'completed'")->fetch()['c'] ?? 0)]);
+    fputcsv($out, ['Final exam attempts completed (this week)', $tasksCompletedThisWeek]);
+    fputcsv($out, ['Avg. pass rate completed exams (%)', number_format($avgPassRate, 2)]);
+    $certTotal = (int) ($pdo->query('SELECT COUNT(*) AS c FROM certificates')->fetch()['c'] ?? 0);
+    fputcsv($out, ['Certificates issued (all time)', $certTotal]);
+    $mqaTotal = (int) ($pdo->query('SELECT COUNT(*) AS c FROM module_quiz_attempts')->fetch()['c'] ?? 0);
+    fputcsv($out, ['Module quiz attempts (all time)', $mqaTotal]);
+    fputcsv($out, []);
+
+    fputcsv($out, ['=== Courses (master list) ===']);
+    fputcsv($out, ['ID', 'Title', 'Published (1=yes)', 'Module count', 'Final exam questions']);
+    $courseExportStmt = $pdo->query(
+        "SELECT c.id, c.title, c.is_published,
+                COUNT(DISTINCT m.id) AS module_cnt,
+                (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id AND q.module_id IS NULL) AS final_q
+         FROM courses c
+         LEFT JOIN modules m ON m.course_id = c.id
+         GROUP BY c.id, c.title, c.is_published
+         ORDER BY c.title ASC"
+    );
+    while ($cr = $courseExportStmt->fetch()) {
+        fputcsv($out, [
+            (int) $cr['id'],
+            (string) $cr['title'],
+            (int) $cr['is_published'],
+            (int) $cr['module_cnt'],
+            (int) $cr['final_q'],
+        ]);
+    }
+    fputcsv($out, []);
+
+    fputcsv($out, ['=== Top students (dashboard metric, up to 5) ===']);
+    fputcsv($out, ['Name', 'Average score (%)', 'Modules done', 'Status']);
+    foreach ($topStudents as $student) {
+        fputcsv($out, [
+            trim((string) $student['first_name'] . ' ' . (string) $student['last_name']),
+            number_format((float) $student['avg_score'], 2),
+            (int) $student['modules_done'] . '/' . $globalTotalModules,
+            (string) $student['status_label'],
+        ]);
+    }
+    fputcsv($out, []);
+
+    fputcsv($out, ['=== Extended top learners (module quiz focus) ===']);
+    fputcsv($out, ['Rank', 'Name', 'Email', 'Avg quiz %', 'Quiz attempts', 'Distinct modules tried']);
+    $extTop = $pdo->query(
+        "SELECT u.first_name, u.last_name, u.email,
+                ROUND(AVG(mqa.percentage), 2) AS avg_pct,
+                COUNT(mqa.id) AS attempts,
+                COUNT(DISTINCT mqa.module_id) AS modules_tried
+         FROM users u
+         INNER JOIN module_quiz_attempts mqa ON mqa.user_id = u.id
+         WHERE u.role = 'student'
+         GROUP BY u.id, u.first_name, u.last_name, u.email
+         ORDER BY avg_pct DESC, attempts DESC
+         LIMIT 25"
+    );
+    $rank = 0;
+    while ($er = $extTop->fetch()) {
+        $rank++;
+        fputcsv($out, [
+            $rank,
+            trim((string) $er['first_name'] . ' ' . (string) $er['last_name']),
+            (string) $er['email'],
+            (string) $er['avg_pct'],
+            (int) $er['attempts'],
+            (int) $er['modules_tried'],
+        ]);
+    }
+    fputcsv($out, []);
+
+    fputcsv($out, ['=== Students by batch (cohort label) ===']);
+    fputcsv($out, ['Batch label', 'Student count']);
+    $batchAgg = $pdo->query(
+        "SELECT COALESCE(NULLIF(TRIM(student_batch), ''), '(Unspecified)') AS batch_label, COUNT(*) AS cnt
+         FROM users
+         WHERE role = 'student'
+         GROUP BY COALESCE(NULLIF(TRIM(student_batch), ''), '(Unspecified)')
+         ORDER BY cnt DESC, batch_label ASC"
+    );
+    while ($br = $batchAgg->fetch()) {
+        fputcsv($out, [(string) $br['batch_label'], (int) $br['cnt']]);
+    }
+    fputcsv($out, []);
+
+    fputcsv($out, ['=== Module completion snapshot (dashboard widget) ===']);
+    fputcsv($out, ['Module', 'Completed count', 'Completion % of students']);
+    foreach ($moduleCompletionRows as $moduleRow) {
+        fputcsv($out, [
+            (string) $moduleRow['title'],
+            (int) $moduleRow['completed_count'],
+            (int) $moduleRow['completion_rate'],
+        ]);
+    }
+    fputcsv($out, []);
+
+    fputcsv($out, ['=== In-progress final exams ===']);
+    fputcsv($out, ['Student', 'Course', 'Attempted at']);
+    foreach ($upcomingExams as $exam) {
+        fputcsv($out, [
+            trim((string) $exam['first_name'] . ' ' . (string) $exam['last_name']),
+            (string) $exam['course_title'],
+            (string) $exam['attempted_at'],
+        ]);
+    }
+    fputcsv($out, []);
+
+    fputcsv($out, ['=== Recent exam activity (last 20) ===']);
+    fputcsv($out, ['When', 'Student', 'Course', 'Status']);
+    $recentEx = $pdo->query(
+        "SELECT ea.attempted_at, u.first_name, u.last_name, c.title AS course_title, ea.status
+         FROM exam_attempts ea
+         INNER JOIN users u ON u.id = ea.user_id
+         INNER JOIN courses c ON c.id = ea.course_id
+         ORDER BY ea.attempted_at DESC
+         LIMIT 20"
+    );
+    while ($rx = $recentEx->fetch()) {
+        fputcsv($out, [
+            (string) $rx['attempted_at'],
+            trim((string) $rx['first_name'] . ' ' . (string) $rx['last_name']),
+            (string) $rx['course_title'],
+            (string) $rx['status'],
+        ]);
+    }
+
+    fclose($out);
     exit;
 }
 
@@ -150,7 +289,9 @@ require_once __DIR__ . '/includes/layout-top.php';
                   <small class="text-muted">Review training progress and learner performance.</small>
                 </div>
                 <div class="d-flex gap-2">
+<?php if ((string) ($_SESSION['role'] ?? '') === 'admin') : ?>
                   <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/dashboard.php?export=summary', ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-outline-secondary btn-sm">Export Report</a>
+<?php endif; ?>
                 </div>
               </div>
 

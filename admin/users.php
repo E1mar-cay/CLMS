@@ -11,19 +11,137 @@ clms_require_roles(['admin']);
 clms_user_approval_ensure_schema($pdo);
 clms_ensure_users_student_batch_column($pdo);
 
+/**
+ * @param array<string, mixed> $src
+ * @return array{searchQuery: string, pendingOnly: bool, filterRole: string, filterAccount: string, filterBatch: string}
+ */
+function clms_users_normalize_filters_from_array(array $src, array $allowedRoles): array
+{
+    $searchQuery = trim((string) ($src['q'] ?? ''));
+    $pendingRaw = $src['pending'] ?? null;
+    $pendingOnly = $pendingRaw === '1' || $pendingRaw === 1 || $pendingRaw === true;
+    $filterRole = trim((string) ($src['role'] ?? ''));
+    if ($filterRole !== '' && !in_array($filterRole, $allowedRoles, true)) {
+        $filterRole = '';
+    }
+    $filterAccount = trim((string) ($src['account'] ?? ''));
+    if ($filterAccount !== '' && !in_array($filterAccount, ['active', 'disabled'], true)) {
+        $filterAccount = '';
+    }
+    $filterBatchRaw = (string) ($src['batch'] ?? '');
+    $filterBatch = '';
+    if ($filterBatchRaw === '__none__') {
+        $filterBatch = '__none__';
+    } else {
+        $filterBatchTrim = trim($filterBatchRaw);
+        if ($filterBatchTrim !== '') {
+            $batchLen = function_exists('mb_strlen')
+                ? mb_strlen($filterBatchTrim, 'UTF-8')
+                : strlen($filterBatchTrim);
+            if ($batchLen <= 80) {
+                $filterBatch = $filterBatchTrim;
+            }
+        }
+    }
+
+    return [
+        'searchQuery' => $searchQuery,
+        'pendingOnly' => $pendingOnly,
+        'filterRole' => $filterRole,
+        'filterAccount' => $filterAccount,
+        'filterBatch' => $filterBatch,
+    ];
+}
+
+/**
+ * @return array{0: string, 1: array<string, mixed>}
+ */
+function clms_users_build_list_where_clause(
+    string $searchQuery,
+    bool $pendingOnly,
+    string $filterRole,
+    string $filterAccount,
+    string $filterBatch
+): array {
+    $whereSql = 'WHERE 1=1';
+    $params = [];
+    if ($searchQuery !== '') {
+        $whereSql .= ' AND (u.first_name LIKE :s1 OR u.last_name LIKE :s2 OR u.email LIKE :s3 OR CONCAT(u.first_name, " ", u.last_name) LIKE :s4)';
+        $like = '%' . $searchQuery . '%';
+        $params['s1'] = $like;
+        $params['s2'] = $like;
+        $params['s3'] = $like;
+        $params['s4'] = $like;
+    }
+    if ($pendingOnly) {
+        $whereSql .= " AND u.role = 'student' AND u.account_approval_status = :pending_status";
+        $params['pending_status'] = 'pending';
+    }
+    if ($filterRole !== '') {
+        $whereSql .= ' AND u.role = :f_role';
+        $params['f_role'] = $filterRole;
+    }
+    if ($filterAccount === 'active') {
+        $whereSql .= ' AND (COALESCE(u.account_is_disabled, 0) = 0)';
+    } elseif ($filterAccount === 'disabled') {
+        $whereSql .= ' AND u.account_is_disabled = 1';
+    }
+    if ($filterBatch !== '') {
+        $whereSql .= " AND u.role = 'student'";
+        if ($filterBatch === '__none__') {
+            $whereSql .= " AND (u.student_batch IS NULL OR TRIM(COALESCE(u.student_batch, '')) = '')";
+        } else {
+            $whereSql .= ' AND LOWER(TRIM(COALESCE(u.student_batch, \'\'))) = :f_batch_lc';
+            $params['f_batch_lc'] = function_exists('mb_strtolower')
+                ? mb_strtolower($filterBatch, 'UTF-8')
+                : strtolower($filterBatch);
+        }
+    }
+
+    return [$whereSql, $params];
+}
+
 $pageTitle = 'User Management | Criminology LMS';
 $activeAdminPage = 'users';
 $errorMessage = '';
 $isAjaxRequest = !empty($_GET['ajax']);
 
 $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
-$searchQuery = trim((string) ($_GET['q'] ?? ''));
-$pendingOnly = isset($_GET['pending']) && $_GET['pending'] === '1';
 $page = (int) filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
 $perPage = 15;
 $offset = ($page - 1) * $perPage;
 
 $allowedRoles = ['student', 'instructor', 'admin'];
+$__listF = clms_users_normalize_filters_from_array($_GET, $allowedRoles);
+$searchQuery = $__listF['searchQuery'];
+$pendingOnly = $__listF['pendingOnly'];
+$filterRole = $__listF['filterRole'];
+$filterAccount = $__listF['filterAccount'];
+$filterBatch = $__listF['filterBatch'];
+
+/** @return array<string, string> */
+$clmsUsersListMergeRedirect = static function (array $flashParams) use ($searchQuery, $pendingOnly, $filterRole, $filterAccount, $filterBatch, $page): array {
+    $redirectQuery = $flashParams;
+    if ($searchQuery !== '') {
+        $redirectQuery['q'] = $searchQuery;
+    }
+    if ($pendingOnly) {
+        $redirectQuery['pending'] = '1';
+    }
+    if ($filterRole !== '') {
+        $redirectQuery['role'] = $filterRole;
+    }
+    if ($filterAccount !== '') {
+        $redirectQuery['account'] = $filterAccount;
+    }
+    if ($filterBatch !== '') {
+        $redirectQuery['batch'] = $filterBatch;
+    }
+    if ($page > 1) {
+        $redirectQuery['page'] = (string) $page;
+    }
+    return $redirectQuery;
+};
 $repopulateEdit = null;
 $shouldOpenEditModal = false;
 
@@ -68,17 +186,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('No pending student accounts were approved.');
                 }
 
-                $redirectQuery = ['approved' => '1', 'approved_count' => (string) $approvedCount];
-                if ($searchQuery !== '') {
-                    $redirectQuery['q'] = $searchQuery;
-                }
-                if ($pendingOnly) {
-                    $redirectQuery['pending'] = '1';
-                }
-                if ($page > 1) {
-                    $redirectQuery['page'] = (string) $page;
-                }
-                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+                clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect([
+                    'approved' => '1',
+                    'approved_count' => (string) $approvedCount,
+                ])));
             }
 
             if ($action === 'bulk_delete_users') {
@@ -131,17 +242,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('No users were deleted.');
                 }
 
-                $redirectQuery = ['deleted' => '1', 'deleted_count' => (string) $deletedCount];
-                if ($searchQuery !== '') {
-                    $redirectQuery['q'] = $searchQuery;
-                }
-                if ($pendingOnly) {
-                    $redirectQuery['pending'] = '1';
-                }
-                if ($page > 1) {
-                    $redirectQuery['page'] = (string) $page;
-                }
-                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+                clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect([
+                    'deleted' => '1',
+                    'deleted_count' => (string) $deletedCount,
+                ])));
             }
 
             if ($action === 'bulk_update_disable_status') {
@@ -201,17 +305,117 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('No accounts were updated.');
                 }
 
-                $redirectQuery = ['bulk_disabled_saved' => '1', 'bulk_disabled_count' => (string) $affectedCount, 'bulk_disabled_state' => $disableRaw];
-                if ($searchQuery !== '') {
-                    $redirectQuery['q'] = $searchQuery;
+                clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect([
+                    'bulk_disabled_saved' => '1',
+                    'bulk_disabled_count' => (string) $affectedCount,
+                    'bulk_disabled_state' => $disableRaw,
+                ])));
+            }
+
+            if ($action === 'bulk_set_student_batch') {
+                $clearBatch = isset($_POST['clear_batch']) && (string) $_POST['clear_batch'] === '1';
+                $batchLabel = trim((string) ($_POST['batch_label'] ?? ''));
+                if (!$clearBatch && $batchLabel === '') {
+                    throw new RuntimeException('Choose a batch / cohort label, or click "Remove batch" to clear labels from selected students.');
                 }
-                if ($pendingOnly) {
-                    $redirectQuery['pending'] = '1';
+                if (!$clearBatch && strlen($batchLabel) > 80) {
+                    throw new RuntimeException('Batch label must be 80 characters or fewer.');
                 }
-                if ($page > 1) {
-                    $redirectQuery['page'] = (string) $page;
+
+                $batchParam = $clearBatch ? null : $batchLabel;
+                $batchScope = (string) ($_POST['batch_apply_scope'] ?? 'selection');
+                $selectedIds = [];
+
+                if ($batchScope === 'all_filtered_students') {
+                    $snapRaw = (string) ($_POST['batch_filter_snapshot'] ?? '');
+                    $snap = json_decode($snapRaw, true);
+                    if (!is_array($snap)) {
+                        throw new RuntimeException('Invalid batch filter data. Please refresh and try again.');
+                    }
+                    $sf = clms_users_normalize_filters_from_array([
+                        'q' => $snap['q'] ?? '',
+                        'pending' => !empty($snap['pending']) ? '1' : '',
+                        'role' => $snap['role'] ?? '',
+                        'account' => $snap['account'] ?? '',
+                        'batch' => $snap['batch'] ?? '',
+                    ], $allowedRoles);
+                    if (in_array($sf['filterRole'], ['instructor', 'admin'], true)) {
+                        throw new RuntimeException('Cannot apply batch to all students while the role filter excludes students.');
+                    }
+                    [$wSnap, $pSnap] = clms_users_build_list_where_clause(
+                        $sf['searchQuery'],
+                        $sf['pendingOnly'],
+                        $sf['filterRole'],
+                        $sf['filterAccount'],
+                        $sf['filterBatch']
+                    );
+                    if (!$sf['pendingOnly'] && $sf['filterRole'] !== 'student' && $sf['filterBatch'] === '') {
+                        $wSnap .= " AND u.role = 'student'";
+                    }
+                    $listIdsStmt = $pdo->prepare("SELECT u.id FROM users u {$wSnap}");
+                    foreach ($pSnap as $k => $v) {
+                        $listIdsStmt->bindValue(':' . $k, $v, PDO::PARAM_STR);
+                    }
+                    $listIdsStmt->execute();
+                    $selectedIds = array_values(array_filter(array_map(
+                        static fn ($row): int => (int) ($row['id'] ?? 0),
+                        $listIdsStmt->fetchAll()
+                    ), static fn (int $id): bool => $id > 0));
+                    if ($selectedIds === []) {
+                        throw new RuntimeException('No students match the current filters.');
+                    }
+                } else {
+                    $selectedRaw = $_POST['selected_user_ids'] ?? '[]';
+                    if (is_string($selectedRaw)) {
+                        $decoded = json_decode($selectedRaw, true);
+                        if (is_array($decoded)) {
+                            $selectedIds = $decoded;
+                        }
+                    } elseif (is_array($selectedRaw)) {
+                        $selectedIds = $selectedRaw;
+                    }
+                    $selectedIds = array_values(array_unique(array_filter(array_map(
+                        static fn ($v): int => (int) $v,
+                        $selectedIds
+                    ), static fn (int $id): bool => $id > 0)));
+
+                    if ($selectedIds === []) {
+                        throw new RuntimeException('Select at least one student.');
+                    }
                 }
-                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+
+                $batchUpdated = 0;
+                $chunkSize = 400;
+                for ($off = 0; $off < count($selectedIds); $off += $chunkSize) {
+                    $chunk = array_slice($selectedIds, $off, $chunkSize);
+                    if ($chunk === []) {
+                        break;
+                    }
+                    $named = [];
+                    $execParams = ['sb' => $batchParam];
+                    foreach ($chunk as $i => $id) {
+                        $k = 'bid' . $i;
+                        $named[] = ':' . $k;
+                        $execParams[$k] = $id;
+                    }
+                    $inList = implode(', ', $named);
+                    $bulkBatchStmt = $pdo->prepare(
+                        "UPDATE users
+                         SET student_batch = :sb
+                         WHERE id IN ({$inList})
+                           AND role = 'student'"
+                    );
+                    $bulkBatchStmt->execute($execParams);
+                    $batchUpdated += (int) $bulkBatchStmt->rowCount();
+                }
+                if ($batchUpdated < 1) {
+                    throw new RuntimeException('No student accounts were updated. Batch applies to students only (not instructors or admins).');
+                }
+
+                clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect([
+                    'bulk_batch_saved' => '1',
+                    'bulk_batch_count' => (string) $batchUpdated,
+                ])));
             }
 
             if ($action === 'update_disable_status') {
@@ -255,17 +459,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'id' => $userId,
                 ]);
 
-                $redirectQuery = ['disabled_saved' => '1'];
-                if ($searchQuery !== '') {
-                    $redirectQuery['q'] = $searchQuery;
-                }
-                if ($pendingOnly) {
-                    $redirectQuery['pending'] = '1';
-                }
-                if ($page > 1) {
-                    $redirectQuery['page'] = (string) $page;
-                }
-                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+                clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect(['disabled_saved' => '1'])));
             }
 
             if ($action === 'delete_user') {
@@ -295,17 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($delStmt->rowCount() < 1) {
                     throw new RuntimeException('User could not be deleted.');
                 }
-                $redirectQuery = ['deleted' => '1'];
-                if ($searchQuery !== '') {
-                    $redirectQuery['q'] = $searchQuery;
-                }
-                if ($pendingOnly) {
-                    $redirectQuery['pending'] = '1';
-                }
-                if ($page > 1) {
-                    $redirectQuery['page'] = (string) $page;
-                }
-                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+                clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect(['deleted' => '1'])));
             }
 
             if ($action === 'update_approval_status') {
@@ -342,17 +526,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'id' => (int) $userId,
                 ]);
 
-                $redirectQuery = ['approval_saved' => '1'];
-                if ($searchQuery !== '') {
-                    $redirectQuery['q'] = $searchQuery;
-                }
-                if ($pendingOnly) {
-                    $redirectQuery['pending'] = '1';
-                }
-                if ($page > 1) {
-                    $redirectQuery['page'] = (string) $page;
-                }
-                clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+                clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect(['approval_saved' => '1'])));
             }
 
             if ($action !== 'update_user') {
@@ -455,17 +629,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['role'] = $role;
             }
 
-            $redirectQuery = ['saved' => '1'];
-            if ($searchQuery !== '') {
-                $redirectQuery['q'] = $searchQuery;
-            }
-            if ($pendingOnly) {
-                $redirectQuery['pending'] = '1';
-            }
-            if ($page > 1) {
-                $redirectQuery['page'] = (string) $page;
-            }
-            clms_redirect('admin/users.php?' . http_build_query($redirectQuery));
+            clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect(['saved' => '1'])));
         } catch (PDOException $e) {
             if (isset($e->errorInfo[1]) && (int) $e->errorInfo[1] === 1451) {
                 $errorMessage = 'This user cannot be deleted because related records still reference the account.';
@@ -522,6 +686,11 @@ if (!empty($_GET['saved'])) {
             ? $bulkCount . ' accounts disabled.'
             : 'Account disabled.';
     }
+} elseif (!empty($_GET['bulk_batch_saved'])) {
+    $batchCount = (int) ($_GET['bulk_batch_count'] ?? 0);
+    $flashSuccess = $batchCount === 1
+        ? 'Batch / cohort updated for 1 student.'
+        : 'Batch / cohort updated for ' . $batchCount . ' students.';
 } elseif (!empty($_GET['deleted'])) {
     $deletedCount = (int) ($_GET['deleted_count'] ?? 0);
     if ($deletedCount > 1) {
@@ -531,19 +700,46 @@ if (!empty($_GET['saved'])) {
     }
 }
 
-$whereSql = 'WHERE 1=1';
-$params = [];
-if ($searchQuery !== '') {
-    $whereSql .= ' AND (u.first_name LIKE :s1 OR u.last_name LIKE :s2 OR u.email LIKE :s3 OR CONCAT(u.first_name, " ", u.last_name) LIKE :s4)';
-    $like = '%' . $searchQuery . '%';
-    $params['s1'] = $like;
-    $params['s2'] = $like;
-    $params['s3'] = $like;
-    $params['s4'] = $like;
+$studentBatchFilterOptions = [];
+try {
+    $sbStmt = $pdo->query(
+        "SELECT DISTINCT TRIM(student_batch) AS b
+         FROM users
+         WHERE role = 'student'
+           AND TRIM(COALESCE(student_batch, '')) <> ''
+         ORDER BY b ASC"
+    );
+    foreach ($sbStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $b = (string) ($row['b'] ?? '');
+        if ($b !== '') {
+            $studentBatchFilterOptions[] = $b;
+        }
+    }
+} catch (Throwable $e) {
+    $studentBatchFilterOptions = [];
 }
-if ($pendingOnly) {
-    $whereSql .= " AND u.role = 'student' AND u.account_approval_status = :pending_status";
-    $params['pending_status'] = 'pending';
+
+[$whereSql, $params] = clms_users_build_list_where_clause(
+    $searchQuery,
+    $pendingOnly,
+    $filterRole,
+    $filterAccount,
+    $filterBatch
+);
+
+$bulkAllStudentsCount = 0;
+if (!in_array($filterRole, ['instructor', 'admin'], true)) {
+    $wBulkCount = $whereSql;
+    $pBulkCount = $params;
+    if (!$pendingOnly && $filterRole !== 'student' && $filterBatch === '') {
+        $wBulkCount .= " AND u.role = 'student'";
+    }
+    $bulkCountStmt = $pdo->prepare("SELECT COUNT(*) AS c FROM users u {$wBulkCount}");
+    foreach ($pBulkCount as $k => $v) {
+        $bulkCountStmt->bindValue(':' . $k, $v, PDO::PARAM_STR);
+    }
+    $bulkCountStmt->execute();
+    $bulkAllStudentsCount = (int) ($bulkCountStmt->fetch()['c'] ?? 0);
 }
 
 $countStmt = $pdo->prepare("SELECT COUNT(*) AS total_rows FROM users u {$whereSql}");
@@ -588,10 +784,27 @@ if ($searchQuery !== '') {
 if ($pendingOnly) {
     $queryBase['pending'] = '1';
 }
+if ($filterRole !== '') {
+    $queryBase['role'] = $filterRole;
+}
+if ($filterAccount !== '') {
+    $queryBase['account'] = $filterAccount;
+}
+if ($filterBatch !== '') {
+    $queryBase['batch'] = $filterBatch;
+}
 $paginationBase = $queryBase;
 if ($page > 1) {
     $queryBase['page'] = $page;
 }
+
+$pendingToggleParams = $paginationBase;
+if ($pendingOnly) {
+    unset($pendingToggleParams['pending']);
+} else {
+    $pendingToggleParams['pending'] = '1';
+}
+$pendingToggleUrl = $clmsWebBase . '/admin/users.php' . ($pendingToggleParams !== [] ? '?' . http_build_query($pendingToggleParams) : '');
 
 $formActionQuery = $queryBase;
 $usersFormAction = $clmsWebBase . '/admin/users.php' . ($formActionQuery !== [] ? '?' . http_build_query($formActionQuery) : '');
@@ -608,7 +821,7 @@ require_once __DIR__ . '/includes/layout-top.php';
               <div class="d-flex flex-wrap justify-content-between align-items-center py-3 mb-3 gap-2">
                 <div>
                   <h4 class="fw-bold mb-1">User management</h4>
-                  <small class="text-muted">View accounts and update names, email, role, or password.</small>
+                  <small class="text-muted">View accounts and update names, email, role, or password. Select multiple rows to set <strong>batch / cohort</strong> for students in one step.</small>
                 </div>
               </div>
 
@@ -646,9 +859,20 @@ require_once __DIR__ . '/includes/layout-top.php';
                             </select>
                           </div>
                           <div class="col-12 col-md-6" id="modal_edit_batch_wrap">
-                            <label class="form-label" for="modal_edit_batch">Batch / cohort</label>
-                            <input class="form-control" id="modal_edit_batch" name="student_batch" maxlength="80" autocomplete="off" placeholder="e.g. 2025-A" />
-                            <small class="text-muted">Students only. Used to filter Student Activity and rankings-style reports.</small>
+                            <label class="form-label" for="modal_edit_batch_select">Batch / cohort</label>
+                            <select class="form-select" id="modal_edit_batch_select" autocomplete="off">
+                              <option value="">(None)</option>
+<?php foreach ($studentBatchFilterOptions as $batchOpt) : ?>
+                              <option value="<?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?></option>
+<?php endforeach; ?>
+                              <option value="__other__">Other…</option>
+                            </select>
+                            <div id="modal_edit_batch_other_wrap" class="d-none mt-2">
+                              <label class="form-label" for="modal_edit_batch_other">New batch name</label>
+                              <input type="text" class="form-control" id="modal_edit_batch_other" maxlength="80" autocomplete="off" placeholder="e.g. 2026-A" />
+                            </div>
+                            <input type="hidden" name="student_batch" id="modal_edit_batch" value="" />
+                            <small class="text-muted">Students only. Pick an existing cohort or choose Other to type a new label.</small>
                           </div>
                           <div class="col-12">
                             <label class="form-label" for="modal_edit_pw">New password</label>
@@ -660,6 +884,60 @@ require_once __DIR__ . '/includes/layout-top.php';
                       <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-primary">Save changes</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal fade" id="bulkBatchModal" tabindex="-1" aria-labelledby="bulkBatchModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="bulkBatchModalLabel">Set batch for students</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="clmsBulkBatchForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>">
+                      <div class="modal-body">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                        <input type="hidden" name="action" value="bulk_set_student_batch" />
+                        <input type="hidden" name="selected_user_ids" id="clms_bulk_batch_user_ids" value="[]" />
+                        <input type="hidden" name="clear_batch" id="bulk_batch_clear_hidden" value="0" />
+                        <input type="hidden" name="batch_apply_scope" id="bulk_batch_apply_scope" value="selection" />
+                        <input type="hidden" name="batch_filter_snapshot" id="bulk_batch_filter_snapshot" value="" />
+                        <p class="small text-muted" id="bulkBatchSelectionSummary">No students selected.</p>
+                        <div class="mb-3" id="bulk_batch_scope_wrap">
+                          <div class="form-check">
+                            <input class="form-check-input" type="radio" name="batch_apply_scope_ui" id="bulk_batch_scope_selection" value="selection" checked />
+                            <label class="form-check-label" for="bulk_batch_scope_selection">Selected students on this page <span class="text-muted" id="bulk_batch_scope_selection_count"></span></label>
+                          </div>
+                          <div class="form-check <?php echo $bulkAllStudentsCount < 1 ? 'd-none' : ''; ?>" id="bulk_batch_scope_all_wrap">
+                            <input class="form-check-input" type="radio" name="batch_apply_scope_ui" id="bulk_batch_scope_all" value="all_filtered_students" <?php echo $bulkAllStudentsCount < 1 ? 'disabled' : ''; ?> />
+                            <label class="form-check-label" for="bulk_batch_scope_all">All students matching current filters <span class="text-muted">(<?php echo (int) $bulkAllStudentsCount; ?>)</span></label>
+                          </div>
+                        </div>
+                        <div class="mb-3">
+                          <label class="form-label" for="bulk_batch_label_select">Batch / cohort label</label>
+                          <select class="form-select" id="bulk_batch_label_select" autocomplete="off">
+                            <option value="">Choose a batch…</option>
+<?php foreach ($studentBatchFilterOptions as $batchOpt) : ?>
+                            <option value="<?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?></option>
+<?php endforeach; ?>
+                            <option value="__other__">Other…</option>
+                          </select>
+                          <div id="bulk_batch_label_other_wrap" class="d-none mt-2">
+                            <label class="form-label" for="bulk_batch_label_other">New batch name</label>
+                            <input class="form-control" type="text" id="bulk_batch_label_other" maxlength="80" autocomplete="off" placeholder="e.g. 2026-A" />
+                          </div>
+                          <input type="hidden" name="batch_label" id="bulk_batch_label_hidden" value="" />
+                          <small class="text-muted">Instructors and admins are never updated. Use the scope above to include students on other pages when filters allow.</small>
+                        </div>
+                        <p class="small text-muted mb-0">To remove labels, use the button below — no need to clear the batch picker.</p>
+                      </div>
+                      <div class="modal-footer flex-wrap gap-2">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-outline-danger ms-auto" id="bulk_batch_remove_btn">Remove batch</button>
+                        <button type="submit" class="btn btn-primary">Apply label</button>
                       </div>
                     </form>
                   </div>
@@ -704,6 +982,9 @@ require_once __DIR__ . '/includes/layout-top.php';
                 <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                   <h5 class="mb-0">All users</h5>
                   <div class="clms-users-toolbar">
+                    <button type="button" class="btn btn-sm btn-outline-info" id="clms-bulk-batch-btn" disabled>
+                      Set batch…
+                    </button>
                     <button type="button" class="btn btn-sm btn-outline-success" id="clms-bulk-approve-btn" disabled>
                       Approve Selected
                     </button>
@@ -717,7 +998,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                       Delete Selected
                     </button>
                     <a
-                      href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php' . ($searchQuery !== '' ? '?q=' . rawurlencode($searchQuery) : ''), ENT_QUOTES, 'UTF-8'); ?>"
+                      href="<?php echo htmlspecialchars($pendingToggleUrl, ENT_QUOTES, 'UTF-8'); ?>"
                       class="btn btn-sm <?php echo $pendingOnly ? 'btn-warning' : 'btn-outline-warning'; ?>">
                       <?php echo $pendingOnly ? 'Pending Only: ON' : 'Pending Only'; ?>
                       <span class="badge bg-white text-warning ms-1"><?php echo $pendingApprovalCount; ?></span>
@@ -728,6 +1009,29 @@ require_once __DIR__ . '/includes/layout-top.php';
                       class="clms-users-search-form"
                       id="clms-users-search-form"
                       role="search">
+                    <div class="d-flex flex-wrap gap-2 align-items-center clms-users-filters">
+                      <label class="visually-hidden" for="clms-users-filter-batch">Batch</label>
+                      <select class="form-select form-select-sm clms-users-filter-select" name="batch" id="clms-users-filter-batch" title="Student batch / cohort">
+                        <option value=""<?php echo $filterBatch === '' ? ' selected' : ''; ?>>All batches</option>
+                        <option value="__none__"<?php echo $filterBatch === '__none__' ? ' selected' : ''; ?>>Unspecified batch</option>
+<?php foreach ($studentBatchFilterOptions as $batchOpt) : ?>
+                        <option value="<?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $filterBatch === $batchOpt ? ' selected' : ''; ?>><?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?></option>
+<?php endforeach; ?>
+                      </select>
+                      <label class="visually-hidden" for="clms-users-filter-role">Role</label>
+                      <select class="form-select form-select-sm clms-users-filter-select" name="role" id="clms-users-filter-role" title="Account role">
+                        <option value=""<?php echo $filterRole === '' ? ' selected' : ''; ?>>All roles</option>
+                        <option value="student"<?php echo $filterRole === 'student' ? ' selected' : ''; ?>>Students</option>
+                        <option value="instructor"<?php echo $filterRole === 'instructor' ? ' selected' : ''; ?>>Instructors</option>
+                        <option value="admin"<?php echo $filterRole === 'admin' ? ' selected' : ''; ?>>Admins</option>
+                      </select>
+                      <label class="visually-hidden" for="clms-users-filter-account">Account status</label>
+                      <select class="form-select form-select-sm clms-users-filter-select" name="account" id="clms-users-filter-account" title="Sign-in allowed">
+                        <option value=""<?php echo $filterAccount === '' ? ' selected' : ''; ?>>All accounts</option>
+                        <option value="active"<?php echo $filterAccount === 'active' ? ' selected' : ''; ?>>Active only</option>
+                        <option value="disabled"<?php echo $filterAccount === 'disabled' ? ' selected' : ''; ?>>Disabled only</option>
+                      </select>
+                    </div>
                     <div class="clms-users-search-field">
                       <i class="bx bx-search clms-users-search-icon"></i>
                       <input
@@ -758,8 +1062,21 @@ require_once __DIR__ . '/includes/layout-top.php';
                       }
                       .clms-users-search-form {
                         display: flex;
+                        flex-wrap: wrap;
                         gap: .5rem;
                         align-items: center;
+                      }
+                      .clms-users-filters {
+                        flex: 0 1 auto;
+                      }
+                      .clms-users-filter-select {
+                        width: auto;
+                        min-width: 7.5rem;
+                        max-width: 12rem;
+                      }
+                      #clms-users-filter-batch {
+                        min-width: 9.5rem;
+                        max-width: 14rem;
                       }
                       .clms-users-search-field {
                         position: relative;
@@ -862,6 +1179,24 @@ require_once __DIR__ . '/includes/layout-top.php';
                   const bulkDeleteForm = document.getElementById('clmsBulkDeleteUsersForm');
                   const bulkDeleteIdsInput = document.getElementById('clms_bulk_delete_user_ids');
                   const bulkDeleteBtn = document.getElementById('clms-bulk-delete-btn');
+                  const bulkBatchBtn = document.getElementById('clms-bulk-batch-btn');
+                  const bulkBatchModalEl = document.getElementById('bulkBatchModal');
+                  const bulkBatchForm = document.getElementById('clmsBulkBatchForm');
+                  const bulkBatchIdsInput = document.getElementById('clms_bulk_batch_user_ids');
+                  const bulkBatchLabelSelect = document.getElementById('bulk_batch_label_select');
+                  const bulkBatchLabelOtherWrap = document.getElementById('bulk_batch_label_other_wrap');
+                  const bulkBatchLabelOther = document.getElementById('bulk_batch_label_other');
+                  const bulkBatchLabelHidden = document.getElementById('bulk_batch_label_hidden');
+                  const bulkBatchApplyScope = document.getElementById('bulk_batch_apply_scope');
+                  const bulkBatchFilterSnapshot = document.getElementById('bulk_batch_filter_snapshot');
+                  const bulkBatchScopeSelection = document.getElementById('bulk_batch_scope_selection');
+                  const bulkBatchScopeAll = document.getElementById('bulk_batch_scope_all');
+                  const bulkBatchScopeSelectionCount = document.getElementById('bulk_batch_scope_selection_count');
+                  const bulkBatchScopeAllWrap = document.getElementById('bulk_batch_scope_all_wrap');
+                  const bulkBatchClearHidden = document.getElementById('bulk_batch_clear_hidden');
+                  const bulkBatchRemoveBtn = document.getElementById('bulk_batch_remove_btn');
+                  const bulkBatchSummaryEl = document.getElementById('bulkBatchSelectionSummary');
+                  const bulkAllStudentsMatchCountInitial = <?php echo (int) $bulkAllStudentsCount; ?>;
                   const approvalForm = document.getElementById('clmsApproveUserForm');
                   const approvalUserIdInput = document.getElementById('clms_approval_user_id');
                   const approvalStatusInput = document.getElementById('clms_approval_status');
@@ -871,6 +1206,9 @@ require_once __DIR__ . '/includes/layout-top.php';
                   const usersForm = document.getElementById('clms-users-search-form');
                   const usersInput = document.getElementById('clms-users-search-input');
                   const usersPendingInput = document.getElementById('clms-users-pending-input');
+                  const usersRoleSelect = document.getElementById('clms-users-filter-role');
+                  const usersAccountSelect = document.getElementById('clms-users-filter-account');
+                  const usersBatchSelect = document.getElementById('clms-users-filter-batch');
                   const usersSpinner = document.getElementById('clms-users-search-spinner');
                   const usersClearBtn = document.getElementById('clms-users-search-clear');
                   const usersPartial = document.getElementById('clms-users-partial');
@@ -921,18 +1259,55 @@ require_once __DIR__ . '/includes/layout-top.php';
                       .filter((id) => Number.isInteger(id) && id > 0);
                   };
 
+                  const getStudentRowCheckboxes = () => {
+                    if (!usersPartial) return [];
+                    return [...usersPartial.querySelectorAll('tr[data-user-role="student"] .clms-user-select:not(:disabled)')];
+                  };
+
+                  const getSelectedStudentIdsForBatch = () => {
+                    return getStudentRowCheckboxes()
+                      .filter((cb) => cb.checked)
+                      .map((cb) => parseInt(cb.value, 10))
+                      .filter((id) => Number.isInteger(id) && id > 0);
+                  };
+
+                  const readBulkAllStudentsCount = () => {
+                    const el = document.getElementById('clms-bulk-all-students-count');
+                    if (el && el.getAttribute('data-count') !== null) {
+                      const n = parseInt(el.getAttribute('data-count'), 10);
+                      return Number.isFinite(n) ? n : 0;
+                    }
+                    return bulkAllStudentsMatchCountInitial;
+                  };
+
+                  const buildBatchFilterSnapshotJson = () =>
+                    JSON.stringify({
+                      q: usersInput ? usersInput.value.trim() : '',
+                      pending: !!(usersPendingInput && usersPendingInput.value === '1'),
+                      role: usersRoleSelect ? usersRoleSelect.value : '',
+                      account: usersAccountSelect ? usersAccountSelect.value : '',
+                      batch: usersBatchSelect ? usersBatchSelect.value : ''
+                    });
+
                   const syncBulkSelectionUi = () => {
                     if (!usersPartial) return;
                     const selectedIds = getSelectedIds();
-                    const selectable = [...usersPartial.querySelectorAll('.clms-user-select:not(:disabled)')];
+                    const studentCbs = getStudentRowCheckboxes();
+                    const studentSelected = getSelectedStudentIdsForBatch();
                     const header = usersPartial.querySelector('.clms-user-select-all');
                     if (header) {
-                      header.checked = selectable.length > 0 && selectedIds.length === selectable.length;
-                      header.indeterminate = selectedIds.length > 0 && selectedIds.length < selectable.length;
+                      const allStudentsOnPage =
+                        studentCbs.length > 0 && studentCbs.every((cb) => cb.checked);
+                      const someStudentOnPage = studentCbs.some((cb) => cb.checked);
+                      header.checked = allStudentsOnPage;
+                      header.indeterminate = someStudentOnPage && !allStudentsOnPage;
                     }
                     const meta = usersPartial.querySelector('#clms-users-selection-meta');
                     if (meta) {
-                      meta.textContent = selectedIds.length + ' selected';
+                      meta.textContent =
+                        selectedIds.length +
+                        ' selected' +
+                        (studentSelected.length > 0 ? ' (' + studentSelected.length + ' student' + (studentSelected.length === 1 ? '' : 's') + ' for batch)' : '');
                     }
                     if (bulkDeleteBtn) {
                       bulkDeleteBtn.disabled = selectedIds.length === 0;
@@ -958,6 +1333,16 @@ require_once __DIR__ . '/includes/layout-top.php';
                         ? 'Enable Selected (' + selectedIds.length + ')'
                         : 'Enable Selected';
                     }
+                    if (bulkBatchBtn) {
+                      const allN = readBulkAllStudentsCount();
+                      bulkBatchBtn.disabled = studentSelected.length === 0 && allN === 0;
+                      bulkBatchBtn.textContent =
+                        studentSelected.length > 0
+                          ? 'Set batch… (' + studentSelected.length + ')'
+                          : allN > 0
+                            ? 'Set batch… (' + allN + ' matching)'
+                            : 'Set batch…';
+                    }
                   };
 
                   const modalEl = document.getElementById('editUserModal');
@@ -968,10 +1353,41 @@ require_once __DIR__ . '/includes/layout-top.php';
                     const lnEl = document.getElementById('modal_edit_ln');
                     const emEl = document.getElementById('modal_edit_em');
                     const roleEl = document.getElementById('modal_edit_role');
-                    const batchEl = document.getElementById('modal_edit_batch');
+                    const batchSelect = document.getElementById('modal_edit_batch_select');
+                    const batchOtherWrap = document.getElementById('modal_edit_batch_other_wrap');
+                    const batchOther = document.getElementById('modal_edit_batch_other');
+                    const batchHidden = document.getElementById('modal_edit_batch');
                     const batchWrap = document.getElementById('modal_edit_batch_wrap');
                     const pwEl = document.getElementById('modal_edit_pw');
                     if (idEl && fnEl && lnEl && emEl && roleEl && pwEl) {
+                      const applyEditBatchValue = (raw) => {
+                        const v = (raw || '').trim();
+                        if (!batchSelect || !batchHidden) return;
+                        let matched = false;
+                        for (let i = 0; i < batchSelect.options.length; i++) {
+                          const opt = batchSelect.options[i];
+                          if (opt.value !== '__other__' && opt.value === v) {
+                            batchSelect.selectedIndex = i;
+                            matched = true;
+                            break;
+                          }
+                        }
+                        if (!matched) {
+                          batchSelect.value = '__other__';
+                          if (batchOther) batchOther.value = v;
+                        } else if (batchOther) batchOther.value = '';
+                        if (batchOtherWrap) {
+                          batchOtherWrap.classList.toggle('d-none', batchSelect.value !== '__other__');
+                        }
+                        batchHidden.value = batchSelect.value === '__other__' ? (batchOther ? batchOther.value.trim() : '') : batchSelect.value;
+                      };
+
+                      const syncEditBatchHidden = () => {
+                        if (!batchSelect || !batchHidden) return;
+                        batchHidden.value =
+                          batchSelect.value === '__other__' ? (batchOther ? batchOther.value.trim() : '') : batchSelect.value;
+                      };
+
                       const syncBatchVisibility = () => {
                         if (!batchWrap) return;
                         const show = roleEl.value === 'student';
@@ -985,12 +1401,27 @@ require_once __DIR__ . '/includes/layout-top.php';
                         emEl.value = btn.getAttribute('data-edit-em') || '';
                         const role = btn.getAttribute('data-edit-role') || 'student';
                         roleEl.value = role;
-                        if (batchEl) batchEl.value = btn.getAttribute('data-edit-batch') || '';
+                        applyEditBatchValue(btn.getAttribute('data-edit-batch') || '');
                         pwEl.value = '';
                         syncBatchVisibility();
                       };
 
                       roleEl.addEventListener('change', syncBatchVisibility);
+                      if (batchSelect) {
+                        batchSelect.addEventListener('change', () => {
+                          if (batchOtherWrap) {
+                            batchOtherWrap.classList.toggle('d-none', batchSelect.value !== '__other__');
+                          }
+                          if (batchSelect.value !== '__other__' && batchOther) batchOther.value = '';
+                          syncEditBatchHidden();
+                        });
+                      }
+                      if (batchOther) {
+                        batchOther.addEventListener('input', syncEditBatchHidden);
+                      }
+                      editForm.addEventListener('submit', () => {
+                        syncEditBatchHidden();
+                      });
 
                       modalEl.addEventListener('show.bs.modal', (ev) => {
                         const btn = ev.relatedTarget;
@@ -1007,7 +1438,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                         lnEl.value = repop.last_name || '';
                         emEl.value = repop.email || '';
                         roleEl.value = repop.role || 'student';
-                        if (batchEl) batchEl.value = repop.student_batch || '';
+                        applyEditBatchValue(repop.student_batch || '');
                         pwEl.value = '';
                         syncBatchVisibility();
                         if (window.bootstrap && bootstrap.Modal) {
@@ -1021,11 +1452,23 @@ require_once __DIR__ . '/includes/layout-top.php';
                     const endpoint = <?php echo json_encode($clmsWebBase . '/admin/users.php', JSON_UNESCAPED_SLASHES); ?>;
                     let debounceId = null;
                     let inFlight = null;
+                    let currentListPage = <?php echo max(1, (int) $page); ?>;
+
+                    const readListFilters = () => ({
+                      q: usersInput.value.trim(),
+                      pending: !!(usersPendingInput && usersPendingInput.value === '1'),
+                      role: usersRoleSelect ? usersRoleSelect.value : '',
+                      account: usersAccountSelect ? usersAccountSelect.value : '',
+                      batch: usersBatchSelect ? usersBatchSelect.value : ''
+                    });
 
                     const buildUrl = (ajax, data) => {
                       const params = new URLSearchParams();
                       if (data.q) params.set('q', data.q);
                       if (data.pending) params.set('pending', '1');
+                      if (data.role) params.set('role', data.role);
+                      if (data.account) params.set('account', data.account);
+                      if (data.batch) params.set('batch', data.batch);
                       if (data.page && data.page > 1) params.set('page', String(data.page));
                       if (ajax) params.set('ajax', '1');
                       const qs = params.toString();
@@ -1038,20 +1481,30 @@ require_once __DIR__ . '/includes/layout-top.php';
                       if (usersSpinner) usersSpinner.classList.toggle('d-none', !busy);
                     };
 
-                    const fetchAndSwap = async ({ q, page, pending }) => {
+                    const fetchAndSwap = async (patch = {}) => {
                       if (inFlight) inFlight.abort();
                       const controller = new AbortController();
                       inFlight = controller;
+                      const s = readListFilters();
+                      const data = {
+                        q: patch.q !== undefined ? patch.q : s.q,
+                        pending: patch.pending !== undefined ? patch.pending : s.pending,
+                        role: patch.role !== undefined ? patch.role : s.role,
+                        account: patch.account !== undefined ? patch.account : s.account,
+                        batch: patch.batch !== undefined ? patch.batch : s.batch,
+                        page: patch.page !== undefined ? patch.page : currentListPage
+                      };
                       setBusy(true);
                       try {
-                        const response = await fetch(buildUrl(true, { q, page, pending }), {
+                        const response = await fetch(buildUrl(true, data), {
                           signal: controller.signal,
                           credentials: 'same-origin'
                         });
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         const html = await response.text();
                         usersPartial.innerHTML = html;
-                        history.replaceState(null, '', buildUrl(false, { q, page, pending }));
+                        currentListPage = data.page;
+                        history.replaceState(null, '', buildUrl(false, data));
                         syncBulkSelectionUi();
                       } catch (err) {
                         if (err.name !== 'AbortError') {
@@ -1068,31 +1521,47 @@ require_once __DIR__ . '/includes/layout-top.php';
                     usersInput.addEventListener('input', () => {
                       clearTimeout(debounceId);
                       const q = usersInput.value.trim();
-                      const pending = usersPendingInput && usersPendingInput.value === '1';
                       if (usersClearBtn) usersClearBtn.classList.toggle('d-none', q === '');
-                      debounceId = setTimeout(() => fetchAndSwap({ q, page: 1, pending }), 250);
+                      debounceId = setTimeout(() => fetchAndSwap({ q, page: 1 }), 250);
                     });
 
                     usersForm.addEventListener('submit', (event) => {
                       event.preventDefault();
                       clearTimeout(debounceId);
-                      fetchAndSwap({
-                        q: usersInput.value.trim(),
-                        page: 1,
-                        pending: usersPendingInput && usersPendingInput.value === '1'
-                      });
+                      fetchAndSwap({ page: 1 });
                     });
+
+                    if (usersRoleSelect) {
+                      usersRoleSelect.addEventListener('change', () => {
+                        if (usersRoleSelect.value !== 'student' && usersBatchSelect && usersBatchSelect.value) {
+                          usersBatchSelect.value = '';
+                        }
+                        clearTimeout(debounceId);
+                        fetchAndSwap({ page: 1 });
+                      });
+                    }
+                    if (usersAccountSelect) {
+                      usersAccountSelect.addEventListener('change', () => {
+                        clearTimeout(debounceId);
+                        fetchAndSwap({ page: 1 });
+                      });
+                    }
+                    if (usersBatchSelect) {
+                      usersBatchSelect.addEventListener('change', () => {
+                        if (usersBatchSelect.value && usersRoleSelect && usersRoleSelect.value && usersRoleSelect.value !== 'student') {
+                          usersRoleSelect.value = 'student';
+                        }
+                        clearTimeout(debounceId);
+                        fetchAndSwap({ page: 1 });
+                      });
+                    }
 
                     if (usersClearBtn) {
                       usersClearBtn.addEventListener('click', () => {
                         usersInput.value = '';
                         usersClearBtn.classList.add('d-none');
                         clearTimeout(debounceId);
-                        fetchAndSwap({
-                          q: '',
-                          page: 1,
-                          pending: usersPendingInput && usersPendingInput.value === '1'
-                        });
+                        fetchAndSwap({ q: '', page: 1 });
                         usersInput.focus();
                       });
                     }
@@ -1174,6 +1643,146 @@ require_once __DIR__ . '/includes/layout-top.php';
                     });
                   }
 
+                  if (bulkBatchBtn && bulkBatchModalEl && bulkBatchForm && bulkBatchIdsInput) {
+                    const syncBulkBatchLabelHidden = () => {
+                      if (!bulkBatchLabelSelect || !bulkBatchLabelHidden) return;
+                      bulkBatchLabelHidden.value =
+                        bulkBatchLabelSelect.value === '__other__'
+                          ? (bulkBatchLabelOther ? bulkBatchLabelOther.value.trim() : '')
+                          : bulkBatchLabelSelect.value;
+                    };
+
+                    const refreshBulkBatchScopeUi = () => {
+                      const studentIds = getSelectedStudentIdsForBatch();
+                      const allN = readBulkAllStudentsCount();
+                      if (bulkBatchScopeSelectionCount) {
+                        bulkBatchScopeSelectionCount.textContent =
+                          studentIds.length > 0 ? '(' + studentIds.length + ' on this page)' : '(none on this page)';
+                      }
+                      if (bulkBatchScopeAllWrap && bulkBatchScopeAll) {
+                        bulkBatchScopeAllWrap.classList.toggle('d-none', allN < 1);
+                        bulkBatchScopeAll.disabled = allN < 1;
+                      }
+                      if (bulkBatchScopeSelection && bulkBatchScopeAll) {
+                        if (studentIds.length === 0 && allN > 0) {
+                          bulkBatchScopeAll.checked = true;
+                        } else {
+                          bulkBatchScopeSelection.checked = true;
+                        }
+                      }
+                    };
+
+                    if (bulkBatchLabelSelect) {
+                      bulkBatchLabelSelect.addEventListener('change', () => {
+                        if (bulkBatchLabelOtherWrap) {
+                          bulkBatchLabelOtherWrap.classList.toggle('d-none', bulkBatchLabelSelect.value !== '__other__');
+                        }
+                        if (bulkBatchLabelSelect.value !== '__other__' && bulkBatchLabelOther) {
+                          bulkBatchLabelOther.value = '';
+                        }
+                        syncBulkBatchLabelHidden();
+                      });
+                    }
+                    if (bulkBatchLabelOther) {
+                      bulkBatchLabelOther.addEventListener('input', syncBulkBatchLabelHidden);
+                    }
+
+                    bulkBatchBtn.addEventListener('click', () => {
+                      const studentIds = getSelectedStudentIdsForBatch();
+                      const allN = readBulkAllStudentsCount();
+                      if (studentIds.length === 0 && allN === 0) return;
+                      bulkBatchIdsInput.value = JSON.stringify(studentIds);
+                      if (bulkBatchClearHidden) bulkBatchClearHidden.value = '0';
+                      if (bulkBatchFilterSnapshot) bulkBatchFilterSnapshot.value = buildBatchFilterSnapshotJson();
+                      if (bulkBatchLabelSelect) bulkBatchLabelSelect.selectedIndex = 0;
+                      if (bulkBatchLabelOtherWrap) bulkBatchLabelOtherWrap.classList.add('d-none');
+                      if (bulkBatchLabelOther) bulkBatchLabelOther.value = '';
+                      syncBulkBatchLabelHidden();
+                      refreshBulkBatchScopeUi();
+                      if (bulkBatchSummaryEl) {
+                        bulkBatchSummaryEl.textContent =
+                          studentIds.length > 0
+                            ? 'Use the scope below to apply only to checked students on this page, or to every student matching your current filters (other pages included). Instructors and admins are never changed.'
+                            : 'No students are checked on this page. Applying to all students matching your current filters (' +
+                              allN +
+                              '). Instructors and admins are never changed.';
+                      }
+                      if (window.bootstrap && bootstrap.Modal) {
+                        bootstrap.Modal.getOrCreateInstance(bulkBatchModalEl).show();
+                      }
+                    });
+                    bulkBatchForm.addEventListener('submit', (event) => {
+                      const useAllFiltered =
+                        bulkBatchScopeAll && bulkBatchScopeAll.checked && !bulkBatchScopeAll.disabled;
+                      if (bulkBatchApplyScope) {
+                        bulkBatchApplyScope.value = useAllFiltered ? 'all_filtered_students' : 'selection';
+                      }
+                      if (bulkBatchFilterSnapshot) {
+                        bulkBatchFilterSnapshot.value = buildBatchFilterSnapshotJson();
+                      }
+                      syncBulkBatchLabelHidden();
+                      const clearOn = bulkBatchClearHidden && bulkBatchClearHidden.value === '1';
+                      if (!clearOn) {
+                        const label = bulkBatchLabelHidden ? bulkBatchLabelHidden.value.trim() : '';
+                        if (label === '') {
+                          event.preventDefault();
+                          if (typeof ClmsNotify !== 'undefined') {
+                            ClmsNotify.error('Choose a batch label, type a new one under Other, or click "Remove batch".', 'Batch required');
+                          } else {
+                            alert('Choose a batch label or Remove batch.');
+                          }
+                          return;
+                        }
+                        if (label.length > 80) {
+                          event.preventDefault();
+                          if (typeof ClmsNotify !== 'undefined') {
+                            ClmsNotify.error('Batch label must be 80 characters or fewer.', 'Too long');
+                          }
+                          return;
+                        }
+                      }
+                      if (useAllFiltered) {
+                        bulkBatchIdsInput.value = JSON.stringify([]);
+                      } else {
+                        const studentIds = getSelectedStudentIdsForBatch();
+                        if (studentIds.length === 0) {
+                          event.preventDefault();
+                          if (typeof ClmsNotify !== 'undefined') {
+                            ClmsNotify.error('Select at least one student on this page, or choose "all matching filters".', 'Nothing selected');
+                          }
+                          return;
+                        }
+                        bulkBatchIdsInput.value = JSON.stringify(studentIds);
+                      }
+                    });
+                    if (bulkBatchRemoveBtn && bulkBatchClearHidden) {
+                      bulkBatchRemoveBtn.addEventListener('click', () => {
+                        const studentIds = getSelectedStudentIdsForBatch();
+                        const allN = readBulkAllStudentsCount();
+                        if (studentIds.length === 0 && allN === 0) return;
+                        if (bulkBatchApplyScope) {
+                          bulkBatchApplyScope.value =
+                            bulkBatchScopeAll && bulkBatchScopeAll.checked && !bulkBatchScopeAll.disabled
+                              ? 'all_filtered_students'
+                              : 'selection';
+                        }
+                        if (bulkBatchFilterSnapshot) {
+                          bulkBatchFilterSnapshot.value = buildBatchFilterSnapshotJson();
+                        }
+                        bulkBatchIdsInput.value =
+                          bulkBatchApplyScope && bulkBatchApplyScope.value === 'all_filtered_students'
+                            ? JSON.stringify([])
+                            : JSON.stringify(studentIds);
+                        if (bulkBatchLabelSelect) bulkBatchLabelSelect.selectedIndex = 0;
+                        if (bulkBatchLabelOtherWrap) bulkBatchLabelOtherWrap.classList.add('d-none');
+                        if (bulkBatchLabelOther) bulkBatchLabelOther.value = '';
+                        if (bulkBatchLabelHidden) bulkBatchLabelHidden.value = '';
+                        bulkBatchClearHidden.value = '1';
+                        bulkBatchForm.submit();
+                      });
+                    }
+                  }
+
                     usersPartial.addEventListener('click', (event) => {
                       const deleteBtn = event.target.closest('.clms-delete-user-btn');
                       if (deleteBtn) {
@@ -1203,17 +1812,13 @@ require_once __DIR__ . '/includes/layout-top.php';
                       }
                       event.preventDefault();
                       const nextPage = parseInt(pageLink.getAttribute('data-users-page'), 10) || 1;
-                      fetchAndSwap({
-                        q: usersInput.value.trim(),
-                        page: nextPage,
-                        pending: usersPendingInput && usersPendingInput.value === '1'
-                      });
+                      fetchAndSwap({ page: nextPage });
                     });
 
                     usersPartial.addEventListener('change', (event) => {
                       const master = event.target.closest('.clms-user-select-all');
                       if (master) {
-                        usersPartial.querySelectorAll('.clms-user-select:not(:disabled)').forEach((cb) => {
+                        getStudentRowCheckboxes().forEach((cb) => {
                           cb.checked = master.checked;
                         });
                         syncBulkSelectionUi();

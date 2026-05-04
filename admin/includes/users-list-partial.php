@@ -5,7 +5,10 @@ declare(strict_types=1);
 if (!isset($clmsWebBase)) {
     require_once dirname(__DIR__, 2) . '/includes/sneat-paths.php';
 }
+
+$bulkAllStudentsCount = isset($bulkAllStudentsCount) ? (int) $bulkAllStudentsCount : 0;
 ?>
+<span id="clms-bulk-all-students-count" class="d-none" data-count="<?php echo $bulkAllStudentsCount; ?>" aria-hidden="true"></span>
 <div class="d-flex justify-content-between align-items-center mb-3 px-3 pt-3">
   <small class="text-muted">
     Showing <?php echo $totalRows === 0 ? 0 : ($offset + 1); ?>&ndash;<?php echo min($offset + $perPage, $totalRows); ?> of <?php echo $totalRows; ?> user(s)<?php if ($searchQuery !== '') : ?>
@@ -14,20 +17,44 @@ if (!isset($clmsWebBase)) {
     <?php if (!empty($pendingOnly)) : ?>
       <span class="ms-1">(Pending approvals only)</span>
     <?php endif; ?>
+    <?php
+    $filterRole = $filterRole ?? '';
+    $filterAccount = $filterAccount ?? '';
+    $filterBatch = $filterBatch ?? '';
+    ?>
+    <?php if ($filterBatch === '__none__') : ?>
+      <span class="ms-1">· Unspecified batch</span>
+    <?php elseif ($filterBatch !== '') : ?>
+      <span class="ms-1">· Batch <strong><?php echo htmlspecialchars($filterBatch, ENT_QUOTES, 'UTF-8'); ?></strong></span>
+    <?php endif; ?>
+    <?php if ($filterRole !== '') : ?>
+      <span class="ms-1">· <?php echo htmlspecialchars(ucfirst($filterRole) . 's', ENT_QUOTES, 'UTF-8'); ?></span>
+    <?php endif; ?>
+    <?php if ($filterAccount === 'active') : ?>
+      <span class="ms-1">· Active accounts</span>
+    <?php elseif ($filterAccount === 'disabled') : ?>
+      <span class="ms-1">· Disabled accounts</span>
+    <?php endif; ?>
   </small>
 </div>
 
 <?php if ($userRows === []) : ?>
   <p class="mb-0 text-muted px-3 pb-3">
     <?php
+    $hasOtherFilters = !empty($pendingOnly)
+        || ($filterRole ?? '') !== ''
+        || ($filterAccount ?? '') !== ''
+        || ($filterBatch ?? '') !== '';
     if (!empty($pendingOnly)) {
         echo $searchQuery !== ''
             ? 'No pending students match your search.'
             : 'No pending student approvals found.';
+    } elseif ($searchQuery !== '') {
+        echo 'No users match your search.';
+    } elseif ($hasOtherFilters) {
+        echo 'No users match the current filters.';
     } else {
-        echo $searchQuery !== ''
-            ? 'No users match your search.'
-            : 'No users found.';
+        echo 'No users found.';
     }
     ?>
   </p>
@@ -54,7 +81,7 @@ if (!isset($clmsWebBase)) {
       <thead>
         <tr>
           <th style="width: 36px;">
-            <input type="checkbox" class="form-check-input clms-user-select-all" aria-label="Select all deletable users on this page" />
+            <input type="checkbox" class="form-check-input clms-user-select-all" aria-label="Select all students on this page" title="Selects student accounts only; instructors/admins can still be checked individually." />
           </th>
           <th>Name</th>
           <th>Email</th>
@@ -79,7 +106,7 @@ if (!isset($clmsWebBase)) {
         ? 'You cannot delete your own account while signed in.'
         : ($isLastAdmin ? 'Cannot delete the last administrator account.' : '');
 ?>
-        <tr data-search-item data-search-text="<?php echo htmlspecialchars(trim((string) $u['first_name'] . ' ' . (string) $u['last_name'] . ' ' . (string) $u['email']), ENT_QUOTES, 'UTF-8'); ?>">
+        <tr data-search-item data-user-role="<?php echo htmlspecialchars($role, ENT_QUOTES, 'UTF-8'); ?>" data-search-text="<?php echo htmlspecialchars(trim((string) $u['first_name'] . ' ' . (string) $u['last_name'] . ' ' . (string) $u['email']), ENT_QUOTES, 'UTF-8'); ?>">
           <td>
             <input
               type="checkbox"

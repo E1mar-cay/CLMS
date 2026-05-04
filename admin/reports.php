@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
+require_once dirname(__DIR__) . '/includes/student-batch-schema.php';
+
+clms_ensure_users_student_batch_column($pdo);
 
 clms_require_roles(['admin', 'instructor']);
 
@@ -328,12 +331,131 @@ if ($sessionRole === 'instructor') {
 }
 $courseOptions = $coursesStmt->fetchAll();
 
+$isReportsAdmin = ($sessionRole === 'admin');
+$reportsMasterCourses = [];
+$reportsRevieweesByBatch = [];
+$reportsTopReviewees = [];
+$reportsCourseModuleProgress = [];
+$reportsModuleAssessmentStats = [];
+$reportsModuleAttemptDetail = [];
+
+if ($isReportsAdmin) {
+    $reportsMasterCourses = $pdo->query(
+        "SELECT c.id, c.title, c.is_published,
+                COUNT(DISTINCT m.id) AS module_count,
+                (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id AND q.module_id IS NULL) AS final_exam_questions
+         FROM courses c
+         LEFT JOIN modules m ON m.course_id = c.id
+         GROUP BY c.id, c.title, c.is_published
+         ORDER BY c.title ASC"
+    )->fetchAll();
+
+    $revStmt = $pdo->query(
+        "SELECT u.id, u.first_name, u.last_name, u.email,
+                TRIM(COALESCE(u.student_batch, '')) AS student_batch
+         FROM users u
+         WHERE u.role = 'student'
+         ORDER BY student_batch ASC, u.last_name ASC, u.first_name ASC"
+    );
+    foreach ($revStmt->fetchAll() as $rv) {
+        $batchKey = trim((string) ($rv['student_batch'] ?? ''));
+        if ($batchKey === '') {
+            $batchKey = '(Unspecified)';
+        }
+        if (!isset($reportsRevieweesByBatch[$batchKey])) {
+            $reportsRevieweesByBatch[$batchKey] = [];
+        }
+        $reportsRevieweesByBatch[$batchKey][] = $rv;
+    }
+
+    $reportsTopReviewees = $pdo->query(
+        "SELECT u.id, u.first_name, u.last_name, u.email,
+                MAX(TRIM(COALESCE(u.student_batch, ''))) AS student_batch,
+                ROUND(AVG(mqa.percentage), 2) AS avg_quiz_pct,
+                COUNT(mqa.id) AS quiz_attempts,
+                COUNT(DISTINCT mqa.module_id) AS modules_with_attempts
+         FROM users u
+         INNER JOIN module_quiz_attempts mqa ON mqa.user_id = u.id
+         WHERE u.role = 'student'
+         GROUP BY u.id, u.first_name, u.last_name, u.email
+         ORDER BY avg_quiz_pct DESC, quiz_attempts DESC
+         LIMIT 15"
+    )->fetchAll();
+
+    $reportsCourseModuleProgress = $pdo->query(
+        "SELECT
+            c.id AS course_id,
+            c.title AS course_title,
+            m.id AS module_id,
+            m.title AS module_title,
+            m.sequence_order,
+            (SELECT COUNT(DISTINCT up.user_id)
+             FROM user_progress up
+             WHERE up.module_id = m.id
+               AND (up.video_completed = 1 OR up.is_completed = 1)) AS video_completed_learners,
+            (SELECT COUNT(DISTINCT mqa.user_id)
+             FROM module_quiz_attempts mqa
+             WHERE mqa.module_id = m.id
+               AND mqa.percentage >= 70.0) AS quiz_passed_learners,
+            (SELECT COUNT(*)
+             FROM module_quiz_attempts mqa2
+             WHERE mqa2.module_id = m.id) AS quiz_attempt_rows,
+            (SELECT ROUND(AVG(mqa3.percentage), 1)
+             FROM module_quiz_attempts mqa3
+             WHERE mqa3.module_id = m.id) AS avg_quiz_percentage
+         FROM courses c
+         INNER JOIN modules m ON m.course_id = c.id
+         ORDER BY c.title ASC, m.sequence_order ASC, m.id ASC"
+    )->fetchAll();
+
+    $reportsModuleAssessmentStats = $pdo->query(
+        "SELECT
+            c.title AS course_title,
+            m.id AS module_id,
+            m.title AS module_title,
+            ROUND(AVG(mqa.score), 2) AS avg_raw_score,
+            ROUND(AVG(mqa.total_points), 2) AS avg_total_points,
+            ROUND(AVG(mqa.percentage), 2) AS avg_percentage,
+            COUNT(mqa.id) AS attempt_count,
+            SUM(CASE WHEN mqa.percentage >= 70.0 THEN 1 ELSE 0 END) AS passed_attempts,
+            CASE
+                WHEN COUNT(mqa.id) > 0
+                    THEN ROUND(100.0 * SUM(CASE WHEN mqa.percentage >= 70.0 THEN 1 ELSE 0 END) / COUNT(mqa.id), 1)
+                ELSE NULL
+            END AS pass_rate_pct
+         FROM modules m
+         INNER JOIN courses c ON c.id = m.course_id
+         LEFT JOIN module_quiz_attempts mqa ON mqa.module_id = m.id
+         GROUP BY c.title, m.id, m.title
+         HAVING COUNT(mqa.id) > 0
+         ORDER BY c.title ASC, m.title ASC"
+    )->fetchAll();
+
+    $reportsModuleAttemptDetail = $pdo->query(
+        "SELECT
+            c.title AS course_title,
+            m.title AS module_title,
+            u.first_name,
+            u.last_name,
+            mqa.score,
+            mqa.total_points,
+            mqa.percentage,
+            mqa.attempted_at
+         FROM module_quiz_attempts mqa
+         INNER JOIN modules m ON m.id = mqa.module_id
+         INNER JOIN courses c ON c.id = m.course_id
+         INNER JOIN users u ON u.id = mqa.user_id
+         ORDER BY mqa.attempted_at DESC
+         LIMIT 200"
+    )->fetchAll();
+}
+
 require_once __DIR__ . '/includes/layout-top.php';
 ?>
               <div class="d-flex flex-wrap justify-content-between align-items-center py-3 mb-3 gap-2">
                 <div>
                   <h4 class="fw-bold mb-1">Reports</h4>
-                  <small class="text-muted">Select a date range and course, then download a CSV export or print the course questionnaire.</small>
+                  <small class="text-muted">Select a date range and course for CSV exports and questionnaire printing. Administrators also see live cohort and module analytics below.</small>
                 </div>
               </div>
 
@@ -427,6 +549,198 @@ require_once __DIR__ . '/includes/layout-top.php';
                   </script>
                 </div>
               </div>
+
+<?php if ($isReportsAdmin) : ?>
+              <div class="card mt-4">
+                <h5 class="card-header">Master course list</h5>
+                <div class="card-body">
+                  <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Title</th>
+                          <th>Published</th>
+                          <th class="text-end">Modules</th>
+                          <th class="text-end">Final exam Qs</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+<?php foreach ($reportsMasterCourses as $mc) : ?>
+                        <tr>
+                          <td><?php echo (int) $mc['id']; ?></td>
+                          <td><?php echo htmlspecialchars((string) $mc['title'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td><?php echo (int) $mc['is_published'] === 1 ? 'Yes' : 'No'; ?></td>
+                          <td class="text-end"><?php echo (int) $mc['module_count']; ?></td>
+                          <td class="text-end"><?php echo (int) $mc['final_exam_questions']; ?></td>
+                        </tr>
+<?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card mt-4">
+                <h5 class="card-header">Reviewees by batch</h5>
+                <div class="card-body">
+<?php if ($reportsRevieweesByBatch === []) : ?>
+                  <p class="text-muted mb-0">No student accounts found.</p>
+<?php else : ?>
+<?php foreach ($reportsRevieweesByBatch as $batchName => $members) : ?>
+                  <h6 class="mt-3 mb-2"><?php echo htmlspecialchars((string) $batchName, ENT_QUOTES, 'UTF-8'); ?> <span class="badge bg-label-secondary"><?php echo count($members); ?></span></h6>
+                  <div class="table-responsive mb-4">
+                    <table class="table table-sm mb-0">
+                      <thead>
+                        <tr><th>Name</th><th>Email</th></tr>
+                      </thead>
+                      <tbody>
+<?php foreach ($members as $mem) : ?>
+                        <tr>
+                          <td><?php echo htmlspecialchars(trim((string) $mem['first_name'] . ' ' . (string) $mem['last_name']), ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td><small><?php echo htmlspecialchars((string) $mem['email'], ENT_QUOTES, 'UTF-8'); ?></small></td>
+                        </tr>
+<?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+<?php endforeach; ?>
+<?php endif; ?>
+                </div>
+              </div>
+
+              <div class="card mt-4">
+                <h5 class="card-header">Top performing reviewees (module assessments)</h5>
+                <div class="card-body">
+                  <p class="small text-muted">Ranked by average quiz percentage across all module attempts.</p>
+                  <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Name</th>
+                          <th>Batch</th>
+                          <th class="text-end">Avg %</th>
+                          <th class="text-end">Attempts</th>
+                          <th class="text-end">Modules tried</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+<?php foreach ($reportsTopReviewees as $ti => $tr) :
+    $tb = trim((string) ($tr['student_batch'] ?? ''));
+    ?>
+                        <tr>
+                          <td><?php echo $ti + 1; ?></td>
+                          <td><?php echo htmlspecialchars(trim((string) $tr['first_name'] . ' ' . (string) $tr['last_name']), ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td><small><?php echo $tb !== '' ? htmlspecialchars($tb, ENT_QUOTES, 'UTF-8') : '—'; ?></small></td>
+                          <td class="text-end"><?php echo htmlspecialchars((string) $tr['avg_quiz_pct'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo (int) $tr['quiz_attempts']; ?></td>
+                          <td class="text-end"><?php echo (int) $tr['modules_with_attempts']; ?></td>
+                        </tr>
+<?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card mt-4">
+                <h5 class="card-header">Review progress by course &amp; module</h5>
+                <div class="card-body">
+                  <p class="small text-muted">Video completed = learners with completed video on the module. Quiz passed = distinct learners with at least one attempt ≥70% on that module.</p>
+                  <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                      <thead>
+                        <tr>
+                          <th>Course</th>
+                          <th>Module</th>
+                          <th class="text-end">Video done (learners)</th>
+                          <th class="text-end">Quiz ≥70% (learners)</th>
+                          <th class="text-end">Quiz attempts</th>
+                          <th class="text-end">Avg quiz %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+<?php foreach ($reportsCourseModuleProgress as $cmp) : ?>
+                        <tr>
+                          <td><?php echo htmlspecialchars((string) $cmp['course_title'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td><?php echo htmlspecialchars((string) $cmp['module_title'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo (int) $cmp['video_completed_learners']; ?></td>
+                          <td class="text-end"><?php echo (int) $cmp['quiz_passed_learners']; ?></td>
+                          <td class="text-end"><?php echo (int) $cmp['quiz_attempt_rows']; ?></td>
+                          <td class="text-end"><?php echo $cmp['avg_quiz_percentage'] !== null ? htmlspecialchars((string) $cmp['avg_quiz_percentage'], ENT_QUOTES, 'UTF-8') : '—'; ?></td>
+                        </tr>
+<?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card mt-4">
+                <h5 class="card-header">Module assessment analytics</h5>
+                <div class="card-body">
+                  <p class="small text-muted">Per-module aggregates: average raw score vs. average total points, mean percentage, and overall pass rate (attempts ≥70%).</p>
+                  <div class="table-responsive mb-4">
+                    <table class="table table-sm table-hover mb-0">
+                      <thead>
+                        <tr>
+                          <th>Course</th>
+                          <th>Module</th>
+                          <th class="text-end">Avg raw</th>
+                          <th class="text-end">Avg total</th>
+                          <th class="text-end">Avg %</th>
+                          <th class="text-end">Attempts</th>
+                          <th class="text-end">Pass rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+<?php foreach ($reportsModuleAssessmentStats as $ms) : ?>
+                        <tr>
+                          <td><?php echo htmlspecialchars((string) $ms['course_title'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td><?php echo htmlspecialchars((string) $ms['module_title'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo htmlspecialchars((string) $ms['avg_raw_score'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo htmlspecialchars((string) $ms['avg_total_points'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo htmlspecialchars((string) $ms['avg_percentage'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo (int) $ms['attempt_count']; ?></td>
+                          <td class="text-end"><?php echo $ms['pass_rate_pct'] !== null ? htmlspecialchars((string) $ms['pass_rate_pct'], ENT_QUOTES, 'UTF-8') . '%' : '—'; ?></td>
+                        </tr>
+<?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                  <h6 class="mb-2">Recent attempts (raw / total / %)</h6>
+                  <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Course</th>
+                          <th>Module</th>
+                          <th>Learner</th>
+                          <th class="text-end">Score</th>
+                          <th class="text-end">Total</th>
+                          <th class="text-end">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+<?php foreach ($reportsModuleAttemptDetail as $det) : ?>
+                        <tr>
+                          <td><small><?php echo htmlspecialchars((string) $det['attempted_at'], ENT_QUOTES, 'UTF-8'); ?></small></td>
+                          <td><small><?php echo htmlspecialchars((string) $det['course_title'], ENT_QUOTES, 'UTF-8'); ?></small></td>
+                          <td><small><?php echo htmlspecialchars((string) $det['module_title'], ENT_QUOTES, 'UTF-8'); ?></small></td>
+                          <td><?php echo htmlspecialchars(trim((string) $det['first_name'] . ' ' . (string) $det['last_name']), ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo htmlspecialchars((string) $det['score'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo htmlspecialchars((string) $det['total_points'], ENT_QUOTES, 'UTF-8'); ?></td>
+                          <td class="text-end"><?php echo htmlspecialchars((string) $det['percentage'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        </tr>
+<?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+<?php endif; ?>
 
 <?php
 require_once __DIR__ . '/includes/layout-bottom.php';

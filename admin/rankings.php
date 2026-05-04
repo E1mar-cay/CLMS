@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
+require_once dirname(__DIR__) . '/includes/student-batch-schema.php';
+
+clms_ensure_users_student_batch_column($pdo);
 
 clms_require_roles(['admin', 'instructor']);
 
@@ -11,7 +14,7 @@ $pageTitle = 'Course Rankings | Criminology LMS';
 $activeAdminPage = 'rankings';
 
 $range = (string) ($_GET['range'] ?? 'this_semester');
-$allowedRanges = ['all', 'this_month', 'this_semester', 'custom'];
+$allowedRanges = ['all', 'this_month', 'this_semester'];
 if (!in_array($range, $allowedRanges, true)) {
     $range = 'this_semester';
 }
@@ -26,8 +29,6 @@ $semesterEnd = $month <= 6
     ? (new DateTimeImmutable($year . '-06-30'))
     : (new DateTimeImmutable($year . '-12-31'));
 
-$dateFromInput = trim((string) ($_GET['date_from'] ?? ''));
-$dateToInput = trim((string) ($_GET['date_to'] ?? ''));
 $dateFrom = null;
 $dateTo = null;
 
@@ -37,18 +38,26 @@ if ($range === 'this_month') {
 } elseif ($range === 'this_semester') {
     $dateFrom = $semesterStart->format('Y-m-d');
     $dateTo = $semesterEnd->format('Y-m-d');
-} elseif ($range === 'custom') {
-    $fromTmp = DateTimeImmutable::createFromFormat('Y-m-d', $dateFromInput) ?: null;
-    $toTmp = DateTimeImmutable::createFromFormat('Y-m-d', $dateToInput) ?: null;
-    if ($fromTmp && $toTmp) {
-        if ($fromTmp <= $toTmp) {
-            $dateFrom = $fromTmp->format('Y-m-d');
-            $dateTo = $toTmp->format('Y-m-d');
-        } else {
-            $dateFrom = $toTmp->format('Y-m-d');
-            $dateTo = $fromTmp->format('Y-m-d');
-        }
-    }
+}
+
+$batchFilter = trim((string) ($_GET['batch'] ?? ''));
+$overallRankMode = (string) ($_GET['overall_rank'] ?? 'composite');
+$allowedOverallRank = ['composite', 'by_module', 'by_final'];
+if (!in_array($overallRankMode, $allowedOverallRank, true)) {
+    $overallRankMode = 'composite';
+}
+
+$assessmentRankMode = (string) ($_GET['assessment_rank'] ?? 'all');
+$allowedAssessmentRank = ['all', 'top10', 'bottom10'];
+if (!in_array($assessmentRankMode, $allowedAssessmentRank, true)) {
+    $assessmentRankMode = 'all';
+}
+
+$orderSql = 'ORDER BY overall_score DESC, fe.final_exam_score DESC, ms.module_avg_score DESC, u.last_name ASC, u.first_name ASC';
+if ($overallRankMode === 'by_module') {
+    $orderSql = 'ORDER BY ms.module_avg_score DESC, overall_score DESC, u.last_name ASC, u.first_name ASC';
+} elseif ($overallRankMode === 'by_final') {
+    $orderSql = 'ORDER BY fe.final_exam_score IS NULL, fe.final_exam_score DESC, overall_score DESC, u.last_name ASC, u.first_name ASC';
 }
 
 $courseStmt = $pdo->query(
@@ -67,6 +76,7 @@ $rankingRows = [];
 $moduleBreakdownByUser = [];
 $selectedCourseTitle = null;
 $finalExamTotalQuestions = 0;
+$rankingBatchOptions = [];
 
 if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourseId > 0) {
     foreach ($courses as $course) {
@@ -76,11 +86,12 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
         }
     }
 
-    $rankingStmt = $pdo->prepare(
+    $rankingSql =
         "SELECT
             u.id AS user_id,
             u.first_name,
             u.last_name,
+            COALESCE(TRIM(u.student_batch), '') AS student_batch,
             COALESCE(ms.module_avg_score, 0.00) AS module_avg_score,
             COALESCE(ms.module_count, 0) AS module_count,
             COALESCE(ms.module_correct_total, 0.00) AS module_correct_total,
@@ -152,8 +163,8 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
             GROUP BY user_id
          ) fe ON fe.user_id = u.id
          WHERE u.role = 'student'
-         ORDER BY overall_score DESC, fe.final_exam_score DESC, ms.module_avg_score DESC, u.last_name ASC, u.first_name ASC"
-    );
+         {$orderSql}";
+    $rankingStmt = $pdo->prepare($rankingSql);
     $rankingStmt->execute([
         'course_id_modules' => (int) $selectedCourseId,
         'course_id_exam' => (int) $selectedCourseId,
@@ -177,6 +188,57 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
         'fe_range_to_b' => $dateTo,
     ]);
     $rankingRows = $rankingStmt->fetchAll();
+
+    if ($batchFilter !== '') {
+        $rankingRows = array_values(array_filter(
+            $rankingRows,
+            static function (array $r) use ($batchFilter): bool {
+                $b = trim((string) ($r['student_batch'] ?? ''));
+                if ($batchFilter === '__none__') {
+                    return $b === '';
+                }
+
+                return strcasecmp($b, $batchFilter) === 0;
+            }
+        ));
+    }
+
+    if ($assessmentRankMode === 'top10') {
+        usort(
+            $rankingRows,
+            static function (array $a, array $b): int {
+                return ((float) ($b['module_avg_score'] ?? 0)) <=> ((float) ($a['module_avg_score'] ?? 0));
+            }
+        );
+        $rankingRows = array_slice($rankingRows, 0, 10);
+    } elseif ($assessmentRankMode === 'bottom10') {
+        usort(
+            $rankingRows,
+            static function (array $a, array $b): int {
+                return ((float) ($a['module_avg_score'] ?? 0)) <=> ((float) ($b['module_avg_score'] ?? 0));
+            }
+        );
+        $rankingRows = array_slice($rankingRows, 0, 10);
+    }
+
+    $rbStmt = $pdo->prepare(
+        "SELECT DISTINCT TRIM(COALESCE(u.student_batch, '')) AS b
+         FROM users u
+         WHERE u.role = 'student'
+           AND (
+             EXISTS(
+                 SELECT 1 FROM module_quiz_attempts mqa
+                 INNER JOIN modules m ON m.id = mqa.module_id
+                 WHERE mqa.user_id = u.id AND m.course_id = :cid1
+             )
+             OR EXISTS(SELECT 1 FROM exam_attempts ea WHERE ea.user_id = u.id AND ea.course_id = :cid2)
+           )
+         ORDER BY b ASC"
+    );
+    $rbStmt->execute(['cid1' => (int) $selectedCourseId, 'cid2' => (int) $selectedCourseId]);
+    while ($brow = $rbStmt->fetch()) {
+        $rankingBatchOptions[] = (string) $brow['b'];
+    }
 
     $moduleBreakdownStmt = $pdo->prepare(
         "SELECT
@@ -236,8 +298,21 @@ if ((string) ($_GET['export'] ?? '') === 'csv') {
     header('Content-Disposition: attachment; filename="admin_course_rankings.csv"');
     $out = fopen('php://output', 'wb');
     if ($out !== false) {
-        fputcsv($out, ['Course', (string) ($selectedCourseTitle ?? ''), 'Range', $range, 'From', (string) ($dateFrom ?? ''), 'To', (string) ($dateTo ?? '')]);
-        fputcsv($out, ['Rank', 'Student', 'Overall Rank Score', 'Assessments', 'Final Exam', 'Scores Per Module']);
+        fputcsv($out, [
+            'Course',
+            (string) ($selectedCourseTitle ?? ''),
+            'Period',
+            $range,
+            'Date window',
+            (string) ($dateFrom ?? 'all') . ' to ' . (string) ($dateTo ?? 'all'),
+            'Batch filter',
+            $batchFilter === '' ? 'all' : $batchFilter,
+            'Overall ranking mode',
+            $overallRankMode,
+            'Course assessment ranking',
+            $assessmentRankMode,
+        ]);
+        fputcsv($out, ['Rank', 'Student', 'Batch', 'Overall Rank Score', 'Assessments', 'Final Exam', 'Scores Per Module']);
         foreach ($rankingRows as $idx => $row) {
             $uid = (int) $row['user_id'];
             $fullName = trim((string) $row['first_name'] . ' ' . (string) $row['last_name']);
@@ -252,6 +327,7 @@ if ((string) ($_GET['export'] ?? '') === 'csv') {
             fputcsv($out, [
                 $idx + 1,
                 $fullName,
+                trim((string) ($row['student_batch'] ?? '')),
                 number_format((float) $row['overall_score'], 2),
                 (int) round((float) $row['module_correct_total']) . '/' . (int) $row['module_question_total'],
                 $row['final_exam_score'] !== null ? (int) round((float) $row['final_exam_score']) . '/' . $finalExamTotalQuestions : '-',
@@ -276,7 +352,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                 <div class="card mb-4">
                   <div class="card-body">
                     <form method="get" class="row g-3 align-items-end">
-                      <div class="col-12 col-xl-4">
+                      <div class="col-12 col-xl-3">
                         <label for="course_id" class="form-label">Course</label>
                         <select id="course_id" name="course_id" class="form-select" onchange="this.form.submit()">
 <?php foreach ($courses as $course) : ?>
@@ -287,31 +363,64 @@ require_once __DIR__ . '/includes/layout-top.php';
                         </select>
                       </div>
                       <div class="col-12 col-md-6 col-xl-2">
-                        <label for="range" class="form-label">Date Range</label>
-                        <select id="range" name="range" class="form-select" onchange="this.form.submit()">
+                        <label for="range" class="form-label">Period</label>
+                        <select id="range" name="range" class="form-select">
                           <option value="this_semester" <?php echo $range === 'this_semester' ? 'selected' : ''; ?>>This Semester</option>
                           <option value="this_month" <?php echo $range === 'this_month' ? 'selected' : ''; ?>>This Month</option>
                           <option value="all" <?php echo $range === 'all' ? 'selected' : ''; ?>>All Time</option>
-                          <option value="custom" <?php echo $range === 'custom' ? 'selected' : ''; ?>>Custom</option>
                         </select>
                       </div>
                       <div class="col-12 col-md-6 col-xl-2">
-                        <label for="date_from" class="form-label">From</label>
-                        <input id="date_from" type="date" name="date_from" class="form-control" value="<?php echo htmlspecialchars($dateFromInput, ENT_QUOTES, 'UTF-8'); ?>" />
+                        <label for="batch" class="form-label">Batch No.</label>
+                        <select id="batch" name="batch" class="form-select">
+                          <option value="">All batches</option>
+                          <option value="__none__" <?php echo $batchFilter === '__none__' ? 'selected' : ''; ?>>Unspecified</option>
+<?php foreach ($rankingBatchOptions as $rb) :
+    if ($rb === '') {
+        continue;
+    }
+    ?>
+                          <option value="<?php echo htmlspecialchars($rb, ENT_QUOTES, 'UTF-8'); ?>" <?php echo ($batchFilter !== '' && $batchFilter !== '__none__' && strcasecmp($batchFilter, $rb) === 0) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($rb, ENT_QUOTES, 'UTF-8'); ?>
+                          </option>
+<?php endforeach; ?>
+                        </select>
                       </div>
                       <div class="col-12 col-md-6 col-xl-2">
-                        <label for="date_to" class="form-label">To</label>
-                        <input id="date_to" type="date" name="date_to" class="form-control" value="<?php echo htmlspecialchars($dateToInput, ENT_QUOTES, 'UTF-8'); ?>" />
+                        <label for="assessment_rank" class="form-label">Course assessment ranking</label>
+                        <select id="assessment_rank" name="assessment_rank" class="form-select">
+                          <option value="all" <?php echo $assessmentRankMode === 'all' ? 'selected' : ''; ?>>All reviewees</option>
+                          <option value="top10" <?php echo $assessmentRankMode === 'top10' ? 'selected' : ''; ?>>Top 10 (by module avg.)</option>
+                          <option value="bottom10" <?php echo $assessmentRankMode === 'bottom10' ? 'selected' : ''; ?>>Bottom 10 (by module avg.)</option>
+                        </select>
                       </div>
-                      <div class="col-12 col-md-6 col-xl-2">
-                        <span class="form-label d-none d-md-block" aria-hidden="true">&nbsp;</span>
-                        <div class="d-flex flex-column flex-sm-row gap-2">
-                          <button type="submit" class="btn btn-outline-primary flex-grow-1">Apply</button>
-                          <a class="btn btn-outline-secondary flex-grow-1 text-nowrap"
-                             href="<?php echo htmlspecialchars($clmsWebBase . '/admin/rankings.php?course_id=' . (int) $selectedCourseId . '&range=' . urlencode($range) . '&date_from=' . urlencode($dateFromInput) . '&date_to=' . urlencode($dateToInput) . '&export=csv', ENT_QUOTES, 'UTF-8'); ?>">
-                            Export CSV
-                          </a>
+                      <div class="col-12 col-md-6 col-xl-3">
+                        <label for="overall_rank" class="form-label">Overall ranking</label>
+                        <select id="overall_rank" name="overall_rank" class="form-select">
+                          <option value="composite" <?php echo $overallRankMode === 'composite' ? 'selected' : ''; ?>>Composite score</option>
+                          <option value="by_module" <?php echo $overallRankMode === 'by_module' ? 'selected' : ''; ?>>Prioritize module assessments</option>
+                          <option value="by_final" <?php echo $overallRankMode === 'by_final' ? 'selected' : ''; ?>>Prioritize final exam</option>
+                        </select>
+                      </div>
+                      <div class="col-12 col-xl-12">
+                        <div class="d-flex flex-wrap gap-2">
+                          <button type="submit" class="btn btn-primary">Apply filters</button>
+<?php
+    $exportRankParams = [
+        'course_id' => (int) $selectedCourseId,
+        'range' => $range,
+        'overall_rank' => $overallRankMode,
+        'assessment_rank' => $assessmentRankMode,
+        'export' => 'csv',
+    ];
+    if ($batchFilter !== '') {
+        $exportRankParams['batch'] = $batchFilter;
+    }
+    $exportRankUrl = $clmsWebBase . '/admin/rankings.php?' . http_build_query($exportRankParams);
+?>
+                          <a class="btn btn-outline-secondary text-nowrap" href="<?php echo htmlspecialchars($exportRankUrl, ENT_QUOTES, 'UTF-8'); ?>">Export CSV</a>
                         </div>
+                        <small class="text-muted d-block mt-2">Period still limits which attempts count toward scores. Batch and assessment filters apply after ranking is built.</small>
                       </div>
                     </form>
                   </div>
@@ -324,7 +433,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                   </div>
                   <div class="card-body">
 <?php if ($courses === []) : ?>
-                    <p class="mb-0">No published courses found.</p>
+                    <p class="mb-0">No courses found.</p>
 <?php elseif ($rankingRows === []) : ?>
                     <p class="mb-0">No module or final exam attempts found for this course yet.</p>
 <?php else : ?>
@@ -334,6 +443,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                           <tr>
                             <th>#</th>
                             <th>Student</th>
+                            <th>Batch</th>
                             <th class="text-center">Overall Rank Score</th>
                             <th class="text-center">Assessments</th>
                             <th class="text-center">Final Exam</th>
@@ -357,6 +467,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                               <span class="badge <?php echo $rankBadgeClass; ?>"><?php echo htmlspecialchars($rankLabel . ' #' . ($idx + 1), ENT_QUOTES, 'UTF-8'); ?></span>
                             </td>
                             <td class="fw-semibold"><?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?></td>
+                            <td><small class="text-muted"><?php $sb = trim((string) ($row['student_batch'] ?? '')); echo $sb !== '' ? htmlspecialchars($sb, ENT_QUOTES, 'UTF-8') : '—'; ?></small></td>
                             <td class="text-center fw-semibold"><?php echo number_format((float) $row['overall_score'], 2); ?></td>
                             <td class="text-center">
                               <?php echo (int) round((float) $row['module_correct_total']); ?> / <?php echo (int) $row['module_question_total']; ?>
