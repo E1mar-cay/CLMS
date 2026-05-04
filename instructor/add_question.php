@@ -44,6 +44,32 @@ $activeInstructorPage = 'manage_content';
 $errorMessage = '';
 $successMessage = '';
 $selectedCourseId = filter_input(INPUT_GET, 'course_id', FILTER_VALIDATE_INT);
+
+/** Same rows as the downloadable sample — keep in sync for UI preview + export. */
+$clmsQuestionImportSampleRows = [
+    ['question_type', 'question_text', 'points', 'module_title', 'option_a', 'option_b', 'option_c', 'option_d', 'correct', 'fill_answer', 'fill_alternatives', 'sequence_items'],
+    ['multiple_select', 'Which act constitutes a felony example?', '1', '', 'Theft of low value', 'Serious assault', 'Jaywalking', 'Littering', 'B', '', '', ''],
+    ['true_false', 'Probable cause always requires a warrant.', '1', '', '', '', '', '', 'false', '', '', ''],
+    ['fill_blank', 'The Philippine Constitution was enacted in what year?', '1', '', '', '', '', '', '', '1987', 'nineteen eighty-seven', ''],
+    ['sequencing', 'Arrange the investigation steps in order.', '2', 'Module 1 Introduction', '', '', '', '', '', '', '', 'Scene security|Documentation|Evidence collection'],
+];
+
+if ((string) ($_GET['download'] ?? '') === 'csv_sample') {
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="clms_questions_import_sample.csv"');
+    echo "\xEF\xBB\xBF";
+    $out = fopen('php://output', 'w');
+    if ($out !== false) {
+        foreach ($clmsQuestionImportSampleRows as $row) {
+            fputcsv($out, $row);
+        }
+        fclose($out);
+    }
+    exit;
+}
 $editQuestionId = filter_input(INPUT_GET, 'edit', FILTER_VALIDATE_INT);
 $deleteQuestionId = filter_input(INPUT_GET, 'delete', FILTER_VALIDATE_INT);
 $editQuestion = null;
@@ -104,6 +130,266 @@ if ($deleteQuestionId !== false && $deleteQuestionId !== null && $deleteQuestion
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!clms_csrf_validate($_POST['csrf_token'] ?? null)) {
         $errorMessage = 'Invalid request token.';
+    } elseif (($_POST['action'] ?? '') === 'import_questions_csv') {
+        $importRowErrors = [];
+        $importOk = 0;
+        try {
+            $importCourseId = filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
+            if ($importCourseId === false || $importCourseId === null || $importCourseId <= 0 || !isset($assignedSet[(int) $importCourseId])) {
+                throw new RuntimeException('You can only import into a course in your scope.');
+            }
+            if (!isset($_FILES['questions_csv']) || !is_array($_FILES['questions_csv'])) {
+                throw new RuntimeException('Please choose a CSV file.');
+            }
+            $upErr = (int) ($_FILES['questions_csv']['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($upErr !== UPLOAD_ERR_OK) {
+                throw new RuntimeException($upErr === UPLOAD_ERR_INI_SIZE || $upErr === UPLOAD_ERR_FORM_SIZE
+                    ? 'CSV file is too large (max 4 MB).'
+                    : 'CSV upload failed.');
+            }
+            $tmpPath = (string) ($_FILES['questions_csv']['tmp_name'] ?? '');
+            if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
+                throw new RuntimeException('Invalid upload.');
+            }
+            if ((int) ($_FILES['questions_csv']['size'] ?? 0) > 4 * 1024 * 1024) {
+                throw new RuntimeException('CSV file must be 4 MB or smaller.');
+            }
+
+            $modsStmt = $pdo->prepare(
+                'SELECT id, TRIM(title) AS title FROM modules WHERE course_id = :cid'
+            );
+            $modsStmt->execute(['cid' => (int) $importCourseId]);
+            $moduleTitleToId = [];
+            foreach ($modsStmt->fetchAll() as $mr) {
+                $t = mb_strtolower(trim((string) ($mr['title'] ?? '')));
+                if ($t !== '') {
+                    $moduleTitleToId[$t] = (int) $mr['id'];
+                }
+            }
+
+            $handle = fopen($tmpPath, 'rb');
+            if ($handle === false) {
+                throw new RuntimeException('Unable to read CSV file.');
+            }
+            $bom = fread($handle, 3);
+            if ($bom !== "\xEF\xBB\xBF") {
+                rewind($handle);
+            }
+            $headerRow = fgetcsv($handle);
+            if ($headerRow === false) {
+                fclose($handle);
+                throw new RuntimeException('CSV is empty.');
+            }
+            $norm = static function (string $h): string {
+                return strtolower(trim(str_replace([' ', '-'], '_', $h)));
+            };
+            $colIndex = [];
+            foreach ($headerRow as $i => $h) {
+                $colIndex[$norm((string) $h)] = $i;
+            }
+            $need = ['question_type', 'question_text', 'points'];
+            foreach ($need as $nk) {
+                if (!isset($colIndex[$nk])) {
+                    fclose($handle);
+                    throw new RuntimeException('CSV must include columns: ' . implode(', ', $need) . '.');
+                }
+            }
+
+            $cell = static function (array $row, array $colIndex, string $key): string {
+                $k = strtolower(trim(str_replace([' ', '-'], '_', $key)));
+                if (!isset($colIndex[$k])) {
+                    return '';
+                }
+                $i = $colIndex[$k];
+
+                return isset($row[$i]) ? trim((string) $row[$i]) : '';
+            };
+
+            $lineNum = 1;
+            $allowedTypes = ['true_false', 'multiple_select', 'fill_blank', 'sequencing'];
+
+            $pdo->beginTransaction();
+            try {
+                $handleClosed = false;
+                while (($dataRow = fgetcsv($handle)) !== false) {
+                    $lineNum++;
+                    if ($dataRow === [] || (count($dataRow) === 1 && trim((string) ($dataRow[0] ?? '')) === '')) {
+                        continue;
+                    }
+                    try {
+                        $qType = strtolower($cell($dataRow, $colIndex, 'question_type'));
+                        $qText = $cell($dataRow, $colIndex, 'question_text');
+                        $pointsRaw = $cell($dataRow, $colIndex, 'points');
+                        if ($qText === '' || $pointsRaw === '' || !is_numeric($pointsRaw)) {
+                            throw new RuntimeException('Missing question text or points.');
+                        }
+                        $points = (float) $pointsRaw;
+                        if ($points < 0) {
+                            throw new RuntimeException('Points must be zero or higher.');
+                        }
+                        if (!in_array($qType, $allowedTypes, true)) {
+                            throw new RuntimeException('question_type must be one of: ' . implode(', ', $allowedTypes) . '.');
+                        }
+
+                        $moduleTitleRaw = $cell($dataRow, $colIndex, 'module_title');
+                        $moduleIdForQuestion = null;
+                        if ($moduleTitleRaw !== '') {
+                            $lk = mb_strtolower(trim($moduleTitleRaw));
+                            if (!isset($moduleTitleToId[$lk])) {
+                                throw new RuntimeException('Unknown module_title for this course (use exact title or leave blank for final exam).');
+                            }
+                            $moduleIdForQuestion = $moduleTitleToId[$lk];
+                        }
+
+                        $answerRows = [];
+                        if ($qType === 'multiple_select') {
+                            $oa = $cell($dataRow, $colIndex, 'option_a');
+                            $ob = $cell($dataRow, $colIndex, 'option_b');
+                            $oc = $cell($dataRow, $colIndex, 'option_c');
+                            $od = $cell($dataRow, $colIndex, 'option_d');
+                            $corr = strtoupper($cell($dataRow, $colIndex, 'correct'));
+                            if ($oa === '' || $ob === '' || $oc === '' || $od === '') {
+                                throw new RuntimeException('multiple_select requires option_a through option_d.');
+                            }
+                            if (!in_array($corr, ['A', 'B', 'C', 'D'], true)) {
+                                throw new RuntimeException('correct must be A, B, C, or D for multiple_select.');
+                            }
+                            $optionMap = ['A' => $oa, 'B' => $ob, 'C' => $oc, 'D' => $od];
+                            foreach ($optionMap as $letter => $optionText) {
+                                $answerRows[] = [
+                                    'answer_text' => $optionText,
+                                    'is_correct' => $letter === $corr ? 1 : 0,
+                                    'sequence_position' => null,
+                                ];
+                            }
+                        } elseif ($qType === 'true_false') {
+                            $correctTf = strtolower($cell($dataRow, $colIndex, 'correct'));
+                            if (!in_array($correctTf, ['true', 'false'], true)) {
+                                throw new RuntimeException('For true_false, correct must be true or false.');
+                            }
+                            $answerRows[] = [
+                                'answer_text' => 'True',
+                                'is_correct' => $correctTf === 'true' ? 1 : 0,
+                                'sequence_position' => null,
+                            ];
+                            $answerRows[] = [
+                                'answer_text' => 'False',
+                                'is_correct' => $correctTf === 'false' ? 1 : 0,
+                                'sequence_position' => null,
+                            ];
+                        } elseif ($qType === 'fill_blank') {
+                            $exact = $cell($dataRow, $colIndex, 'fill_answer');
+                            if ($exact === '') {
+                                throw new RuntimeException('fill_blank requires fill_answer.');
+                            }
+                            $answerRows[] = [
+                                'answer_text' => $exact,
+                                'is_correct' => 1,
+                                'sequence_position' => null,
+                            ];
+                            $altRaw = $cell($dataRow, $colIndex, 'fill_alternatives');
+                            if ($altRaw !== '') {
+                                foreach (preg_split('/[;\r\n]+/', $altRaw) ?: [] as $alt) {
+                                    $alt = trim((string) $alt);
+                                    if ($alt === '' || mb_strtolower($alt) === mb_strtolower($exact)) {
+                                        continue;
+                                    }
+                                    $answerRows[] = [
+                                        'answer_text' => $alt,
+                                        'is_correct' => 1,
+                                        'sequence_position' => null,
+                                    ];
+                                }
+                            }
+                        } elseif ($qType === 'sequencing') {
+                            $seqRaw = $cell($dataRow, $colIndex, 'sequence_items');
+                            if ($seqRaw === '') {
+                                throw new RuntimeException('sequencing requires sequence_items (use | between steps).');
+                            }
+                            $parts = array_values(array_filter(array_map('trim', explode('|', $seqRaw)), static fn (string $s): bool => $s !== ''));
+                            if (count($parts) < 2) {
+                                throw new RuntimeException('sequencing needs at least two items separated by |.');
+                            }
+                            foreach ($parts as $index => $itemText) {
+                                $answerRows[] = [
+                                    'answer_text' => $itemText,
+                                    'is_correct' => 1,
+                                    'sequence_position' => $index + 1,
+                                ];
+                            }
+                        }
+
+                        if ($answerRows === []) {
+                            throw new RuntimeException('Could not build answers for this row.');
+                        }
+
+                        $insQ = $pdo->prepare(
+                            'INSERT INTO questions (course_id, module_id, question_text, question_type, points)
+                             VALUES (:course_id, :module_id, :question_text, :question_type, :points)'
+                        );
+                        $insQ->execute([
+                            'course_id' => (int) $importCourseId,
+                            'module_id' => $moduleIdForQuestion,
+                            'question_text' => $qText,
+                            'question_type' => $qType,
+                            'points' => number_format($points, 2, '.', ''),
+                        ]);
+                        $newQid = (int) $pdo->lastInsertId();
+
+                        $insA = $pdo->prepare(
+                            'INSERT INTO answers (question_id, answer_text, is_correct, sequence_position)
+                             VALUES (:question_id, :answer_text, :is_correct, :sequence_position)'
+                        );
+                        foreach ($answerRows as $ar) {
+                            $insA->execute([
+                                'question_id' => $newQid,
+                                'answer_text' => $ar['answer_text'],
+                                'is_correct' => $ar['is_correct'],
+                                'sequence_position' => $ar['sequence_position'],
+                            ]);
+                        }
+                        $importOk++;
+                    } catch (RuntimeException $rowEx) {
+                        $importRowErrors[] = 'Line ' . $lineNum . ': ' . $rowEx->getMessage();
+                    }
+                }
+                if (is_resource($handle)) {
+                    fclose($handle);
+                    $handleClosed = true;
+                }
+                $pdo->commit();
+            } catch (Throwable $inner) {
+                if (!$handleClosed && isset($handle) && is_resource($handle)) {
+                    fclose($handle);
+                }
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $inner;
+            }
+
+            $parts = ['Imported ' . $importOk . ' question(s).'];
+            if ($importRowErrors !== []) {
+                $parts[] = 'Skipped ' . count($importRowErrors) . ' row(s):';
+                $parts = array_merge($parts, array_slice($importRowErrors, 0, 15));
+                if (count($importRowErrors) > 15) {
+                    $parts[] = '…and ' . (count($importRowErrors) - 15) . ' more.';
+                }
+            }
+            $successMessage = implode(' ', $parts);
+            $selectedCourseId = (int) $importCourseId;
+        } catch (Throwable $e) {
+            if (isset($handle) && is_resource($handle)) {
+                fclose($handle);
+            }
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $errorMessage = $e instanceof RuntimeException ? $e->getMessage() : 'Unable to import CSV.';
+            if (!($e instanceof RuntimeException)) {
+                error_log($e->getMessage());
+            }
+        }
     } elseif (($_POST['action'] ?? '') === 'save_video') {
         try {
             $videoCourseId = filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
@@ -730,7 +1016,7 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                         <button type="submit" class="btn btn-outline-secondary">Set</button>
                       </form>
 <?php endif; ?>
-<?php if ($assignedCourses !== []) : ?>
+<?php if ($hasSelectedCourse) : ?>
                       <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#moduleVideoModal" data-action="add">
                         <i class="bx bx-video-plus me-1"></i> Add Module Video
                       </button>
@@ -1029,6 +1315,78 @@ $currentModuleIdValue = isset($editQuestion['module_id']) && $editQuestion['modu
 <?php endif; ?>
                     </div>
                   </form>
+
+              <div class="card mt-3 border">
+                <h5 class="card-header">Bulk import (CSV)</h5>
+                <div class="card-body">
+                  <p class="small text-muted mb-3">
+                    Save as <strong>CSV (UTF-8)</strong>. Row 1 must be the header row (same columns as below). Use comma-separated fields; put commas inside values in double quotes.
+                  </p>
+
+                  <div class="mb-3 rounded-3 border shadow-sm overflow-hidden bg-white">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-bottom bg-label-secondary" style="--bs-bg-opacity: 0.25;">
+                      <span class="small fw-semibold mb-0">
+                        <i class="bx bx-table me-1 align-middle"></i>Sample layout (matches downloaded file)
+                      </span>
+                      <a
+                        class="btn btn-sm btn-primary"
+                        href="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId . '&download=csv_sample', ENT_QUOTES, 'UTF-8'); ?>">
+                        <i class="bx bx-download me-1"></i>Download sample CSV
+                      </a>
+                    </div>
+                    <div class="table-responsive" style="max-height: 280px;">
+                      <table class="table table-sm table-bordered mb-0 align-middle" style="font-size: 0.72rem;">
+                        <thead class="table-dark position-sticky top-0" style="z-index: 2;">
+                          <tr>
+<?php foreach ($clmsQuestionImportSampleRows[0] as $col) : ?>
+                            <th class="text-nowrap fw-semibold py-2 px-2" scope="col"><?php echo htmlspecialchars((string) $col, ENT_QUOTES, 'UTF-8'); ?></th>
+<?php endforeach; ?>
+                          </tr>
+                        </thead>
+                        <tbody>
+<?php
+                        $sampleBody = array_slice($clmsQuestionImportSampleRows, 1);
+foreach ($sampleBody as $i => $row) :
+    ?>
+                          <tr class="<?php echo $i % 2 === 0 ? 'table-light' : ''; ?>">
+<?php foreach ($row as $cell) :
+        $raw = (string) $cell;
+        $show = $raw;
+        if (mb_strlen($show) > 42) {
+            $show = mb_substr($show, 0, 40) . '…';
+        }
+        ?>
+                            <td class="py-1 px-2 text-break font-monospace" title="<?php echo htmlspecialchars($raw, ENT_QUOTES, 'UTF-8'); ?>"><?php echo $raw === '' ? '&nbsp;' : htmlspecialchars($show, ENT_QUOTES, 'UTF-8'); ?></td>
+<?php endforeach; ?>
+                          </tr>
+<?php endforeach; ?>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <ul class="small text-muted mb-3 ps-3">
+                    <li><strong>question_type:</strong> <code>multiple_select</code>, <code>true_false</code>, <code>fill_blank</code>, or <code>sequencing</code></li>
+                    <li><strong>module_title:</strong> must match a module in this course (case-insensitive), or leave empty for <strong>final exam</strong> questions</li>
+                    <li><strong>By type:</strong> MC → options + <code>correct</code> (A–D); true/false → <code>true</code>/<code>false</code>; fill → <code>fill_answer</code>; optional <code>fill_alternatives</code> (semicolons); sequencing → <code>sequence_items</code> with steps separated by <code>|</code></li>
+                  </ul>
+
+                  <form method="post" enctype="multipart/form-data" action="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId, ENT_QUOTES, 'UTF-8'); ?>" class="row g-2 align-items-end">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                    <input type="hidden" name="action" value="import_questions_csv" />
+                    <input type="hidden" name="course_id" value="<?php echo (int) $selectedCourseId; ?>" />
+                    <div class="col-md-8">
+                      <label class="form-label" for="questions_csv">CSV file</label>
+                      <input class="form-control" type="file" id="questions_csv" name="questions_csv" accept=".csv,text/csv" required />
+                    </div>
+                    <div class="col-md-4">
+                      <button type="submit" class="btn btn-primary w-100">
+                        <i class="bx bx-upload me-1"></i>Import questions
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
 <?php endif; ?>
                 </div>
               </div>
@@ -1110,9 +1468,11 @@ $currentModuleIdValue = isset($editQuestion['module_id']) && $editQuestion['modu
                     </small>
 <?php endif; ?>
                   </div>
+<?php if ($hasSelectedCourse) : ?>
                   <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#moduleVideoModal" data-action="add">
                     <i class="bx bx-plus me-1"></i> Add Module Video
                   </button>
+<?php endif; ?>
                 </div>
                 <div class="card-body">
 <?php if (!$hasSelectedCourse) : ?>
@@ -1178,10 +1538,11 @@ $currentModuleIdValue = isset($editQuestion['module_id']) && $editQuestion['modu
                 </div>
               </div>
 
-              <div class="modal fade" id="moduleVideoModal" tabindex="-1" aria-labelledby="moduleVideoModalLabel" aria-hidden="true">
+<?php if ($hasSelectedCourse) : ?>
+              <div class="modal fade" id="moduleVideoModal" tabindex="-1" aria-labelledby="moduleVideoModalLabel" aria-hidden="true" data-context-course-id="<?php echo (int) $selectedCourseId; ?>">
                 <div class="modal-dialog modal-lg modal-dialog-centered">
                   <div class="modal-content">
-                    <form id="moduleVideoForm" method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php' . ($selectedCourseId ? '?course_id=' . (int) $selectedCourseId : ''), ENT_QUOTES, 'UTF-8'); ?>" data-mode="add">
+                    <form id="moduleVideoForm" method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId, ENT_QUOTES, 'UTF-8'); ?>" data-mode="add">
                       <div class="modal-header">
                         <h5 class="modal-title" id="moduleVideoModalLabel">Add Module Video</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -1190,16 +1551,14 @@ $currentModuleIdValue = isset($editQuestion['module_id']) && $editQuestion['modu
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                         <input type="hidden" name="action" value="save_video" />
                         <input type="hidden" name="module_id" id="module_video_id" value="" />
+                        <input type="hidden" name="course_id" id="module_video_course_id" value="<?php echo (int) $selectedCourseId; ?>" />
 
-                        <div class="mb-3">
-                          <label class="form-label" for="module_video_course_id">Course</label>
-                          <select class="form-select" id="module_video_course_id" name="course_id" required>
-                            <option value="">Select assigned course</option>
-<?php foreach ($assignedCourses as $course) : ?>
-                            <option value="<?php echo (int) $course['id']; ?>"><?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?></option>
-<?php endforeach; ?>
-                          </select>
-                        </div>
+                        <p class="text-muted small mb-3 mb-0">
+                          <span class="fw-semibold text-body">Course:</span>
+                          <?php echo htmlspecialchars((string) ($selectedCourseTitle ?? 'Selected course'), ENT_QUOTES, 'UTF-8'); ?>
+                          <span class="d-block mt-1">Uses the course selected in the header dropdown (<code>course_id</code> in the URL).</span>
+                        </p>
+                        <hr class="my-3" />
                         <div class="mb-3">
                           <label class="form-label" for="module_video_title">Module Title</label>
                           <input class="form-control" type="text" id="module_video_title" name="module_title" required />
@@ -1231,6 +1590,7 @@ $currentModuleIdValue = isset($editQuestion['module_id']) && $editQuestion['modu
                   </div>
                 </div>
               </div>
+<?php endif; ?>
 <?php endif; ?>
               <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
               <script>
@@ -1405,7 +1765,8 @@ $currentModuleIdValue = isset($editQuestion['module_id']) && $editQuestion['modu
                     } else {
                       if (titleEl) titleEl.textContent = 'Add Module Video';
                       if (idInput) idInput.value = '';
-                      if (courseInput) courseInput.value = '';
+                      const ctxCourse = modalEl.dataset.contextCourseId || '';
+                      if (courseInput) courseInput.value = ctxCourse;
                       if (moduleTitleInput) moduleTitleInput.value = '';
                       if (videoUrlInput) videoUrlInput.value = '';
                       if (durationInput) durationInput.value = '0';

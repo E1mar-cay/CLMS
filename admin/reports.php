@@ -7,6 +7,61 @@ require_once dirname(__DIR__) . '/database.php';
 
 clms_require_roles(['admin', 'instructor']);
 
+$sessionRole = (string) ($_SESSION['role'] ?? '');
+$reportsUserId = (int) ($_SESSION['user_id'] ?? 0);
+
+/**
+ * Admin: any course. Instructor: assigned / legacy-unscoped courses only.
+ */
+$clms_reports_course_allowed = static function (PDO $pdo, string $role, int $userId, int $courseId): bool {
+    if ($courseId <= 0) {
+        return false;
+    }
+    if ($role === 'admin') {
+        $st = $pdo->prepare('SELECT 1 FROM courses WHERE id = :id LIMIT 1');
+        $st->execute(['id' => $courseId]);
+
+        return (bool) $st->fetch();
+    }
+    $st = $pdo->prepare(
+        "SELECT 1 AS ok
+         FROM courses c
+         LEFT JOIN course_instructors ci
+           ON ci.course_id = c.id AND ci.instructor_user_id = :uid
+         WHERE c.id = :cid
+           AND (
+             ci.instructor_user_id IS NOT NULL
+             OR NOT EXISTS (SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id)
+           )
+         LIMIT 1"
+    );
+    $st->execute(['uid' => $userId, 'cid' => $courseId]);
+
+    return (bool) $st->fetch();
+};
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'GET'
+    && (string) ($_GET['action'] ?? '') === 'print_questionnaire'
+) {
+    $printCourseId = (int) ($_GET['course_id'] ?? 0);
+    if (!$clms_reports_course_allowed($pdo, $sessionRole, $reportsUserId, $printCourseId)) {
+        http_response_code(403);
+        echo 'Forbidden or invalid course.';
+        exit;
+    }
+    $courseTitleStmt = $pdo->prepare('SELECT id, title FROM courses WHERE id = :id LIMIT 1');
+    $courseTitleStmt->execute(['id' => $printCourseId]);
+    $courseRow = $courseTitleStmt->fetch();
+    if (!$courseRow) {
+        http_response_code(404);
+        echo 'Course not found.';
+        exit;
+    }
+    require_once __DIR__ . '/includes/questionnaire-print.php';
+    exit;
+}
+
 $pageTitle = 'Reports | Criminology LMS';
 $activeAdminPage = 'reports';
 
@@ -56,9 +111,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
             if (!$courseRow) {
                 throw new RuntimeException('Selected course does not exist.');
             }
+            if (!$clms_reports_course_allowed($pdo, $sessionRole, $reportsUserId, $courseIdInput)) {
+                throw new RuntimeException('You do not have access to that course.');
+            }
             $courseFilterSql = ' AND ea.course_id = :course_id';
             $courseFilterParams['course_id'] = $courseIdInput;
             $courseLabel = 'course-' . $courseIdInput;
+        }
+
+        $instructorCourseIds = [];
+        if ($sessionRole === 'instructor') {
+            $icStmt = $pdo->prepare(
+                "SELECT DISTINCT c.id
+                 FROM courses c
+                 LEFT JOIN course_instructors ci ON ci.course_id = c.id AND ci.instructor_user_id = :uid
+                 WHERE ci.instructor_user_id IS NOT NULL
+                    OR NOT EXISTS (SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id)
+                 ORDER BY c.id ASC"
+            );
+            $icStmt->execute(['uid' => $reportsUserId]);
+            $instructorCourseIds = array_map(static fn (array $r): int => (int) $r['id'], $icStmt->fetchAll());
+            if ($courseIdInput === 0 && $instructorCourseIds === []) {
+                throw new RuntimeException('No courses in your scope to report on.');
+            }
+        }
+
+        $scopeInSqlExam = '';
+        $scopeParamsExam = [];
+        if ($sessionRole === 'instructor' && $courseIdInput === 0 && $instructorCourseIds !== []) {
+            foreach ($instructorCourseIds as $i => $cid) {
+                $key = 'scope_cid_' . $i;
+                $scopeInSqlExam .= ($scopeInSqlExam === '' ? '' : ',') . ':' . $key;
+                $scopeParamsExam[$key] = $cid;
+            }
         }
 
         while (ob_get_level() > 0) {
@@ -111,13 +196,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
                  INNER JOIN courses c ON c.id = ea.course_id
                  WHERE ea.attempted_at BETWEEN :start_date AND :end_date"
                 . $courseFilterSql
+                . (
+                    $scopeInSqlExam !== ''
+                        ? ' AND ea.course_id IN (' . $scopeInSqlExam . ')'
+                        : ''
+                )
                 . ' ORDER BY ea.attempted_at DESC';
 
             $attemptsStmt = $pdo->prepare($attemptsSql);
             $attemptsParams = array_merge([
                 'start_date' => $startSql,
                 'end_date' => $endSql,
-            ], $courseFilterParams);
+            ], $courseFilterParams, $scopeParamsExam);
             $attemptsStmt->execute($attemptsParams);
 
             while ($row = $attemptsStmt->fetch()) {
@@ -159,6 +249,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
                 $certFilterSql = ' AND cert.course_id = :course_id';
                 $certFilterParams['course_id'] = $courseIdInput;
             }
+            $scopeInSqlCert = '';
+            $scopeParamsCert = [];
+            if ($sessionRole === 'instructor' && $courseIdInput === 0 && $instructorCourseIds !== []) {
+                foreach ($instructorCourseIds as $i => $cid) {
+                    $key = 'scope_cert_' . $i;
+                    $scopeInSqlCert .= ($scopeInSqlCert === '' ? '' : ',') . ':' . $key;
+                    $scopeParamsCert[$key] = $cid;
+                }
+            }
 
             $certSql =
                 "SELECT
@@ -173,10 +272,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
                  INNER JOIN courses c ON c.id = cert.course_id
                  WHERE cert.issued_at BETWEEN :start_date AND :end_date"
                 . $certFilterSql
+                . (
+                    $scopeInSqlCert !== ''
+                        ? ' AND cert.course_id IN (' . $scopeInSqlCert . ')'
+                        : ''
+                )
                 . ' ORDER BY cert.issued_at DESC';
 
             $certStmt = $pdo->prepare($certSql);
-            $certStmt->execute($certFilterParams);
+            $certStmt->execute(array_merge($certFilterParams, $scopeParamsCert));
 
             while ($row = $certStmt->fetch()) {
                 fputcsv($output, [
@@ -209,7 +313,19 @@ if ($endDateInput === '') {
     $endDateInput = $defaultEndDate;
 }
 
-$coursesStmt = $pdo->query('SELECT id, title FROM courses ORDER BY title ASC');
+if ($sessionRole === 'instructor') {
+    $coursesStmt = $pdo->prepare(
+        "SELECT DISTINCT c.id, c.title
+         FROM courses c
+         LEFT JOIN course_instructors ci ON ci.course_id = c.id AND ci.instructor_user_id = :uid
+         WHERE ci.instructor_user_id IS NOT NULL
+            OR NOT EXISTS (SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id)
+         ORDER BY c.title ASC"
+    );
+    $coursesStmt->execute(['uid' => $reportsUserId]);
+} else {
+    $coursesStmt = $pdo->query('SELECT id, title FROM courses ORDER BY title ASC');
+}
 $courseOptions = $coursesStmt->fetchAll();
 
 require_once __DIR__ . '/includes/layout-top.php';
@@ -217,7 +333,7 @@ require_once __DIR__ . '/includes/layout-top.php';
               <div class="d-flex flex-wrap justify-content-between align-items-center py-3 mb-3 gap-2">
                 <div>
                   <h4 class="fw-bold mb-1">Reports</h4>
-                  <small class="text-muted">Select a date range and course, then download a CSV export of exam attempts and/or certificates.</small>
+                  <small class="text-muted">Select a date range and course, then download a CSV export or print the course questionnaire.</small>
                 </div>
               </div>
 
@@ -255,8 +371,8 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </div>
                       <div class="col-md-6 col-lg-4">
                         <label class="form-label" for="course_id">Course</label>
-                        <select id="course_id" name="course_id" class="form-select">
-                          <option value="0">All Courses</option>
+                        <select id="course_id" name="course_id" class="form-select" title="Choose one course to print the questionnaire">
+                          <option value="0"><?php echo $sessionRole === 'instructor' ? 'All my courses' : 'All Courses'; ?></option>
 <?php foreach ($courseOptions as $courseOption) : ?>
                           <option
                             value="<?php echo (int) $courseOption['id']; ?>"
@@ -281,10 +397,34 @@ require_once __DIR__ . '/includes/layout-top.php';
                       Submitting this form will force a CSV file download. No results are shown on screen.
                     </div>
 
-                    <button type="submit" class="btn btn-primary">
-                      <i class="bx bx-download me-1"></i>Download CSV
-                    </button>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                      <button type="submit" class="btn btn-primary">
+                        <i class="bx bx-download me-1"></i>Download CSV
+                      </button>
+                      <button type="button" class="btn btn-outline-secondary" id="clmsPrintQuestionnaireBtn">
+                        <i class="bx bx-printer me-1"></i>Print questionnaire
+                      </button>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">
+                      <strong>Print questionnaire</strong> opens the full question bank for one course (modules + final exam) in a new tab — choose a course above first (not &quot;All&quot;).
+                    </p>
                   </form>
+                  <script>
+                    (function () {
+                      var btn = document.getElementById('clmsPrintQuestionnaireBtn');
+                      var sel = document.getElementById('course_id');
+                      var base = <?php echo json_encode($clmsWebBase . '/admin/reports.php', JSON_UNESCAPED_SLASHES); ?>;
+                      if (!btn || !sel) return;
+                      btn.addEventListener('click', function () {
+                        var id = parseInt(sel.value, 10) || 0;
+                        if (id <= 0) {
+                          alert('Please choose a specific course before printing the questionnaire.');
+                          return;
+                        }
+                        window.open(base + '?action=print_questionnaire&course_id=' + id, '_blank', 'noopener,noreferrer');
+                      });
+                    })();
+                  </script>
                 </div>
               </div>
 
