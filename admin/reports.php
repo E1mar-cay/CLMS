@@ -339,16 +339,61 @@ $reportsCourseModuleProgress = [];
 $reportsModuleAssessmentStats = [];
 $reportsModuleAttemptDetail = [];
 
+$reportsRevieweesByBatchPage = [];
+$rbDisplayBlocks = [];
+$rbBatchCount = 0;
+$rpRbTotalPages = 1;
+$rpRbPage = 1;
+$rpRbPer = 6;
+
+$reportsPager = [];
+$rpMcTotalPages = 1;
+$rpTrTotalPages = 1;
+$rpCmpTotalPages = 1;
+$rpMasTotalPages = 1;
+$rpMadTotalPages = 1;
+$rpMcPage = 1;
+$rpTrPage = 1;
+$rpCmpPage = 1;
+$rpMasPage = 1;
+$rpMadPage = 1;
+
 if ($isReportsAdmin) {
-    $reportsMasterCourses = $pdo->query(
+    require_once __DIR__ . '/includes/pagination.php';
+
+    $rpMcPer = 15;
+    $rpTrPer = 12;
+    $rpCmpPer = 25;
+    $rpMasPer = 25;
+    $rpMadPer = 30;
+
+    $rpMcPage = (int) filter_input(INPUT_GET, 'mc_page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+    $rpTrPage = (int) filter_input(INPUT_GET, 'tr_page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+    $rpCmpPage = (int) filter_input(INPUT_GET, 'cmp_page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+    $rpMasPage = (int) filter_input(INPUT_GET, 'mas_page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+    $rpMadPage = (int) filter_input(INPUT_GET, 'mad_page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+    $rpRbPage = (int) filter_input(INPUT_GET, 'rb_page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+
+    $mcTotal = (int) ($pdo->query('SELECT COUNT(*) AS c FROM courses')->fetch()['c'] ?? 0);
+    $rpMcTotalPages = max(1, (int) ceil($mcTotal / $rpMcPer));
+    if ($rpMcPage > $rpMcTotalPages) {
+        $rpMcPage = $rpMcTotalPages;
+    }
+    $mcOffset = ($rpMcPage - 1) * $rpMcPer;
+    $mcStmt = $pdo->prepare(
         "SELECT c.id, c.title, c.is_published,
                 COUNT(DISTINCT m.id) AS module_count,
                 (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id AND q.module_id IS NULL) AS final_exam_questions
          FROM courses c
          LEFT JOIN modules m ON m.course_id = c.id
          GROUP BY c.id, c.title, c.is_published
-         ORDER BY c.title ASC"
-    )->fetchAll();
+         ORDER BY c.title ASC
+         LIMIT :lim_mc OFFSET :off_mc"
+    );
+    $mcStmt->bindValue(':lim_mc', $rpMcPer, PDO::PARAM_INT);
+    $mcStmt->bindValue(':off_mc', $mcOffset, PDO::PARAM_INT);
+    $mcStmt->execute();
+    $reportsMasterCourses = $mcStmt->fetchAll();
 
     $revStmt = $pdo->query(
         "SELECT u.id, u.first_name, u.last_name, u.email,
@@ -368,7 +413,57 @@ if ($isReportsAdmin) {
         $reportsRevieweesByBatch[$batchKey][] = $rv;
     }
 
-    $reportsTopReviewees = $pdo->query(
+    $rbBatchKeys = array_keys($reportsRevieweesByBatch);
+    $rbBatchCount = count($rbBatchKeys);
+    $rpRbTotalPages = max(1, (int) ceil($rbBatchCount / $rpRbPer));
+    if ($rpRbPage > $rpRbTotalPages) {
+        $rpRbPage = $rpRbTotalPages;
+    }
+    $rbOffset = ($rpRbPage - 1) * $rpRbPer;
+    $reportsRevieweesByBatchPage = [];
+    foreach (array_slice($rbBatchKeys, $rbOffset, $rpRbPer) as $rbKey) {
+        $reportsRevieweesByBatchPage[$rbKey] = $reportsRevieweesByBatch[$rbKey];
+    }
+
+    $rpRbMemPer = 25;
+    $rbMemIdx = 0;
+    foreach ($reportsRevieweesByBatchPage as $batchName => $fullMembers) {
+        $memKey = 'rb_mem_' . $rbMemIdx;
+        $mPage = (int) filter_input(INPUT_GET, $memKey, FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+        $memTotal = count($fullMembers);
+        $memTotalPages = max(1, (int) ceil($memTotal / $rpRbMemPer));
+        if ($mPage > $memTotalPages) {
+            $mPage = $memTotalPages;
+        }
+        $mOff = ($mPage - 1) * $rpRbMemPer;
+        $rbDisplayBlocks[] = [
+            'name' => $batchName,
+            'members' => array_slice($fullMembers, $mOff, $rpRbMemPer),
+            'mem_key' => $memKey,
+            'mem_page' => $mPage,
+            'mem_total_pages' => $memTotalPages,
+            'mem_total_rows' => $memTotal,
+            'mem_showing_from' => $memTotal === 0 ? 0 : $mOff + 1,
+            'mem_showing_to' => min($mOff + $rpRbMemPer, $memTotal),
+        ];
+        $rbMemIdx++;
+    }
+
+    $trTotal = (int) ($pdo->query(
+        "SELECT COUNT(*) AS c FROM (
+            SELECT u.id
+            FROM users u
+            INNER JOIN module_quiz_attempts mqa ON mqa.user_id = u.id
+            WHERE u.role = 'student'
+            GROUP BY u.id, u.first_name, u.last_name, u.email
+        ) t"
+    )->fetch()['c'] ?? 0);
+    $rpTrTotalPages = max(1, (int) ceil($trTotal / $rpTrPer));
+    if ($rpTrPage > $rpTrTotalPages) {
+        $rpTrPage = $rpTrTotalPages;
+    }
+    $trOffset = ($rpTrPage - 1) * $rpTrPer;
+    $trStmt = $pdo->prepare(
         "SELECT u.id, u.first_name, u.last_name, u.email,
                 MAX(TRIM(COALESCE(u.student_batch, ''))) AS student_batch,
                 ROUND(AVG(mqa.percentage), 2) AS avg_quiz_pct,
@@ -379,10 +474,22 @@ if ($isReportsAdmin) {
          WHERE u.role = 'student'
          GROUP BY u.id, u.first_name, u.last_name, u.email
          ORDER BY avg_quiz_pct DESC, quiz_attempts DESC
-         LIMIT 15"
-    )->fetchAll();
+         LIMIT :lim_tr OFFSET :off_tr"
+    );
+    $trStmt->bindValue(':lim_tr', $rpTrPer, PDO::PARAM_INT);
+    $trStmt->bindValue(':off_tr', $trOffset, PDO::PARAM_INT);
+    $trStmt->execute();
+    $reportsTopReviewees = $trStmt->fetchAll();
 
-    $reportsCourseModuleProgress = $pdo->query(
+    $cmpTotal = (int) ($pdo->query(
+        'SELECT COUNT(*) AS c FROM courses c INNER JOIN modules m ON m.course_id = c.id'
+    )->fetch()['c'] ?? 0);
+    $rpCmpTotalPages = max(1, (int) ceil($cmpTotal / $rpCmpPer));
+    if ($rpCmpPage > $rpCmpTotalPages) {
+        $rpCmpPage = $rpCmpTotalPages;
+    }
+    $cmpOffset = ($rpCmpPage - 1) * $rpCmpPer;
+    $cmpStmt = $pdo->prepare(
         "SELECT
             c.id AS course_id,
             c.title AS course_title,
@@ -405,10 +512,30 @@ if ($isReportsAdmin) {
              WHERE mqa3.module_id = m.id) AS avg_quiz_percentage
          FROM courses c
          INNER JOIN modules m ON m.course_id = c.id
-         ORDER BY c.title ASC, m.sequence_order ASC, m.id ASC"
-    )->fetchAll();
+         ORDER BY c.title ASC, m.sequence_order ASC, m.id ASC
+         LIMIT :lim_cmp OFFSET :off_cmp"
+    );
+    $cmpStmt->bindValue(':lim_cmp', $rpCmpPer, PDO::PARAM_INT);
+    $cmpStmt->bindValue(':off_cmp', $cmpOffset, PDO::PARAM_INT);
+    $cmpStmt->execute();
+    $reportsCourseModuleProgress = $cmpStmt->fetchAll();
 
-    $reportsModuleAssessmentStats = $pdo->query(
+    $masTotal = (int) ($pdo->query(
+        "SELECT COUNT(*) AS c FROM (
+            SELECT m.id
+            FROM modules m
+            INNER JOIN courses c ON c.id = m.course_id
+            LEFT JOIN module_quiz_attempts mqa ON mqa.module_id = m.id
+            GROUP BY c.title, m.id, m.title
+            HAVING COUNT(mqa.id) > 0
+        ) x"
+    )->fetch()['c'] ?? 0);
+    $rpMasTotalPages = max(1, (int) ceil($masTotal / $rpMasPer));
+    if ($rpMasPage > $rpMasTotalPages) {
+        $rpMasPage = $rpMasTotalPages;
+    }
+    $masOffset = ($rpMasPage - 1) * $rpMasPer;
+    $masStmt = $pdo->prepare(
         "SELECT
             c.title AS course_title,
             m.id AS module_id,
@@ -428,10 +555,27 @@ if ($isReportsAdmin) {
          LEFT JOIN module_quiz_attempts mqa ON mqa.module_id = m.id
          GROUP BY c.title, m.id, m.title
          HAVING COUNT(mqa.id) > 0
-         ORDER BY c.title ASC, m.title ASC"
-    )->fetchAll();
+         ORDER BY c.title ASC, m.title ASC
+         LIMIT :lim_mas OFFSET :off_mas"
+    );
+    $masStmt->bindValue(':lim_mas', $rpMasPer, PDO::PARAM_INT);
+    $masStmt->bindValue(':off_mas', $masOffset, PDO::PARAM_INT);
+    $masStmt->execute();
+    $reportsModuleAssessmentStats = $masStmt->fetchAll();
 
-    $reportsModuleAttemptDetail = $pdo->query(
+    $madTotal = (int) ($pdo->query(
+        "SELECT COUNT(*) AS c
+         FROM module_quiz_attempts mqa
+         INNER JOIN modules m ON m.id = mqa.module_id
+         INNER JOIN courses c ON c.id = m.course_id
+         INNER JOIN users u ON u.id = mqa.user_id"
+    )->fetch()['c'] ?? 0);
+    $rpMadTotalPages = max(1, (int) ceil($madTotal / $rpMadPer));
+    if ($rpMadPage > $rpMadTotalPages) {
+        $rpMadPage = $rpMadTotalPages;
+    }
+    $madOffset = ($rpMadPage - 1) * $rpMadPer;
+    $madStmt = $pdo->prepare(
         "SELECT
             c.title AS course_title,
             m.title AS module_title,
@@ -446,8 +590,37 @@ if ($isReportsAdmin) {
          INNER JOIN courses c ON c.id = m.course_id
          INNER JOIN users u ON u.id = mqa.user_id
          ORDER BY mqa.attempted_at DESC
-         LIMIT 200"
-    )->fetchAll();
+         LIMIT :lim_mad OFFSET :off_mad"
+    );
+    $madStmt->bindValue(':lim_mad', $rpMadPer, PDO::PARAM_INT);
+    $madStmt->bindValue(':off_mad', $madOffset, PDO::PARAM_INT);
+    $madStmt->execute();
+    $reportsModuleAttemptDetail = $madStmt->fetchAll();
+
+    $reportsPager = [];
+    if ($rpMcPage > 1) {
+        $reportsPager['mc_page'] = $rpMcPage;
+    }
+    if ($rpTrPage > 1) {
+        $reportsPager['tr_page'] = $rpTrPage;
+    }
+    if ($rpCmpPage > 1) {
+        $reportsPager['cmp_page'] = $rpCmpPage;
+    }
+    if ($rpMasPage > 1) {
+        $reportsPager['mas_page'] = $rpMasPage;
+    }
+    if ($rpMadPage > 1) {
+        $reportsPager['mad_page'] = $rpMadPage;
+    }
+    if ($rpRbPage > 1) {
+        $reportsPager['rb_page'] = $rpRbPage;
+    }
+    foreach ($rbDisplayBlocks as $rbBlk) {
+        if ($rbBlk['mem_page'] > 1) {
+            $reportsPager[$rbBlk['mem_key']] = $rbBlk['mem_page'];
+        }
+    }
 }
 
 require_once __DIR__ . '/includes/layout-top.php';
@@ -578,17 +751,49 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </tbody>
                     </table>
                   </div>
+<?php
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/reports.php',
+        $reportsPager,
+        $rpMcPage,
+        $rpMcTotalPages,
+        'Master courses pagination',
+        'mc_page',
+        null,
+        'mt-3'
+    );
+?>
                 </div>
               </div>
 
               <div class="card mt-4">
-                <h5 class="card-header">Reviewees by batch</h5>
+                <h5 class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                  <span>Reviewees by batch</span>
+<?php if ($rbBatchCount > 0) : ?>
+                  <small class="text-muted fw-normal">
+                    <?php echo (int) $rbBatchCount; ?> batch group<?php echo $rbBatchCount === 1 ? '' : 's'; ?>
+<?php if ($rpRbTotalPages > 1) : ?>
+                    · Showing <?php echo (int) ($rbOffset + 1); ?>&ndash;<?php echo (int) min($rbOffset + $rpRbPer, $rbBatchCount); ?>
+<?php endif; ?>
+                  </small>
+<?php endif; ?>
+                </h5>
                 <div class="card-body">
 <?php if ($reportsRevieweesByBatch === []) : ?>
                   <p class="text-muted mb-0">No student accounts found.</p>
 <?php else : ?>
-<?php foreach ($reportsRevieweesByBatch as $batchName => $members) : ?>
-                  <h6 class="mt-3 mb-2"><?php echo htmlspecialchars((string) $batchName, ENT_QUOTES, 'UTF-8'); ?> <span class="badge bg-label-secondary"><?php echo count($members); ?></span></h6>
+<?php foreach ($rbDisplayBlocks as $blk) :
+    $batchName = (string) $blk['name'];
+    $members = $blk['members'];
+    ?>
+                  <h6 class="mt-3 mb-2">
+                    <?php echo htmlspecialchars($batchName, ENT_QUOTES, 'UTF-8'); ?>
+                    <span class="badge bg-label-secondary"><?php echo (int) $blk['mem_total_rows']; ?></span>
+<?php if ((int) $blk['mem_total_pages'] > 1) : ?>
+                    <small class="text-muted fw-normal ms-1">Showing <?php echo (int) $blk['mem_showing_from']; ?>&ndash;<?php echo (int) $blk['mem_showing_to']; ?> of <?php echo (int) $blk['mem_total_rows']; ?></small>
+<?php endif; ?>
+                  </h6>
                   <div class="table-responsive mb-4">
                     <table class="table table-sm mb-0">
                       <thead>
@@ -604,7 +809,33 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </tbody>
                     </table>
                   </div>
+<?php
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/reports.php',
+        $reportsPager,
+        (int) $blk['mem_page'],
+        (int) $blk['mem_total_pages'],
+        'Reviewees in batch pagination',
+        (string) $blk['mem_key'],
+        null,
+        'mb-3'
+    );
+?>
 <?php endforeach; ?>
+<?php
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/reports.php',
+        $reportsPager,
+        $rpRbPage,
+        $rpRbTotalPages,
+        'Reviewees by batch pagination',
+        'rb_page',
+        null,
+        'mt-2'
+    );
+?>
 <?php endif; ?>
                 </div>
               </div>
@@ -630,7 +861,7 @@ require_once __DIR__ . '/includes/layout-top.php';
     $tb = trim((string) ($tr['student_batch'] ?? ''));
     ?>
                         <tr>
-                          <td><?php echo $ti + 1; ?></td>
+                          <td><?php echo (int) (($rpTrPage - 1) * $rpTrPer + $ti + 1); ?></td>
                           <td><?php echo htmlspecialchars(trim((string) $tr['first_name'] . ' ' . (string) $tr['last_name']), ENT_QUOTES, 'UTF-8'); ?></td>
                           <td><small><?php echo $tb !== '' ? htmlspecialchars($tb, ENT_QUOTES, 'UTF-8') : '—'; ?></small></td>
                           <td class="text-end"><?php echo htmlspecialchars((string) $tr['avg_quiz_pct'], ENT_QUOTES, 'UTF-8'); ?></td>
@@ -641,6 +872,19 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </tbody>
                     </table>
                   </div>
+<?php
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/reports.php',
+        $reportsPager,
+        $rpTrPage,
+        $rpTrTotalPages,
+        'Top reviewees pagination',
+        'tr_page',
+        null,
+        'mt-3'
+    );
+?>
                 </div>
               </div>
 
@@ -674,6 +918,19 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </tbody>
                     </table>
                   </div>
+<?php
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/reports.php',
+        $reportsPager,
+        $rpCmpPage,
+        $rpCmpTotalPages,
+        'Course module progress pagination',
+        'cmp_page',
+        null,
+        'mt-3'
+    );
+?>
                 </div>
               </div>
 
@@ -709,6 +966,19 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </tbody>
                     </table>
                   </div>
+<?php
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/reports.php',
+        $reportsPager,
+        $rpMasPage,
+        $rpMasTotalPages,
+        'Module assessment stats pagination',
+        'mas_page',
+        null,
+        'mt-3'
+    );
+?>
                   <h6 class="mb-2">Recent attempts (raw / total / %)</h6>
                   <div class="table-responsive">
                     <table class="table table-sm mb-0">
@@ -738,6 +1008,19 @@ require_once __DIR__ . '/includes/layout-top.php';
                       </tbody>
                     </table>
                   </div>
+<?php
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/reports.php',
+        $reportsPager,
+        $rpMadPage,
+        $rpMadTotalPages,
+        'Recent module attempts pagination',
+        'mad_page',
+        null,
+        'mt-3'
+    );
+?>
                 </div>
               </div>
 <?php endif; ?>

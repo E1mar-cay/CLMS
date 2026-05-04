@@ -6,6 +6,8 @@ if (!isset($clmsWebBase)) {
     require_once dirname(__DIR__, 2) . '/includes/sneat-paths.php';
 }
 
+require_once __DIR__ . '/pagination.php';
+
 $bulkAllStudentsCount = isset($bulkAllStudentsCount) ? (int) $bulkAllStudentsCount : 0;
 ?>
 <span id="clms-bulk-all-students-count" class="d-none" data-count="<?php echo $bulkAllStudentsCount; ?>" aria-hidden="true"></span>
@@ -208,39 +210,18 @@ $bulkAllStudentsCount = isset($bulkAllStudentsCount) ? (int) $bulkAllStudentsCou
   </div>
 
 <?php if ($totalPages > 1) : ?>
-  <nav aria-label="Users pagination" class="mt-3 px-3 pb-3">
-    <ul class="pagination pagination-sm mb-0 justify-content-end">
 <?php
-    $prevParams = $paginationBase;
-    if ($page > 2) {
-        $prevParams['page'] = $page - 1;
-    }
-    $prevUrl = $clmsWebBase . '/admin/users.php' . ($prevParams !== [] ? '?' . http_build_query($prevParams) : '');
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/users.php',
+        $paginationBase,
+        $page,
+        $totalPages,
+        'Users pagination',
+        'page',
+        'data-users-page',
+        'mt-3 px-3 pb-3'
+    );
 ?>
-      <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-        <a class="page-link" href="<?php echo htmlspecialchars($prevUrl, ENT_QUOTES, 'UTF-8'); ?>" data-users-page="<?php echo max(1, $page - 1); ?>">Previous</a>
-      </li>
-<?php for ($pageNumber = 1; $pageNumber <= $totalPages; $pageNumber++) : ?>
-<?php
-    $pageParams = $paginationBase;
-    if ($pageNumber > 1) {
-        $pageParams['page'] = $pageNumber;
-    }
-    $pageUrl = $clmsWebBase . '/admin/users.php' . ($pageParams !== [] ? '?' . http_build_query($pageParams) : '');
-?>
-      <li class="page-item <?php echo $pageNumber === $page ? 'active' : ''; ?>">
-        <a class="page-link" href="<?php echo htmlspecialchars($pageUrl, ENT_QUOTES, 'UTF-8'); ?>" data-users-page="<?php echo $pageNumber; ?>"><?php echo $pageNumber; ?></a>
-      </li>
-<?php endfor; ?>
-<?php
-    $nextParams = $paginationBase;
-    $nextParams['page'] = min($totalPages, $page + 1);
-    $nextUrl = $clmsWebBase . '/admin/users.php?' . http_build_query($nextParams);
-?>
-      <li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
-        <a class="page-link" href="<?php echo htmlspecialchars($nextUrl, ENT_QUOTES, 'UTF-8'); ?>" data-users-page="<?php echo min($totalPages, $page + 1); ?>">Next</a>
-      </li>
-    </ul>
-  </nav>
 <?php endif; ?>
 <?php endif; ?>

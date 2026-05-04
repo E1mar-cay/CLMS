@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/pagination.php';
+
 /**
  * Replaceable partial for the "All Students" card body.
  *
@@ -115,39 +117,18 @@ $filterApproval = $filterApproval ?? '';
   </div>
 
 <?php if ($totalPages > 1) : ?>
-  <nav aria-label="Students pagination" class="mt-3">
-    <ul class="pagination pagination-sm mb-0 justify-content-end">
 <?php
-    $prevParams = $paginationBase;
-    if ($page > 2) {
-        $prevParams['page'] = $page - 1;
-    }
-    $prevUrl = $clmsWebBase . '/admin/students.php' . ($prevParams !== [] ? '?' . http_build_query($prevParams) : '');
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/students.php',
+        $paginationBase,
+        $page,
+        $totalPages,
+        'Students pagination',
+        'page',
+        'data-students-page',
+        'mt-3 px-3'
+    );
 ?>
-      <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-        <a class="page-link" href="<?php echo htmlspecialchars($prevUrl, ENT_QUOTES, 'UTF-8'); ?>" data-students-page="<?php echo max(1, $page - 1); ?>">Previous</a>
-      </li>
-<?php for ($pageNumber = 1; $pageNumber <= $totalPages; $pageNumber++) : ?>
-<?php
-    $pageParams = $paginationBase;
-    if ($pageNumber > 1) {
-        $pageParams['page'] = $pageNumber;
-    }
-    $pageUrl = $clmsWebBase . '/admin/students.php' . ($pageParams !== [] ? '?' . http_build_query($pageParams) : '');
-?>
-      <li class="page-item <?php echo $pageNumber === $page ? 'active' : ''; ?>">
-        <a class="page-link" href="<?php echo htmlspecialchars($pageUrl, ENT_QUOTES, 'UTF-8'); ?>" data-students-page="<?php echo $pageNumber; ?>"><?php echo $pageNumber; ?></a>
-      </li>
-<?php endfor; ?>
-<?php
-    $nextParams = $paginationBase;
-    $nextParams['page'] = min($totalPages, $page + 1);
-    $nextUrl = $clmsWebBase . '/admin/students.php?' . http_build_query($nextParams);
-?>
-      <li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
-        <a class="page-link" href="<?php echo htmlspecialchars($nextUrl, ENT_QUOTES, 'UTF-8'); ?>" data-students-page="<?php echo min($totalPages, $page + 1); ?>">Next</a>
-      </li>
-    </ul>
-  </nav>
 <?php endif; ?>
 <?php endif; ?>

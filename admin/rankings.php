@@ -10,6 +10,8 @@ clms_ensure_users_student_batch_column($pdo);
 
 clms_require_roles(['admin', 'instructor']);
 
+require_once __DIR__ . '/includes/pagination.php';
+
 $pageTitle = 'Course Rankings | Criminology LMS';
 $activeAdminPage = 'rankings';
 
@@ -339,6 +341,26 @@ if ((string) ($_GET['export'] ?? '') === 'csv') {
     exit;
 }
 
+$rankPerPage = 20;
+$rankPage = (int) filter_input(INPUT_GET, 'rank_page', FILTER_VALIDATE_INT, ['options' => ['default' => 1, 'min_range' => 1]]);
+$totalRankRows = count($rankingRows);
+$totalRankPages = max(1, (int) ceil($totalRankRows / $rankPerPage));
+if ($rankPage > $totalRankPages) {
+    $rankPage = $totalRankPages;
+}
+$rankOffset = ($rankPage - 1) * $rankPerPage;
+$rankingRowsPaged = $totalRankRows === 0 ? [] : array_slice($rankingRows, $rankOffset, $rankPerPage);
+
+$rankPaginationBase = [
+    'course_id' => (int) $selectedCourseId,
+    'range' => $range,
+    'overall_rank' => $overallRankMode,
+    'assessment_rank' => $assessmentRankMode,
+];
+if ($batchFilter !== '') {
+    $rankPaginationBase['batch'] = $batchFilter;
+}
+
 require_once __DIR__ . '/includes/layout-top.php';
 ?>
               <div class="clms-dashboard">
@@ -427,9 +449,14 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
 
                 <div class="card">
-                  <div class="card-header d-flex justify-content-between align-items-center">
+                  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                     <h5 class="mb-0"><?php echo htmlspecialchars((string) ($selectedCourseTitle ?? 'Selected Course'), ENT_QUOTES, 'UTF-8'); ?></h5>
-                    <span class="badge bg-label-primary"><?php echo count($rankingRows); ?> ranked students</span>
+                    <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-1 gap-sm-2 text-sm-end">
+                      <span class="badge bg-label-primary"><?php echo (int) $totalRankRows; ?> ranked students</span>
+<?php if ($totalRankRows > 0) : ?>
+                      <small class="text-muted">Showing <?php echo (int) ($rankOffset + 1); ?>&ndash;<?php echo (int) min($rankOffset + $rankPerPage, $totalRankRows); ?> of <?php echo (int) $totalRankRows; ?></small>
+<?php endif; ?>
+                    </div>
                   </div>
                   <div class="card-body">
 <?php if ($courses === []) : ?>
@@ -451,20 +478,21 @@ require_once __DIR__ . '/includes/layout-top.php';
                           </tr>
                         </thead>
                         <tbody>
-<?php foreach ($rankingRows as $idx => $row) :
+<?php foreach ($rankingRowsPaged as $idx => $row) :
     $fullName = trim((string) $row['first_name'] . ' ' . (string) $row['last_name']);
     if ($fullName === '') {
         $fullName = 'Student';
     }
     $uid = (int) $row['user_id'];
     $moduleEntries = $moduleBreakdownByUser[$uid] ?? [];
-    $rankClass = $idx === 0 ? 'table-warning' : ($idx === 1 ? 'table-light' : ($idx === 2 ? 'table-info' : ''));
-    $rankBadgeClass = $idx === 0 ? 'bg-label-warning' : ($idx === 1 ? 'bg-label-secondary' : ($idx === 2 ? 'bg-label-info' : 'bg-label-primary'));
-    $rankLabel = $idx === 0 ? 'Gold' : ($idx === 1 ? 'Silver' : ($idx === 2 ? 'Bronze' : 'Rank'));
+    $rankOrdinal = $rankOffset + $idx + 1;
+    $rankClass = $rankOrdinal === 1 ? 'table-warning' : ($rankOrdinal === 2 ? 'table-light' : ($rankOrdinal === 3 ? 'table-info' : ''));
+    $rankBadgeClass = $rankOrdinal === 1 ? 'bg-label-warning' : ($rankOrdinal === 2 ? 'bg-label-secondary' : ($rankOrdinal === 3 ? 'bg-label-info' : 'bg-label-primary'));
+    $rankLabel = $rankOrdinal === 1 ? 'Gold' : ($rankOrdinal === 2 ? 'Silver' : ($rankOrdinal === 3 ? 'Bronze' : 'Rank'));
 ?>
                           <tr class="<?php echo $rankClass; ?>">
                             <td>
-                              <span class="badge <?php echo $rankBadgeClass; ?>"><?php echo htmlspecialchars($rankLabel . ' #' . ($idx + 1), ENT_QUOTES, 'UTF-8'); ?></span>
+                              <span class="badge <?php echo $rankBadgeClass; ?>"><?php echo htmlspecialchars($rankLabel . ' #' . $rankOrdinal, ENT_QUOTES, 'UTF-8'); ?></span>
                             </td>
                             <td class="fw-semibold"><?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><small class="text-muted"><?php $sb = trim((string) ($row['student_batch'] ?? '')); echo $sb !== '' ? htmlspecialchars($sb, ENT_QUOTES, 'UTF-8') : '—'; ?></small></td>
@@ -494,6 +522,19 @@ require_once __DIR__ . '/includes/layout-top.php';
                         </tbody>
                       </table>
                     </div>
+<?php
+    clms_admin_pagination_render(
+        $clmsWebBase,
+        '/admin/rankings.php',
+        $rankPaginationBase,
+        $rankPage,
+        $totalRankPages,
+        'Rankings pagination',
+        'rank_page',
+        null,
+        'mt-3'
+    );
+?>
 <?php endif; ?>
                   </div>
                 </div>
