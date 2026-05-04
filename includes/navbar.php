@@ -26,12 +26,13 @@ $sessionEmail = (string) ($_SESSION['email'] ?? '');
 $sessionFirstName = trim((string) ($_SESSION['first_name'] ?? ''));
 $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
 
-/* Notification bell is enabled for students and instructors.
-   Wrapped in isset($pdo) so the navbar stays robust on pages
-   that haven't required database.php yet. */
+/* Personal notification bell (announcements + MFA nudge) for students,
+   instructors, and admins. Wrapped in isset($pdo) so the navbar stays robust
+   on pages that haven't required database.php yet. */
 $navbarNotifications = [];
 $navbarNotificationsUnread = 0;
-if (($sessionRole === 'student' || $sessionRole === 'instructor') && $sessionUserId > 0 && isset($pdo) && $pdo instanceof PDO) {
+if (($sessionRole === 'student' || $sessionRole === 'instructor' || $sessionRole === 'admin')
+    && $sessionUserId > 0 && isset($pdo) && $pdo instanceof PDO) {
     require_once __DIR__ . '/notifications.php';
     $navbarNotifications = clms_notifications_list($pdo, $sessionUserId, 10);
     $navbarNotificationsUnread = clms_notifications_unread_count($pdo, $sessionUserId);
@@ -236,7 +237,88 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                 </li>
 <?php endif; ?>
 <?php if ($sessionRole === 'admin') : ?>
-                <li class="nav-item dropdown-notifications navbar-dropdown dropdown me-1">
+                <li class="nav-item dropdown-notifications navbar-dropdown dropdown me-1" id="clmsAdminSelfNotifWrap">
+                  <a
+                    class="nav-link dropdown-toggle hide-arrow clms-bell-btn"
+                    href="javascript:void(0);"
+                    data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside"
+                    aria-expanded="false"
+                    aria-label="Notifications">
+                    <i class="bx bx-bell icon-md"></i>
+                    <span
+                      class="clms-bell-badge<?php echo $navbarNotificationsUnread === 0 ? ' d-none' : ''; ?>"
+                      id="clmsAdminSelfBellBadge"
+                      aria-label="<?php echo (int) $navbarNotificationsUnread; ?> unread notifications">
+                      <?php echo $navbarNotificationsUnread > 99 ? '99+' : (int) $navbarNotificationsUnread; ?>
+                    </span>
+                  </a>
+                  <div class="dropdown-menu dropdown-menu-end clms-bell-menu p-0">
+                    <div class="dropdown-header d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                      <h6 class="mb-0 fw-semibold">Notifications</h6>
+                      <button
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-decoration-none clms-bell-mark-all<?php echo $navbarNotificationsUnread === 0 ? ' d-none' : ''; ?>"
+                        id="clmsAdminSelfBellMarkAll">
+                        Mark all as read
+                      </button>
+                    </div>
+                    <ul class="list-unstyled mb-0 clms-bell-list" id="clmsAdminSelfBellList" role="list">
+<?php if ($navbarNotifications === []) : ?>
+                      <li class="clms-bell-empty">
+                        <div class="text-center text-muted py-4 px-3">
+                          <i class="bx bx-bell-off d-block mb-2" style="font-size:1.75rem;"></i>
+                          <small>You're all caught up.</small>
+                        </div>
+                      </li>
+<?php else : ?>
+<?php foreach ($navbarNotifications as $note) :
+    $noteId = (int) $note['id'];
+    $isMfaNudge = !empty($note['is_mfa_nudge']) || $noteId === -1;
+    $mfaSecurityHref = $clmsWebBase . '/account_security.php';
+?>
+                      <li
+                        class="clms-bell-item<?php echo $note['is_read'] ? '' : ' is-unread'; ?><?php echo $isMfaNudge ? ' clms-bell-item--mfa' : ''; ?>"
+                        data-announcement-id="<?php echo $noteId; ?>">
+                        <div class="d-flex align-items-start gap-2 px-3 py-2">
+                          <span class="clms-bell-dot" aria-hidden="true"></span>
+                          <div class="flex-grow-1 min-w-0">
+                            <div class="d-flex justify-content-between align-items-baseline gap-2">
+                              <span class="fw-semibold text-body text-truncate">
+                                <?php echo htmlspecialchars((string) $note['title'], ENT_QUOTES, 'UTF-8'); ?>
+                              </span>
+                              <small class="text-muted flex-shrink-0">
+                                <?php echo htmlspecialchars(clms_notifications_format_time_ago((string) $note['created_at']), ENT_QUOTES, 'UTF-8'); ?>
+                              </small>
+                            </div>
+<?php if ($isMfaNudge) : ?>
+                            <p class="mb-1 small text-muted clms-bell-body">
+                              <?php echo nl2br(htmlspecialchars((string) $note['body'], ENT_QUOTES, 'UTF-8')); ?>
+                            </p>
+                            <a href="<?php echo htmlspecialchars($mfaSecurityHref, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-sm btn-primary" onclick="event.stopPropagation();">
+                              <i class="bx bx-shield-quarter me-1"></i>Account security
+                            </a>
+<?php else : ?>
+                            <p class="mb-0 small text-muted clms-bell-body">
+                              <?php echo nl2br(htmlspecialchars((string) $note['body'], ENT_QUOTES, 'UTF-8')); ?>
+                            </p>
+<?php endif; ?>
+                          </div>
+                        </div>
+                      </li>
+<?php endforeach; ?>
+<?php endif; ?>
+                    </ul>
+                    <div class="dropdown-footer border-top px-3 py-2 text-center">
+                      <a
+                        href="<?php echo htmlspecialchars($clmsWebBase . '/admin/announcements.php', ENT_QUOTES, 'UTF-8'); ?>"
+                        class="text-decoration-none small fw-semibold">
+                        Manage announcements
+                      </a>
+                    </div>
+                  </div>
+                </li>
+                <li class="nav-item dropdown-notifications navbar-dropdown dropdown me-1" id="clmsAdminPendingWrap">
                   <a
                     class="nav-link dropdown-toggle hide-arrow clms-bell-btn"
                     href="javascript:void(0);"
@@ -891,11 +973,158 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
 <?php if ($sessionRole === 'admin') : ?>
           <script>
             (() => {
+              const endpoint = <?php echo json_encode($clmsWebBase . '/admin/account_notifications.php', JSON_UNESCAPED_SLASHES); ?>;
+              const mfaSetupHref = <?php echo json_encode($clmsWebBase . '/account_security.php', JSON_UNESCAPED_SLASHES); ?>;
+              const csrfToken = <?php echo json_encode(clms_csrf_token()); ?>;
+              const badge = document.getElementById('clmsAdminSelfBellBadge');
+              const markAllBtn = document.getElementById('clmsAdminSelfBellMarkAll');
+              const list = document.getElementById('clmsAdminSelfBellList');
+              const bellEl = document.getElementById('clmsAdminSelfNotifWrap');
+              if (!badge || !list || !bellEl) return;
+
+              const setUnread = (count) => {
+                const n = Math.max(0, parseInt(count, 10) || 0);
+                if (n === 0) {
+                  badge.classList.add('d-none');
+                  if (markAllBtn) markAllBtn.classList.add('d-none');
+                } else {
+                  badge.textContent = n > 99 ? '99+' : String(n);
+                  badge.classList.remove('d-none');
+                  if (markAllBtn) markAllBtn.classList.remove('d-none');
+                }
+              };
+
+              const escapeHtml = (s) => String(s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+              const renderItems = (items) => {
+                if (!items || items.length === 0) {
+                  list.innerHTML = `
+                    <li class="clms-bell-empty">
+                      <div class="text-center text-muted py-4 px-3">
+                        <i class="bx bx-bell-off d-block mb-2" style="font-size:1.75rem;"></i>
+                        <small>You're all caught up.</small>
+                      </div>
+                    </li>`;
+                  return;
+                }
+                list.innerHTML = items.map((n) => {
+                  const isMfa = Boolean(n.is_mfa_nudge) || Number(n.id) === -1;
+                  const bodyHtml = isMfa
+                    ? `<p class="mb-1 small text-muted clms-bell-body">${escapeHtml(n.body).replace(/\n/g, '<br>')}</p>`
+                      + `<a href="${escapeHtml(mfaSetupHref)}" class="btn btn-sm btn-primary" onclick="event.stopPropagation();">`
+                      + '<i class="bx bx-shield-quarter me-1"></i>Account security</a>'
+                    : `<p class="mb-0 small text-muted clms-bell-body">${escapeHtml(n.body).replace(/\n/g, '<br>')}</p>`;
+                  return `
+                  <li class="clms-bell-item${n.is_read ? '' : ' is-unread'}${isMfa ? ' clms-bell-item--mfa' : ''}" data-announcement-id="${n.id}">
+                    <div class="d-flex align-items-start gap-2 px-3 py-2">
+                      <span class="clms-bell-dot" aria-hidden="true"></span>
+                      <div class="flex-grow-1 min-w-0">
+                        <div class="d-flex justify-content-between align-items-baseline gap-2">
+                          <span class="fw-semibold text-body text-truncate">${escapeHtml(n.title)}</span>
+                          <small class="text-muted flex-shrink-0">${escapeHtml(n.time_ago || '')}</small>
+                        </div>
+                        ${bodyHtml}
+                      </div>
+                    </div>
+                  </li>`;
+                }).join('');
+              };
+
+              const refresh = async () => {
+                try {
+                  const res = await fetch(`${endpoint}?action=list`, { credentials: 'same-origin' });
+                  if (!res.ok) return;
+                  const data = await res.json();
+                  if (!data || !data.ok) return;
+                  setUnread(data.unread);
+                  renderItems(data.items);
+                } catch (e) { /* ignore */ }
+              };
+
+              const markAll = async () => {
+                const body = new URLSearchParams();
+                body.set('action', 'mark_all');
+                body.set('csrf_token', csrfToken);
+                try {
+                  const res = await fetch(endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: body.toString(),
+                  });
+                  if (!res.ok) return;
+                  const data = await res.json();
+                  setUnread(data.unread || 0);
+                  await refresh();
+                } catch (e) { /* silent */ }
+              };
+
+              const markOne = async (announcementId) => {
+                const body = new URLSearchParams();
+                body.set('action', 'mark_read');
+                body.set('announcement_id', String(announcementId));
+                body.set('csrf_token', csrfToken);
+                try {
+                  const res = await fetch(endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: body.toString(),
+                  });
+                  if (!res.ok) return;
+                  const data = await res.json();
+                  setUnread(data.unread || 0);
+                  if (announcementId === -1) {
+                    await refresh();
+                  }
+                } catch (e) { /* silent */ }
+              };
+
+              if (markAllBtn) {
+                markAllBtn.addEventListener('click', (event) => {
+                  event.stopPropagation();
+                  markAll();
+                });
+              }
+
+              list.addEventListener('click', (event) => {
+                const item = event.target.closest('.clms-bell-item');
+                if (!item) return;
+                const id = parseInt(item.getAttribute('data-announcement-id'), 10);
+                if (!Number.isFinite(id) || id === 0) return;
+                if (item.classList.contains('is-unread')) {
+                  item.classList.remove('is-unread');
+                  markOne(id);
+                }
+              });
+
+              bellEl.addEventListener('shown.bs.dropdown', refresh);
+
+              const POLL_MS = 60000;
+              let pollId = null;
+              const startPoll = () => {
+                if (pollId) clearInterval(pollId);
+                pollId = setInterval(refresh, POLL_MS);
+              };
+              const stopPoll = () => {
+                if (pollId) { clearInterval(pollId); pollId = null; }
+              };
+              document.addEventListener('visibilitychange', () => {
+                if (document.hidden) stopPoll();
+                else { refresh(); startPoll(); }
+              });
+              startPoll();
+            })();
+          </script>
+          <script>
+            (() => {
               const endpoint = <?php echo json_encode($clmsWebBase . '/admin/notifications.php', JSON_UNESCAPED_SLASHES); ?>;
               const badge = document.getElementById('clmsAdminBellBadge');
               const list = document.getElementById('clmsAdminBellList');
               const countLabel = document.getElementById('clmsAdminBellCountLabel');
-              const bellEl = document.querySelector('.dropdown-notifications');
+              const bellEl = document.getElementById('clmsAdminPendingWrap');
               if (!badge || !list || !countLabel || !bellEl) return;
               const soundEnabled = <?php echo $adminPendingAlertSoundEnabled ? 'true' : 'false'; ?>;
               let previousCount = <?php echo (int) $adminPendingApprovalsCount; ?>;
