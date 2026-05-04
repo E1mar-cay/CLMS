@@ -58,8 +58,7 @@ $courseStmt = $pdo->prepare(
      LEFT JOIN course_instructors ci
        ON ci.course_id = c.id
       AND ci.instructor_user_id = :instructor_id
-     WHERE c.is_published = 1
-       AND (
+     WHERE (
          ci.instructor_user_id IS NOT NULL
          OR NOT EXISTS (
            SELECT 1

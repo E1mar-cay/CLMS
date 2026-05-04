@@ -157,6 +157,7 @@ if (!isset($clmsWebBase)) {
                 data-edit-ln="<?php echo htmlspecialchars((string) $u['last_name'], ENT_QUOTES, 'UTF-8'); ?>"
                 data-edit-em="<?php echo htmlspecialchars((string) $u['email'], ENT_QUOTES, 'UTF-8'); ?>"
                 data-edit-role="<?php echo htmlspecialchars($role, ENT_QUOTES, 'UTF-8'); ?>"
+                data-edit-batch="<?php echo htmlspecialchars((string) ($u['student_batch'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                 title="Edit"
                 aria-label="Edit">
                 <i class="bx bx-pencil"></i>

@@ -5,9 +5,11 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/includes/user-approval.php';
 require_once dirname(__DIR__) . '/database.php';
+require_once dirname(__DIR__) . '/includes/student-batch-schema.php';
 
 clms_require_roles(['admin']);
 clms_user_approval_ensure_schema($pdo);
+clms_ensure_users_student_batch_column($pdo);
 
 $pageTitle = 'User Management | Criminology LMS';
 $activeAdminPage = 'users';
@@ -378,6 +380,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (strlen($email) > 100) {
                 throw new RuntimeException('Email must be 100 characters or fewer.');
             }
+            $studentBatch = trim((string) ($_POST['student_batch'] ?? ''));
+            if (strlen($studentBatch) > 80) {
+                throw new RuntimeException('Batch / cohort must be 80 characters or fewer.');
+            }
             if (!in_array($role, $allowedRoles, true)) {
                 throw new RuntimeException('Invalid role.');
             }
@@ -407,31 +413,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Another account already uses this email.');
             }
 
+            $batchParam = $role === 'student'
+                ? ($studentBatch === '' ? null : $studentBatch)
+                : null;
+
             if ($newPassword !== '') {
                 $hash = password_hash($newPassword, PASSWORD_DEFAULT);
                 if ($hash === false) {
                     throw new RuntimeException('Could not update password.');
                 }
                 $upd = $pdo->prepare(
-                    'UPDATE users SET first_name = :fn, last_name = :ln, email = :em, role = :role, password_hash = :ph WHERE id = :id'
+                    'UPDATE users SET first_name = :fn, last_name = :ln, email = :em, role = :role, student_batch = :sb, password_hash = :ph WHERE id = :id'
                 );
                 $upd->execute([
                     'fn' => $firstName,
                     'ln' => $lastName,
                     'em' => $email,
                     'role' => $role,
+                    'sb' => $batchParam,
                     'ph' => $hash,
                     'id' => (int) $userId,
                 ]);
             } else {
                 $upd = $pdo->prepare(
-                    'UPDATE users SET first_name = :fn, last_name = :ln, email = :em, role = :role WHERE id = :id'
+                    'UPDATE users SET first_name = :fn, last_name = :ln, email = :em, role = :role, student_batch = :sb WHERE id = :id'
                 );
                 $upd->execute([
                     'fn' => $firstName,
                     'ln' => $lastName,
                     'em' => $email,
                     'role' => $role,
+                    'sb' => $batchParam,
                     'id' => (int) $userId,
                 ]);
             }
@@ -479,6 +491,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
         'last_name' => trim((string) ($_POST['last_name'] ?? '')),
         'email' => trim((string) ($_POST['email'] ?? '')),
         'role' => trim((string) ($_POST['role'] ?? 'student')),
+        'student_batch' => trim((string) ($_POST['student_batch'] ?? '')),
     ];
     if (!in_array($repopulateEdit['role'], $allowedRoles, true)) {
         $repopulateEdit['role'] = 'student';
@@ -543,7 +556,7 @@ if ($page > $totalPages) {
 }
 
 $listStmt = $pdo->prepare(
-    "SELECT u.id, u.first_name, u.last_name, u.email, u.role, u.account_approval_status, u.account_is_disabled, u.created_at
+    "SELECT u.id, u.first_name, u.last_name, u.email, u.role, COALESCE(u.student_batch, '') AS student_batch, u.account_approval_status, u.account_is_disabled, u.created_at
      FROM users u
      {$whereSql}
      ORDER BY
@@ -631,6 +644,11 @@ require_once __DIR__ . '/includes/layout-top.php';
                               <option value="<?php echo htmlspecialchars($r, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars(ucfirst($r), ENT_QUOTES, 'UTF-8'); ?></option>
 <?php endforeach; ?>
                             </select>
+                          </div>
+                          <div class="col-12 col-md-6" id="modal_edit_batch_wrap">
+                            <label class="form-label" for="modal_edit_batch">Batch / cohort</label>
+                            <input class="form-control" id="modal_edit_batch" name="student_batch" maxlength="80" autocomplete="off" placeholder="e.g. 2025-A" />
+                            <small class="text-muted">Students only. Used to filter Student Activity and rankings-style reports.</small>
                           </div>
                           <div class="col-12">
                             <label class="form-label" for="modal_edit_pw">New password</label>
@@ -950,8 +968,15 @@ require_once __DIR__ . '/includes/layout-top.php';
                     const lnEl = document.getElementById('modal_edit_ln');
                     const emEl = document.getElementById('modal_edit_em');
                     const roleEl = document.getElementById('modal_edit_role');
+                    const batchEl = document.getElementById('modal_edit_batch');
+                    const batchWrap = document.getElementById('modal_edit_batch_wrap');
                     const pwEl = document.getElementById('modal_edit_pw');
                     if (idEl && fnEl && lnEl && emEl && roleEl && pwEl) {
+                      const syncBatchVisibility = () => {
+                        if (!batchWrap) return;
+                        const show = roleEl.value === 'student';
+                        batchWrap.classList.toggle('d-none', !show);
+                      };
                       const fillFromDataset = (btn) => {
                         if (!btn) return;
                         idEl.value = btn.getAttribute('data-edit-id') || '';
@@ -960,8 +985,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                         emEl.value = btn.getAttribute('data-edit-em') || '';
                         const role = btn.getAttribute('data-edit-role') || 'student';
                         roleEl.value = role;
+                        if (batchEl) batchEl.value = btn.getAttribute('data-edit-batch') || '';
                         pwEl.value = '';
+                        syncBatchVisibility();
                       };
+
+                      roleEl.addEventListener('change', syncBatchVisibility);
 
                       modalEl.addEventListener('show.bs.modal', (ev) => {
                         const btn = ev.relatedTarget;
@@ -978,7 +1007,9 @@ require_once __DIR__ . '/includes/layout-top.php';
                         lnEl.value = repop.last_name || '';
                         emEl.value = repop.email || '';
                         roleEl.value = repop.role || 'student';
+                        if (batchEl) batchEl.value = repop.student_batch || '';
                         pwEl.value = '';
+                        syncBatchVisibility();
                         if (window.bootstrap && bootstrap.Modal) {
                           bootstrap.Modal.getOrCreateInstance(modalEl).show();
                         }

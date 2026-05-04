@@ -52,10 +52,9 @@ if ($range === 'this_month') {
 }
 
 $courseStmt = $pdo->query(
-    "SELECT id, title
+    'SELECT id, title
      FROM courses
-     WHERE is_published = 1
-     ORDER BY title ASC"
+     ORDER BY title ASC'
 );
 $courses = $courseStmt->fetchAll();
 

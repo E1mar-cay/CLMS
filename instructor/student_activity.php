@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
+require_once dirname(__DIR__) . '/includes/student-batch-schema.php';
+
+clms_ensure_users_student_batch_column($pdo);
 
 clms_require_roles(['instructor']);
 
@@ -17,8 +20,7 @@ $coursesStmt = $pdo->prepare(
      LEFT JOIN course_instructors ci
        ON ci.course_id = c.id
       AND ci.instructor_user_id = :instructor_id
-     WHERE c.is_published = 1
-       AND (
+     WHERE (
          ci.instructor_user_id IS NOT NULL
          OR NOT EXISTS (
            SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
@@ -49,6 +51,17 @@ $activityRows = [];
 $searchQuery = trim((string) ($_GET['q'] ?? ''));
 $overallFilter = strtolower(trim((string) ($_GET['overall'] ?? 'all')));
 $examFilter = strtolower(trim((string) ($_GET['exam'] ?? 'all')));
+$batchFilter = trim((string) ($_GET['batch'] ?? ''));
+$assessMinRaw = isset($_GET['assess_min']) ? trim((string) $_GET['assess_min']) : '';
+$assessMaxRaw = isset($_GET['assess_max']) ? trim((string) $_GET['assess_max']) : '';
+$assessMin = $assessMinRaw === '' ? null : filter_var($assessMinRaw, FILTER_VALIDATE_INT);
+$assessMax = $assessMaxRaw === '' ? null : filter_var($assessMaxRaw, FILTER_VALIDATE_INT);
+if ($assessMin === false) {
+    $assessMin = null;
+}
+if ($assessMax === false) {
+    $assessMax = null;
+}
 $page = filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT);
 $page = ($page === false || $page === null || $page < 1) ? 1 : (int) $page;
 $perPage = 10;
@@ -72,6 +85,7 @@ if ($selectedCourseInScope) {
             u.id,
             u.first_name,
             u.last_name,
+            COALESCE(u.student_batch, '') AS student_batch,
             EXISTS(
                 SELECT 1 FROM certificates cert
                 WHERE cert.user_id = u.id
@@ -223,8 +237,12 @@ if ($selectedCourseInScope) {
             $overallBadge = 'bg-label-secondary';
         }
 
+        $batchDisplay = trim((string) ($row['student_batch'] ?? ''));
+
         $activityRows[] = [
             'student_name' => trim((string) $row['first_name'] . ' ' . (string) $row['last_name']) ?: 'Student',
+            'student_batch' => $batchDisplay,
+            'quiz_passed_count' => $quizPassed,
             'video_label' => $videoLabel,
             'video_badge' => $videoBadge,
             'video_progress' => $totalModules > 0 ? ($videoCompleted . '/' . $totalModules) : '0/0',
@@ -240,12 +258,40 @@ if ($selectedCourseInScope) {
     }
 }
 
+$activityRowsCohort = $activityRows;
+$statCohortTotal = count($activityRowsCohort);
+$statActiveTotal = 0;
+foreach ($activityRowsCohort as $crow) {
+    if ((string) ($crow['overall_label'] ?? '') === 'In Progress') {
+        $statActiveTotal++;
+    }
+}
+
 if ($activityRows !== []) {
     $needle = mb_strtolower($searchQuery);
     $activityRows = array_values(array_filter(
         $activityRows,
-        static function (array $row) use ($needle, $overallFilter, $examFilter): bool {
+        static function (array $row) use ($needle, $overallFilter, $examFilter, $batchFilter, $assessMin, $assessMax): bool {
             if ($needle !== '' && mb_strpos(mb_strtolower((string) $row['student_name']), $needle) === false) {
+                return false;
+            }
+
+            if ($batchFilter !== '') {
+                $rowBatch = trim((string) ($row['student_batch'] ?? ''));
+                if ($batchFilter === '__none__') {
+                    if ($rowBatch !== '') {
+                        return false;
+                    }
+                } elseif (mb_strtolower($rowBatch) !== mb_strtolower($batchFilter)) {
+                    return false;
+                }
+            }
+
+            $qp = (int) ($row['quiz_passed_count'] ?? 0);
+            if ($assessMin !== null && $qp < $assessMin) {
+                return false;
+            }
+            if ($assessMax !== null && $qp > $assessMax) {
                 return false;
             }
 
@@ -270,6 +316,29 @@ if ($activityRows !== []) {
             return true;
         }
     ));
+}
+
+$batchOptions = [];
+if ($selectedCourseInScope && $selectedCourseId) {
+    $batchOptStmt = $pdo->prepare(
+        "SELECT DISTINCT TRIM(COALESCE(u.student_batch, '')) AS b
+         FROM users u
+         WHERE u.role = 'student'
+           AND (
+             EXISTS(SELECT 1 FROM user_progress up2 INNER JOIN modules m2 ON m2.id = up2.module_id WHERE up2.user_id = u.id AND m2.course_id = :c1)
+             OR EXISTS(SELECT 1 FROM exam_attempts ea2 WHERE ea2.user_id = u.id AND ea2.course_id = :c2)
+             OR EXISTS(SELECT 1 FROM certificates cert2 WHERE cert2.user_id = u.id AND cert2.course_id = :c3)
+           )
+         ORDER BY b ASC"
+    );
+    $batchOptStmt->execute([
+        'c1' => (int) $selectedCourseId,
+        'c2' => (int) $selectedCourseId,
+        'c3' => (int) $selectedCourseId,
+    ]);
+    while ($br = $batchOptStmt->fetch()) {
+        $batchOptions[] = (string) $br['b'];
+    }
 }
 
 if ($activityRows !== []) {
@@ -305,6 +374,15 @@ if ($overallFilter !== 'all') {
 if ($examFilter !== 'all') {
     $paginationBase['exam'] = $examFilter;
 }
+if ($batchFilter !== '') {
+    $paginationBase['batch'] = $batchFilter;
+}
+if ($assessMin !== null) {
+    $paginationBase['assess_min'] = (string) $assessMin;
+}
+if ($assessMax !== null) {
+    $paginationBase['assess_max'] = (string) $assessMax;
+}
 
 if ((string) ($_GET['ajax'] ?? '') === '1') {
     header('Content-Type: application/json; charset=UTF-8');
@@ -312,6 +390,8 @@ if ((string) ($_GET['ajax'] ?? '') === '1') {
         'ok' => true,
         'course_title' => $selectedCourseTitle,
         'student_count' => $filteredTotal,
+        'cohort_total' => $statCohortTotal,
+        'active_in_progress' => $statActiveTotal,
         'rows' => $visibleRows,
         'current_page' => $page,
         'total_pages' => $totalPages,
@@ -332,7 +412,7 @@ require_once __DIR__ . '/includes/layout-top.php';
 
                 <div class="card mb-4">
                   <div class="card-body">
-                    <form method="get" class="row g-2 align-items-end">
+                    <form method="get" class="row g-3 align-items-end">
                       <div class="col-md-6 col-lg-4">
                         <label for="course_id" class="form-label">Course in your scope</label>
                         <select id="course_id" name="course_id" class="form-select" onchange="this.form.submit()">
@@ -343,12 +423,28 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php endforeach; ?>
                         </select>
                       </div>
-                      <div class="col-md-6 col-lg-3">
+                      <div class="col-md-6 col-lg-4">
                         <label for="q" class="form-label">Student</label>
                         <input id="q" name="q" class="form-control" type="text" placeholder="Search name..." value="<?php echo htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8'); ?>" />
                       </div>
-                      <div class="col-md-6 col-lg-2">
-                        <label for="overall" class="form-label">Overall</label>
+                      <div class="col-md-6 col-lg-4">
+                        <label for="batch" class="form-label">Batch</label>
+                        <select id="batch" name="batch" class="form-select">
+                          <option value="">All batches</option>
+                          <option value="__none__" <?php echo $batchFilter === '__none__' ? 'selected' : ''; ?>>Unspecified</option>
+<?php foreach ($batchOptions as $bLabel) :
+    if ($bLabel === '') {
+        continue;
+    }
+    ?>
+                          <option value="<?php echo htmlspecialchars($bLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo ($batchFilter !== '' && $batchFilter !== '__none__' && strcasecmp($batchFilter, $bLabel) === 0) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($bLabel, ENT_QUOTES, 'UTF-8'); ?>
+                          </option>
+<?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="col-md-6 col-lg-3">
+                        <label for="overall" class="form-label">Progress status</label>
                         <select id="overall" name="overall" class="form-select">
                           <option value="all" <?php echo $overallFilter === 'all' ? 'selected' : ''; ?>>All</option>
                           <option value="not_started" <?php echo $overallFilter === 'not_started' ? 'selected' : ''; ?>>Not Started</option>
@@ -356,8 +452,8 @@ require_once __DIR__ . '/includes/layout-top.php';
                           <option value="done" <?php echo $overallFilter === 'done' ? 'selected' : ''; ?>>Done</option>
                         </select>
                       </div>
-                      <div class="col-md-6 col-lg-2">
-                        <label for="exam" class="form-label">Final Exam</label>
+                      <div class="col-md-6 col-lg-3">
+                        <label for="exam" class="form-label">Result (final exam)</label>
                         <select id="exam" name="exam" class="form-select">
                           <option value="all" <?php echo $examFilter === 'all' ? 'selected' : ''; ?>>All</option>
                           <option value="not_started" <?php echo $examFilter === 'not_started' ? 'selected' : ''; ?>>Not Started</option>
@@ -366,12 +462,40 @@ require_once __DIR__ . '/includes/layout-top.php';
                           <option value="failed" <?php echo $examFilter === 'failed' ? 'selected' : ''; ?>>Failed</option>
                         </select>
                       </div>
-                      <div class="col-md-6 col-lg-1 d-flex gap-2">
-                        <button type="submit" class="btn btn-outline-primary w-100">Go</button>
+                      <div class="col-6 col-lg-2">
+                        <label for="assess_min" class="form-label">Assessments done (min)</label>
+                        <input id="assess_min" name="assess_min" class="form-control" type="number" min="0" step="1" placeholder="Any" value="<?php echo $assessMin !== null ? (int) $assessMin : ''; ?>" />
+                      </div>
+                      <div class="col-6 col-lg-2">
+                        <label for="assess_max" class="form-label">Assessments done (max)</label>
+                        <input id="assess_max" name="assess_max" class="form-control" type="number" min="0" step="1" placeholder="Any" value="<?php echo $assessMax !== null ? (int) $assessMax : ''; ?>" />
+                      </div>
+                      <div class="col-md-6 col-lg-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-grow-1">Apply</button>
                       </div>
                     </form>
+                    <p class="small text-muted mb-0 mt-2">Assessment counts are module quizzes passed (≥70%). <?php echo $totalModules > 0 ? 'This course has <strong>' . (int) $totalModules . '</strong> module assessment(s).' : ''; ?> Batch uses optional cohort labels on student accounts.</p>
                   </div>
                 </div>
+
+<?php if ($selectedCourseInScope && $courses !== []) : ?>
+                <div class="card mb-4 border shadow-none" style="background: rgba(105, 108, 255, 0.08);">
+                  <div class="card-body py-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+                    <div>
+                      <div class="fw-semibold mb-1">Active learners</div>
+                      <small class="text-muted">Students <strong>in progress</strong> vs. everyone with recorded activity in this course. Filters only affect the table.</small>
+                    </div>
+                    <div class="text-md-end">
+                      <span class="display-6 fw-bold lh-1 text-primary">
+                        <span id="activityActiveCount"><?php echo (int) $statActiveTotal; ?></span>
+                        <span class="text-muted fs-2 fw-normal">/</span>
+                        <span id="activityCohortCount"><?php echo (int) $statCohortTotal; ?></span>
+                      </span>
+                      <div class="small text-muted mt-1">in progress · cohort</div>
+                    </div>
+                  </div>
+                </div>
+<?php endif; ?>
 
                 <div class="card">
                   <div class="card-header d-flex justify-content-between align-items-center">
@@ -392,6 +516,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                         <thead>
                           <tr>
                             <th>Student</th>
+                            <th>Batch</th>
                             <th class="text-center">Watching Videos</th>
                             <th class="text-center">Assessments</th>
                             <th class="text-center">Final Exam</th>
@@ -403,6 +528,7 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php foreach ($visibleRows as $row) : ?>
                           <tr>
                             <td class="fw-semibold"><?php echo htmlspecialchars((string) $row['student_name'], ENT_QUOTES, 'UTF-8'); ?></td>
+                            <td><small class="text-muted"><?php echo isset($row['student_batch']) && (string) $row['student_batch'] !== '' ? htmlspecialchars((string) $row['student_batch'], ENT_QUOTES, 'UTF-8') : '—'; ?></small></td>
                             <td class="text-center">
                               <span class="badge <?php echo htmlspecialchars((string) $row['video_badge'], ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars((string) $row['video_label'], ENT_QUOTES, 'UTF-8'); ?></span>
                               <small class="text-muted d-block"><?php echo htmlspecialchars((string) $row['video_progress'], ENT_QUOTES, 'UTF-8'); ?></small>
@@ -475,6 +601,8 @@ require_once __DIR__ . '/includes/layout-top.php';
                   const bodyEl = document.getElementById('activityTableBody');
                   const emptyEl = document.getElementById('activityEmptyState');
                   const countEl = document.getElementById('activityStudentCount');
+                  const activeEl = document.getElementById('activityActiveCount');
+                  const cohortEl = document.getElementById('activityCohortCount');
                   if (!bodyEl || !emptyEl || !countEl) return;
 
                   const escapeHtml = (value) => String(value)
@@ -488,9 +616,11 @@ require_once __DIR__ . '/includes/layout-top.php';
                     const lastActivity = Number(row.last_activity_unix) > 0
                       ? new Date(Number(row.last_activity_unix) * 1000).toLocaleString()
                       : '-';
+                    const batchCell = row.student_batch ? escapeHtml(row.student_batch) : '—';
                     return `
                       <tr>
                         <td class="fw-semibold">${escapeHtml(row.student_name)}</td>
+                        <td><small class="text-muted">${batchCell}</small></td>
                         <td class="text-center">
                           <span class="badge ${escapeHtml(row.video_badge)}">${escapeHtml(row.video_label)}</span>
                           <small class="text-muted d-block">${escapeHtml(row.video_progress)}</small>
@@ -520,6 +650,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                       if (!payload || payload.ok !== true || !Array.isArray(payload.rows)) return;
 
                       countEl.textContent = `${payload.student_count} students`;
+                      if (activeEl && typeof payload.active_in_progress === 'number') {
+                        activeEl.textContent = String(payload.active_in_progress);
+                      }
+                      if (cohortEl && typeof payload.cohort_total === 'number') {
+                        cohortEl.textContent = String(payload.cohort_total);
+                      }
                       if (payload.rows.length === 0) {
                         bodyEl.innerHTML = '';
                         emptyEl.classList.remove('d-none');
