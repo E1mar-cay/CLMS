@@ -16,7 +16,11 @@ $clmsThemeSettings = $clmsThemeSettings ?? ['site_title' => 'CLMS'];
   <div class="app-brand demo">
     <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/dashboard.php', ENT_QUOTES, 'UTF-8'); ?>" class="app-brand-link">
       <img
-        src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
+        src="<?php echo htmlspecialchars(
+                $clmsLogoUrl ?? clms_get_site_logo_url($clmsThemeSettings ?? [], $clmsWebBase ?? ''),
+                ENT_QUOTES,
+                'UTF-8'
+              ); ?>"
         alt="CLMS"
         class="app-brand-logo clms-brand-logo" />
       <span class="app-brand-text demo menu-text fw-bold ms-2"><?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CLMS', ENT_QUOTES, 'UTF-8'); ?></span>
@@ -54,14 +58,14 @@ $clmsThemeSettings = $clmsThemeSettings ?? ['site_title' => 'CLMS'];
       </a>
     </li>
 
-<?php if ($clmsSidebarRole === 'admin') : ?>
-    <li class="menu-item <?php echo $activeAdminPage === 'users' ? 'active' : ''; ?>">
-      <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
-        <i class="menu-icon tf-icons bx bx-group"></i>
-        <div class="text-truncate">Users</div>
-      </a>
-    </li>
-<?php endif; ?>
+    <?php if ($clmsSidebarRole === 'admin') : ?>
+      <li class="menu-item <?php echo $activeAdminPage === 'users' ? 'active' : ''; ?>">
+        <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+          <i class="menu-icon tf-icons bx bx-group"></i>
+          <div class="text-truncate">Users</div>
+        </a>
+      </li>
+    <?php endif; ?>
 
     <li class="menu-item <?php echo $activeAdminPage === 'courses' ? 'active' : ''; ?>">
       <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
@@ -113,14 +117,14 @@ $clmsThemeSettings = $clmsThemeSettings ?? ['site_title' => 'CLMS'];
       </a>
     </li>
 
-<?php if ($clmsSidebarRole === 'admin') : ?>
-    <li class="menu-item <?php echo $activeAdminPage === 'audit_log' ? 'active' : ''; ?>">
-      <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/audit_log.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
-        <i class="menu-icon tf-icons bx bx-list-check"></i>
-        <div class="text-truncate">Audit trail</div>
-      </a>
-    </li>
-<?php endif; ?>
+    <?php if ($clmsSidebarRole === 'admin') : ?>
+      <li class="menu-item <?php echo $activeAdminPage === 'audit_log' ? 'active' : ''; ?>">
+        <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/audit_log.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+          <i class="menu-icon tf-icons bx bx-list-check"></i>
+          <div class="text-truncate">Audit trail</div>
+        </a>
+      </li>
+    <?php endif; ?>
 
     <li class="menu-item <?php echo $activeAdminPage === 'settings' ? 'active' : ''; ?>">
       <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/settings.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">

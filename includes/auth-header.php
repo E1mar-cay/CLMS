@@ -10,6 +10,7 @@ require_once __DIR__ . '/../database.php';
 
 $clmsAssetsPath = $clmsSneatBase . '/assets/';
 $clmsThemeSettings = clms_get_theme_settings($pdo);
+$clmsLogoUrl = clms_get_site_logo_url($clmsThemeSettings, $clmsWebBase);
 $pageTitle = $clmsThemeSettings['site_title'] . ' | ' . $pageTitle;
 
 ?>
@@ -32,8 +33,8 @@ $pageTitle = $clmsThemeSettings['site_title'] . ' | ' . $pageTitle;
 
   <meta name="description" content="" />
 
-  <link rel="icon" type="image/png" href="<?php echo htmlspecialchars($clmsWebBase, ENT_QUOTES, 'UTF-8'); ?>/public/assets/img/logo-clms.png" />
-  <link rel="apple-touch-icon" href="<?php echo htmlspecialchars($clmsWebBase, ENT_QUOTES, 'UTF-8'); ?>/public/assets/img/logo-clms.png" />
+  <link rel="icon" type="image/png" href="<?php echo htmlspecialchars($clmsLogoUrl, ENT_QUOTES, 'UTF-8'); ?>" />
+  <link rel="apple-touch-icon" href="<?php echo htmlspecialchars($clmsLogoUrl, ENT_QUOTES, 'UTF-8'); ?>" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#fdfcf0" />

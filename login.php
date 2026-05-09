@@ -148,10 +148,10 @@ require_once __DIR__ . '/includes/auth-header.php';
     position: relative;
     color: #fff;
     padding: 3rem 2.75rem;
-    background: linear-gradient(135deg, 
-      var(--clms-primary-dark, #5c0000) 0%, 
-      var(--clms-primary-color, #800000) 42%, 
-      var(--clms-primary-light, #a52a2a) 88%);
+    background: linear-gradient(135deg,
+        var(--clms-primary-dark, #5c0000) 0%,
+        var(--clms-primary-color, #800000) 42%,
+        var(--clms-primary-light, #a52a2a) 88%);
     overflow: hidden;
     display: flex;
     flex-direction: column;

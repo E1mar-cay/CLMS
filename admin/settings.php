@@ -387,16 +387,41 @@ require_once __DIR__ . '/includes/layout-top.php';
       </div>
 
       <div class="mb-4">
-        <label for="site_logo_url" class="form-label">Logo URL</label>
-        <input
-          type="url"
-          id="site_logo_url"
-          name="site_logo_url"
-          class="form-control"
-          maxlength="512"
-          value="<?php echo htmlspecialchars($settings['site_logo_url'], ENT_QUOTES, 'UTF-8'); ?>"
-          placeholder="https://example.com/logo.png" />
-        <div class="form-text">Full URL to your logo image. Leave empty to use default text branding.</div>
+        <label for="site_logo" class="form-label">Site Logo</label>
+        <div class="d-flex align-items-start gap-3">
+          <div class="flex-shrink-0">
+            <?php if (!empty($settings['site_logo_url'])) : ?>
+              <img
+                id="logoPreview"
+                src="<?php echo htmlspecialchars($settings['site_logo_url'], ENT_QUOTES, 'UTF-8'); ?>"
+                alt="Site Logo"
+                class="rounded"
+                style="width: 120px; height: 120px; object-fit: cover; border: 2px solid #ddd;" />
+            <?php else : ?>
+              <div
+                id="logoPreview"
+                class="rounded d-flex align-items-center justify-content-center bg-light text-muted"
+                style="width: 120px; height: 120px; border: 2px solid #ddd;">
+                <i class="bx bx-image" style="font-size: 3rem;"></i>
+              </div>
+            <?php endif; ?>
+          </div>
+          <div class="flex-grow-1">
+            <input
+              type="file"
+              id="site_logo"
+              name="site_logo"
+              class="form-control mb-2"
+              accept="image/*" />
+            <input type="hidden" id="site_logo_url" name="site_logo_url" value="<?php echo htmlspecialchars($settings['site_logo_url'], ENT_QUOTES, 'UTF-8'); ?>" />
+            <div class="form-text">Upload a logo image. Recommended size: 200x200px or larger. Will be cropped to square.</div>
+            <?php if (!empty($settings['site_logo_url'])) : ?>
+              <button type="button" class="btn btn-sm btn-outline-danger mt-2" id="removeLogoBtn">
+                <i class="bx bx-trash me-1"></i>Remove Logo
+              </button>
+            <?php endif; ?>
+          </div>
+        </div>
       </div>
 
       <div class="row g-3 mb-4">
@@ -534,12 +559,40 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php endif; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+
+<!-- Logo Crop Modal -->
+<div class="modal fade" id="logoCropModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Crop Logo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="img-container" style="max-height: 500px;">
+          <img id="logoCropImage" style="max-width: 100%;" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="cropLogoBtn">
+          <i class="bx bx-crop me-1"></i>Crop & Upload
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<?php
+$extraScripts = <<<'SCRIPTS'
 <script>
   (() => {
     if (typeof Swal === 'undefined') return;
 
-    const successMsg = <?php echo json_encode($successMessage, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
-    const errorMsg = <?php echo json_encode($errorMessage, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+    const successMsg = REPLACE_SUCCESS_MSG;
+    const errorMsg = REPLACE_ERROR_MSG;
     if (successMsg) ClmsNotify.success(successMsg);
     if (errorMsg) ClmsNotify.error(errorMsg, 'Could not save settings');
 
@@ -604,7 +657,195 @@ require_once __DIR__ . '/includes/layout-top.php';
       });
     }
   })();
-</script>
 
-<?php
+  // Logo upload with cropping
+  (() => {
+    const fileInput = document.getElementById('site_logo');
+    const cropModalEl = document.getElementById('logoCropModal');
+    const cropImage = document.getElementById('logoCropImage');
+    const cropBtn = document.getElementById('cropLogoBtn');
+    const logoPreview = document.getElementById('logoPreview');
+    const logoUrlInput = document.getElementById('site_logo_url');
+    const removeLogoBtn = document.getElementById('removeLogoBtn');
+    let cropper = null;
+    let cropModal = null;
+
+    if (cropModalEl && typeof bootstrap !== 'undefined') {
+      cropModal = new bootstrap.Modal(cropModalEl);
+    }
+
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+          if (typeof ClmsNotify !== 'undefined') {
+            ClmsNotify.error('Please select a valid image file.');
+          } else {
+            alert('Please select a valid image file.');
+          }
+          fileInput.value = '';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          cropImage.src = event.target.result;
+          if (cropModal && typeof Cropper !== 'undefined') {
+            cropModal.show();
+            setTimeout(() => {
+              if (cropper) cropper.destroy();
+              cropper = new Cropper(cropImage, {
+                aspectRatio: 1,
+                viewMode: 2,
+                autoCropArea: 1,
+                responsive: true,
+                background: false,
+              });
+            }, 300);
+          } else if (!cropModal) {
+            alert('Modal not initialized');
+          } else if (typeof Cropper === 'undefined') {
+            alert('Cropper.js library not loaded');
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (cropBtn) {
+      cropBtn.addEventListener('click', async () => {
+        if (!cropper) return;
+        cropBtn.disabled = true;
+        cropBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Uploading...';
+        
+        try {
+          const canvas = cropper.getCroppedCanvas({ width: 400, height: 400 });
+          const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+          const formData = new FormData();
+          formData.append('logo', blob, 'logo.png');
+          formData.append('csrf_token', REPLACE_CSRF_TOKEN);
+          
+          const response = await fetch(REPLACE_UPLOAD_URL, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+          });
+          
+          if (!response.ok) {
+            throw new Error('Upload failed with status: ' + response.status);
+          }
+          
+          const result = await response.json();
+          if (result.ok && result.url) {
+            logoUrlInput.value = result.url;
+            const previewParent = logoPreview.parentNode;
+            if (logoPreview.tagName === 'IMG') {
+              logoPreview.src = result.url;
+            } else {
+              const img = document.createElement('img');
+              img.id = 'logoPreview';
+              img.src = result.url;
+              img.alt = 'Site Logo';
+              img.className = 'rounded';
+              img.style.cssText = 'width: 120px; height: 120px; object-fit: cover; border: 2px solid #ddd;';
+              previewParent.replaceChild(img, logoPreview);
+              
+              if (!removeLogoBtn) {
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'btn btn-sm btn-outline-danger mt-2';
+                removeBtn.id = 'removeLogoBtn';
+                removeBtn.innerHTML = '<i class="bx bx-trash me-1"></i>Remove Logo';
+                previewParent.parentNode.querySelector('.flex-grow-1').appendChild(removeBtn);
+                attachRemoveHandler(removeBtn);
+              }
+            }
+            if (typeof ClmsNotify !== 'undefined') {
+              ClmsNotify.success('Logo uploaded successfully. Click "Save Theme" to apply.');
+            }
+            if (cropModal) cropModal.hide();
+            if (cropper) {
+              cropper.destroy();
+              cropper = null;
+            }
+            fileInput.value = '';
+          } else {
+            throw new Error(result.error || 'Failed to upload logo.');
+          }
+        } catch (error) {
+          if (typeof ClmsNotify !== 'undefined') {
+            ClmsNotify.error(error.message || 'Upload failed. Please try again.');
+          } else {
+            alert(error.message || 'Upload failed. Please try again.');
+          }
+        } finally {
+          cropBtn.disabled = false;
+          cropBtn.innerHTML = '<i class="bx bx-crop me-1"></i>Crop & Upload';
+        }
+      });
+    }
+
+    function attachRemoveHandler(btn) {
+      btn.addEventListener('click', () => {
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({
+            title: 'Remove logo?',
+            text: 'This will clear the logo. You\'ll need to save the theme to apply.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, remove',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#dc3545',
+          }).then((result) => {
+            if (result.isConfirmed) {
+              const preview = document.getElementById('logoPreview');
+              logoUrlInput.value = '';
+              const placeholder = document.createElement('div');
+              placeholder.id = 'logoPreview';
+              placeholder.className = 'rounded d-flex align-items-center justify-content-center bg-light text-muted';
+              placeholder.style.cssText = 'width: 120px; height: 120px; border: 2px solid #ddd;';
+              placeholder.innerHTML = '<i class="bx bx-image" style="font-size: 3rem;"></i>';
+              preview.parentNode.replaceChild(placeholder, preview);
+              btn.remove();
+              if (typeof ClmsNotify !== 'undefined') {
+                ClmsNotify.info('Logo removed. Click "Save Theme" to apply.');
+              }
+            }
+          });
+        } else if (confirm('Remove logo? This will clear the logo. You\'ll need to save the theme to apply.')) {
+          const preview = document.getElementById('logoPreview');
+          logoUrlInput.value = '';
+          const placeholder = document.createElement('div');
+          placeholder.id = 'logoPreview';
+          placeholder.className = 'rounded d-flex align-items-center justify-content-center bg-light text-muted';
+          placeholder.style.cssText = 'width: 120px; height: 120px; border: 2px solid #ddd;';
+          placeholder.innerHTML = '<i class="bx bx-image" style="font-size: 3rem;"></i>';
+          preview.parentNode.replaceChild(placeholder, preview);
+          btn.remove();
+        }
+      });
+    }
+
+    if (removeLogoBtn) {
+      attachRemoveHandler(removeLogoBtn);
+    }
+
+    if (cropModalEl) {
+      cropModalEl.addEventListener('hidden.bs.modal', () => {
+        if (cropper) {
+          cropper.destroy();
+          cropper = null;
+        }
+        if (fileInput) fileInput.value = '';
+      });
+    }
+  })();
+</script>
+SCRIPTS;
+
+$extraScripts = str_replace('REPLACE_SUCCESS_MSG', json_encode($successMessage, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $extraScripts);
+$extraScripts = str_replace('REPLACE_ERROR_MSG', json_encode($errorMessage, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $extraScripts);
+$extraScripts = str_replace('REPLACE_CSRF_TOKEN', json_encode(clms_csrf_token()), $extraScripts);
+$extraScripts = str_replace('REPLACE_UPLOAD_URL', json_encode($clmsWebBase . '/admin/upload_logo.php'), $extraScripts);
+
 require_once __DIR__ . '/includes/layout-bottom.php';

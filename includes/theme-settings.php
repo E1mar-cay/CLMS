@@ -8,12 +8,10 @@ declare(strict_types=1);
 
 function clms_get_theme_settings(PDO $pdo): array
 {
-    static $cached = null;
-    
-    if ($cached !== null) {
-        return $cached;
-    }
-    
+    // NOTE: Intentionally NOT cached.
+    // Settings (including site_logo_url) are editable at runtime from the UI,
+    // so we must re-read from DB on every request.
+
     $defaults = [
         'site_title' => 'Criminology LMS',
         'site_logo_url' => '',
@@ -22,11 +20,11 @@ function clms_get_theme_settings(PDO $pdo): array
         'sidebar_bg_color' => '#ffffff',
         'navbar_bg_color' => '#ffffff',
     ];
-    
+
     try {
         $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('site_title', 'site_logo_url', 'primary_color', 'secondary_color', 'sidebar_bg_color', 'navbar_bg_color')");
         $rows = $stmt->fetchAll();
-        
+
         foreach ($rows as $row) {
             $key = (string) $row['setting_key'];
             if (isset($defaults[$key])) {
@@ -36,7 +34,7 @@ function clms_get_theme_settings(PDO $pdo): array
     } catch (Throwable $e) {
         error_log('Failed to load theme settings: ' . $e->getMessage());
     }
-    
+
     $cached = $defaults;
     return $cached;
 }
@@ -47,11 +45,11 @@ function clms_render_theme_css(array $themeSettings): string
     $secondary = htmlspecialchars($themeSettings['secondary_color'], ENT_QUOTES, 'UTF-8');
     $sidebarBg = htmlspecialchars($themeSettings['sidebar_bg_color'], ENT_QUOTES, 'UTF-8');
     $navbarBg = htmlspecialchars($themeSettings['navbar_bg_color'], ENT_QUOTES, 'UTF-8');
-    
+
     // Generate color variations for gradients
     $primaryDark = clms_adjust_color_brightness($themeSettings['primary_color'], -15);
     $primaryLight = clms_adjust_color_brightness($themeSettings['primary_color'], 15);
-    
+
     return <<<CSS
 <style>
 :root {
@@ -134,7 +132,7 @@ function clms_adjust_color_brightness(string $hexColor, int $percent): string
 {
     // Remove # if present
     $hex = ltrim($hexColor, '#');
-    
+
     // Convert to RGB
     if (strlen($hex) === 3) {
         $r = hexdec(substr($hex, 0, 1) . substr($hex, 0, 1));
@@ -145,12 +143,20 @@ function clms_adjust_color_brightness(string $hexColor, int $percent): string
         $g = hexdec(substr($hex, 2, 2));
         $b = hexdec(substr($hex, 4, 2));
     }
-    
+
     // Adjust brightness
     $r = max(0, min(255, $r + ($r * $percent / 100)));
     $g = max(0, min(255, $g + ($g * $percent / 100)));
     $b = max(0, min(255, $b + ($b * $percent / 100)));
-    
+
     // Convert back to hex
     return sprintf('#%02x%02x%02x', (int)$r, (int)$g, (int)$b);
+}
+
+function clms_get_site_logo_url(array $themeSettings, string $clmsWebBase): string
+{
+    if (!empty($themeSettings['site_logo_url'])) {
+        return $themeSettings['site_logo_url'];
+    }
+    return rtrim($clmsWebBase, '/') . '/public/assets/img/logo-clms.png';
 }
