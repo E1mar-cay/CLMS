@@ -38,6 +38,12 @@ $defaults = [
   'administrator_contact_email' => 'admin@clms.local',
   'admin_pending_alert_sound' => '1',
   'mfa_allowed' => '1',
+  'site_title' => 'Criminology LMS',
+  'site_logo_url' => '',
+  'primary_color' => '#800000',
+  'secondary_color' => '#696cff',
+  'sidebar_bg_color' => '#ffffff',
+  'navbar_bg_color' => '#ffffff',
 ];
 
 function clms_load_settings(PDO $pdo, array $defaults): array
@@ -71,6 +77,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $adminPendingAlertSoundInput = isset($_POST['admin_pending_alert_sound']) ? '1' : '0';
       $isAdmin = (string) ($_SESSION['role'] ?? '') === 'admin';
       $mfaAllowedInput = $isAdmin && isset($_POST['mfa_allowed']) ? '1' : '0';
+      
+      $siteTitleInput = trim((string) ($_POST['site_title'] ?? 'Criminology LMS'));
+      $siteLogoUrlInput = trim((string) ($_POST['site_logo_url'] ?? ''));
+      $primaryColorInput = trim((string) ($_POST['primary_color'] ?? '#800000'));
+      $secondaryColorInput = trim((string) ($_POST['secondary_color'] ?? '#696cff'));
+      $sidebarBgColorInput = trim((string) ($_POST['sidebar_bg_color'] ?? '#ffffff'));
+      $navbarBgColorInput = trim((string) ($_POST['navbar_bg_color'] ?? '#ffffff'));
 
       if (!is_numeric($passingInput)) {
         throw new RuntimeException('Default passing score must be a number.');
@@ -80,6 +93,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         throw new RuntimeException('Default passing score must be between 0 and 100.');
       }
       $passingNormalized = number_format($passingFloat, 2, '.', '');
+
+      if (mb_strlen($siteTitleInput) > 100) {
+        throw new RuntimeException('Site title is too long (max 100 characters).');
+      }
+      if ($siteLogoUrlInput !== '' && mb_strlen($siteLogoUrlInput) > 512) {
+        throw new RuntimeException('Logo URL is too long (max 512 characters).');
+      }
+      if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $primaryColorInput)) {
+        throw new RuntimeException('Primary color must be a valid hex color (e.g., #800000).');
+      }
+      if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $secondaryColorInput)) {
+        throw new RuntimeException('Secondary color must be a valid hex color (e.g., #696cff).');
+      }
+      if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $sidebarBgColorInput)) {
+        throw new RuntimeException('Sidebar background color must be a valid hex color.');
+      }
+      if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $navbarBgColorInput)) {
+        throw new RuntimeException('Navbar background color must be a valid hex color.');
+      }
 
       if ($contactEmailInput === '' || !filter_var($contactEmailInput, FILTER_VALIDATE_EMAIL)) {
         throw new RuntimeException('Administrator contact email is invalid.');
@@ -116,6 +148,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'setting_key' => 'mfa_allowed',
           'setting_value' => $mfaAllowedInput,
         ]);
+        $upsertStmt->execute([
+          'setting_key' => 'site_title',
+          'setting_value' => $siteTitleInput,
+        ]);
+        $upsertStmt->execute([
+          'setting_key' => 'site_logo_url',
+          'setting_value' => $siteLogoUrlInput,
+        ]);
+        $upsertStmt->execute([
+          'setting_key' => 'primary_color',
+          'setting_value' => $primaryColorInput,
+        ]);
+        $upsertStmt->execute([
+          'setting_key' => 'secondary_color',
+          'setting_value' => $secondaryColorInput,
+        ]);
+        $upsertStmt->execute([
+          'setting_key' => 'sidebar_bg_color',
+          'setting_value' => $sidebarBgColorInput,
+        ]);
+        $upsertStmt->execute([
+          'setting_key' => 'navbar_bg_color',
+          'setting_value' => $navbarBgColorInput,
+        ]);
       }
       $pdo->commit();
 
@@ -130,6 +186,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'course_registrations_open' => $registrationsInput,
           'admin_pending_sound' => $adminPendingAlertSoundInput,
           'mfa_allowed' => $isAdmin ? $mfaAllowedInput : '(unchanged)',
+          'site_title' => $isAdmin ? $siteTitleInput : '(unchanged)',
+          'primary_color' => $isAdmin ? $primaryColorInput : '(unchanged)',
         ],
         (int) ($_SESSION['user_id'] ?? 0)
       );
@@ -151,6 +209,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $settings['admin_pending_alert_sound'] = isset($_POST['admin_pending_alert_sound']) ? '1' : '0';
       if ((string) ($_SESSION['role'] ?? '') === 'admin') {
         $settings['mfa_allowed'] = isset($_POST['mfa_allowed']) ? '1' : '0';
+        $settings['site_title'] = (string) ($_POST['site_title'] ?? $settings['site_title']);
+        $settings['site_logo_url'] = (string) ($_POST['site_logo_url'] ?? $settings['site_logo_url']);
+        $settings['primary_color'] = (string) ($_POST['primary_color'] ?? $settings['primary_color']);
+        $settings['secondary_color'] = (string) ($_POST['secondary_color'] ?? $settings['secondary_color']);
+        $settings['sidebar_bg_color'] = (string) ($_POST['sidebar_bg_color'] ?? $settings['sidebar_bg_color']);
+        $settings['navbar_bg_color'] = (string) ($_POST['navbar_bg_color'] ?? $settings['navbar_bg_color']);
       }
     }
   }
@@ -288,6 +352,145 @@ require_once __DIR__ . '/includes/layout-top.php';
   </div>
 </div>
 
+<?php if ((string) ($_SESSION['role'] ?? '') === 'admin') : ?>
+<div class="card mt-4">
+  <h5 class="card-header">Branding & Theme</h5>
+  <div class="card-body">
+    <form
+      method="post"
+      action="<?php echo htmlspecialchars($clmsWebBase . '/admin/settings.php', ENT_QUOTES, 'UTF-8'); ?>"
+      id="themeForm">
+      <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+      <input type="hidden" name="default_passing_score_percentage" value="<?php echo htmlspecialchars($settings['default_passing_score_percentage'], ENT_QUOTES, 'UTF-8'); ?>" />
+      <input type="hidden" name="administrator_contact_email" value="<?php echo htmlspecialchars($settings['administrator_contact_email'], ENT_QUOTES, 'UTF-8'); ?>" />
+      <?php if ($settings['course_registrations_open'] === '1') : ?>
+      <input type="hidden" name="course_registrations_open" value="1" />
+      <?php endif; ?>
+      <?php if ($settings['admin_pending_alert_sound'] === '1') : ?>
+      <input type="hidden" name="admin_pending_alert_sound" value="1" />
+      <?php endif; ?>
+      <?php if ($settings['mfa_allowed'] === '1') : ?>
+      <input type="hidden" name="mfa_allowed" value="1" />
+      <?php endif; ?>
+
+      <div class="mb-4">
+        <label for="site_title" class="form-label">Site Title</label>
+        <input
+          type="text"
+          id="site_title"
+          name="site_title"
+          class="form-control"
+          maxlength="100"
+          value="<?php echo htmlspecialchars($settings['site_title'], ENT_QUOTES, 'UTF-8'); ?>"
+          placeholder="Criminology LMS" />
+        <div class="form-text">Displayed in browser tabs, page headers, and login pages.</div>
+      </div>
+
+      <div class="mb-4">
+        <label for="site_logo_url" class="form-label">Logo URL</label>
+        <input
+          type="url"
+          id="site_logo_url"
+          name="site_logo_url"
+          class="form-control"
+          maxlength="512"
+          value="<?php echo htmlspecialchars($settings['site_logo_url'], ENT_QUOTES, 'UTF-8'); ?>"
+          placeholder="https://example.com/logo.png" />
+        <div class="form-text">Full URL to your logo image. Leave empty to use default text branding.</div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label for="primary_color" class="form-label">Primary Color</label>
+          <div class="input-group">
+            <input
+              type="color"
+              id="primary_color"
+              name="primary_color"
+              class="form-control form-control-color"
+              value="<?php echo htmlspecialchars($settings['primary_color'], ENT_QUOTES, 'UTF-8'); ?>"
+              title="Choose primary color" />
+            <input
+              type="text"
+              class="form-control"
+              id="primary_color_text"
+              value="<?php echo htmlspecialchars($settings['primary_color'], ENT_QUOTES, 'UTF-8'); ?>"
+              readonly />
+          </div>
+          <div class="form-text">Main brand color for buttons and accents.</div>
+        </div>
+        <div class="col-md-6">
+          <label for="secondary_color" class="form-label">Secondary Color</label>
+          <div class="input-group">
+            <input
+              type="color"
+              id="secondary_color"
+              name="secondary_color"
+              class="form-control form-control-color"
+              value="<?php echo htmlspecialchars($settings['secondary_color'], ENT_QUOTES, 'UTF-8'); ?>"
+              title="Choose secondary color" />
+            <input
+              type="text"
+              class="form-control"
+              id="secondary_color_text"
+              value="<?php echo htmlspecialchars($settings['secondary_color'], ENT_QUOTES, 'UTF-8'); ?>"
+              readonly />
+          </div>
+          <div class="form-text">Secondary accent color.</div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label for="sidebar_bg_color" class="form-label">Sidebar Background</label>
+          <div class="input-group">
+            <input
+              type="color"
+              id="sidebar_bg_color"
+              name="sidebar_bg_color"
+              class="form-control form-control-color"
+              value="<?php echo htmlspecialchars($settings['sidebar_bg_color'], ENT_QUOTES, 'UTF-8'); ?>"
+              title="Choose sidebar background color" />
+            <input
+              type="text"
+              class="form-control"
+              id="sidebar_bg_color_text"
+              value="<?php echo htmlspecialchars($settings['sidebar_bg_color'], ENT_QUOTES, 'UTF-8'); ?>"
+              readonly />
+          </div>
+          <div class="form-text">Dashboard sidebar background color.</div>
+        </div>
+        <div class="col-md-6">
+          <label for="navbar_bg_color" class="form-label">Navbar Background</label>
+          <div class="input-group">
+            <input
+              type="color"
+              id="navbar_bg_color"
+              name="navbar_bg_color"
+              class="form-control form-control-color"
+              value="<?php echo htmlspecialchars($settings['navbar_bg_color'], ENT_QUOTES, 'UTF-8'); ?>"
+              title="Choose navbar background color" />
+            <input
+              type="text"
+              class="form-control"
+              id="navbar_bg_color_text"
+              value="<?php echo htmlspecialchars($settings['navbar_bg_color'], ENT_QUOTES, 'UTF-8'); ?>"
+              readonly />
+          </div>
+          <div class="form-text">Top navigation bar background color.</div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bx bx-save me-1"></i>Save Theme
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<?php endif; ?>
+
 <div class="card mt-4">
   <h5 class="card-header">Storage Notes</h5>
   <div class="card-body">
@@ -340,6 +543,23 @@ require_once __DIR__ . '/includes/layout-top.php';
     if (successMsg) ClmsNotify.success(successMsg);
     if (errorMsg) ClmsNotify.error(errorMsg, 'Could not save settings');
 
+    const colorInputs = [
+      { picker: 'primary_color', text: 'primary_color_text' },
+      { picker: 'secondary_color', text: 'secondary_color_text' },
+      { picker: 'sidebar_bg_color', text: 'sidebar_bg_color_text' },
+      { picker: 'navbar_bg_color', text: 'navbar_bg_color_text' }
+    ];
+
+    colorInputs.forEach(({ picker, text }) => {
+      const pickerEl = document.getElementById(picker);
+      const textEl = document.getElementById(text);
+      if (pickerEl && textEl) {
+        pickerEl.addEventListener('input', (e) => {
+          textEl.value = e.target.value;
+        });
+      }
+    });
+
     const settingsForm = document.getElementById('settingsForm');
     if (settingsForm) {
       settingsForm.addEventListener('submit', (event) => {
@@ -357,6 +577,28 @@ require_once __DIR__ . '/includes/layout-top.php';
           if (result.isConfirmed) {
             settingsForm.dataset.confirmed = '1';
             settingsForm.submit();
+          }
+        });
+      });
+    }
+
+    const themeForm = document.getElementById('themeForm');
+    if (themeForm) {
+      themeForm.addEventListener('submit', (event) => {
+        if (themeForm.dataset.confirmed === '1') return;
+        event.preventDefault();
+        Swal.fire({
+          title: 'Save theme settings?',
+          text: 'Theme changes will apply across all pages immediately.',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Yes, save',
+          cancelButtonText: 'Cancel',
+          confirmButtonColor: '#800000',
+        }).then((result) => {
+          if (result.isConfirmed) {
+            themeForm.dataset.confirmed = '1';
+            themeForm.submit();
           }
         });
       });

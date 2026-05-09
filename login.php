@@ -121,7 +121,7 @@ require_once __DIR__ . '/includes/auth-header.php';
   }
 
   body.clms-auth-body {
-    background-color: var(--clms-cream, #fdfcf0);
+    background: var(--clms-cream, #fdfcf0);
     margin: 0;
   }
 
@@ -148,7 +148,10 @@ require_once __DIR__ . '/includes/auth-header.php';
     position: relative;
     color: #fff;
     padding: 3rem 2.75rem;
-    background: linear-gradient(135deg, #5c0a0a 0%, #800000 42%, #a52a2a 88%);
+    background: linear-gradient(135deg, 
+      var(--clms-primary-dark, #5c0000) 0%, 
+      var(--clms-primary-color, #800000) 42%, 
+      var(--clms-primary-light, #a52a2a) 88%);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -212,6 +215,8 @@ require_once __DIR__ . '/includes/auth-header.php';
     font-weight: 700;
     font-size: 1rem;
     letter-spacing: .5px;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
   .clms-auth-hero-main {
@@ -243,14 +248,15 @@ require_once __DIR__ . '/includes/auth-header.php';
     line-height: 1.15;
     margin: 0 0 1rem;
     color: #fff;
-    text-shadow: 0 2px 4px rgba(128, 0, 0, 0.3);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   }
 
   .clms-auth-hero-subtitle {
     font-size: 1.05rem;
     line-height: 1.55;
-    color: rgba(255, 255, 255, .78);
+    color: rgba(255, 255, 255, .95);
     margin: 0 0 2rem;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
 
   .clms-auth-hero-pillars {
@@ -265,9 +271,10 @@ require_once __DIR__ . '/includes/auth-header.php';
     display: flex;
     align-items: flex-start;
     gap: .75rem;
-    color: rgba(255, 255, 255, .85);
+    color: rgba(255, 255, 255, .95);
     font-size: .95rem;
     transition: all 0.3s ease;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   }
 
   .clms-auth-hero-pillars li:hover {
@@ -303,15 +310,15 @@ require_once __DIR__ . '/includes/auth-header.php';
     width: 100%;
     max-width: 440px;
     background: #fff;
-    border: 1px solid rgba(128, 0, 0, .06);
+    border: 1px solid color-mix(in srgb, var(--clms-primary-color) 20%, white);
     border-radius: 0.5rem;
-    box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+    box-shadow: 0 10px 15px -3px color-mix(in srgb, var(--clms-primary-color) 25%, white), 0 4px 6px -2px color-mix(in srgb, var(--clms-primary-color) 15%, white);
     padding: 2.5rem 2.25rem;
     transition: all 0.3s ease;
   }
 
   .clms-auth-card:hover {
-    box-shadow: 0 20px 25px -5px rgba(128, 0, 0, 0.15), 0 10px 10px -5px rgba(128, 0, 0, 0.08);
+    box-shadow: 0 20px 25px -5px color-mix(in srgb, var(--clms-primary-color) 30%, white), 0 10px 10px -5px color-mix(in srgb, var(--clms-primary-color) 20%, white);
   }
 
   @media (max-width: 575.98px) {
@@ -341,7 +348,7 @@ require_once __DIR__ . '/includes/auth-header.php';
 
   .clms-auth-mobile-brand span {
     font-weight: 700;
-    color: #800000;
+    color: var(--clms-primary-color);
     letter-spacing: .3px;
   }
 
@@ -354,15 +361,15 @@ require_once __DIR__ . '/includes/auth-header.php';
   }
 
   .clms-auth-lead {
-    color: #8b4513;
+    color: color-mix(in srgb, var(--clms-primary-color) 70%, black);
     font-size: .95rem;
     margin: 0 0 1.5rem;
   }
 
   /* Button improvements */
   .btn-clms-primary {
-    background-color: #800000;
-    border-color: #800000;
+    background-color: var(--clms-primary-color);
+    border-color: var(--clms-primary-color);
     color: #fff;
     transition: all 0.3s ease;
     position: relative;
@@ -385,30 +392,30 @@ require_once __DIR__ . '/includes/auth-header.php';
   }
 
   .btn-clms-primary:hover {
-    background-color: #5c0a0a;
-    border-color: #5c0a0a;
+    background-color: color-mix(in srgb, var(--clms-primary-color) 85%, black);
+    border-color: color-mix(in srgb, var(--clms-primary-color) 85%, black);
     transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+    box-shadow: 0 10px 15px -3px color-mix(in srgb, var(--clms-primary-color) 30%, white), 0 4px 6px -2px color-mix(in srgb, var(--clms-primary-color) 20%, white);
   }
 
   /* Alert improvements */
   .alert-danger {
     border-radius: 0.5rem;
-    border: 1px solid rgba(128, 0, 0, 0.2);
-    background: rgba(128, 0, 0, 0.05);
-    color: #800000;
+    border: 1px solid color-mix(in srgb, var(--clms-primary-color) 40%, white);
+    background: color-mix(in srgb, var(--clms-primary-color) 8%, white);
+    color: color-mix(in srgb, var(--clms-primary-color) 80%, black);
   }
 
   /* Form improvements */
   .form-control {
     border-radius: 0.5rem;
-    border: 1px solid rgba(128, 0, 0, 0.2);
+    border: 1px solid color-mix(in srgb, var(--clms-primary-color) 25%, white);
     transition: all 0.3s ease;
   }
 
   .form-control:focus {
-    border-color: #800000;
-    box-shadow: 0 0 0 0.2rem rgba(128, 0, 0, 0.15);
+    border-color: var(--clms-primary-color);
+    box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--clms-primary-color) 25%, white);
   }
 
   /* Shared auth input/button/link tokens are in public/assets/css/auth-public.css */
@@ -423,7 +430,7 @@ require_once __DIR__ . '/includes/auth-header.php';
           class="clms-auth-hero-brand-mark"
           src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
           alt="CLMS" />
-        <span class="clms-auth-hero-brand-text">CRIMINOLOGY LMS</span>
+        <span class="clms-auth-hero-brand-text"><?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CRIMINOLOGY LMS', ENT_QUOTES, 'UTF-8'); ?></span>
       </a>
     </div>
 
@@ -456,7 +463,7 @@ require_once __DIR__ . '/includes/auth-header.php';
         <img
           src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
           alt="CLMS" />
-        <span>CRIMINOLOGY LMS</span>
+        <span><?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CRIMINOLOGY LMS', ENT_QUOTES, 'UTF-8'); ?></span>
       </div>
 
       <h2 class="clms-auth-welcome">Welcome back</h2>

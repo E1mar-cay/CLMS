@@ -10,6 +10,7 @@ declare(strict_types=1);
 $activeAdminPage = $activeAdminPage ?? 'dashboard';
 $clmsWebBase = $clmsWebBase ?? '';
 $clmsSidebarRole = function_exists('clms_current_role') ? clms_current_role() : null;
+$clmsThemeSettings = $clmsThemeSettings ?? ['site_title' => 'CLMS'];
 ?>
 <aside id="layout-menu" class="layout-menu menu-vertical menu bg-menu-theme d-flex flex-column">
   <div class="app-brand demo">
@@ -18,7 +19,7 @@ $clmsSidebarRole = function_exists('clms_current_role') ? clms_current_role() : 
         src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
         alt="CLMS"
         class="app-brand-logo clms-brand-logo" />
-      <span class="app-brand-text demo menu-text fw-bold ms-2">CLMS Admin</span>
+      <span class="app-brand-text demo menu-text fw-bold ms-2"><?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CLMS', ENT_QUOTES, 'UTF-8'); ?></span>
     </a>
     <a href="javascript:void(0);" class="layout-menu-toggle menu-link text-large ms-auto">
       <i class="bx bx-chevron-left d-block align-middle"></i>

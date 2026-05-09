@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/includes/sneat-paths.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/theme-settings.php';
 require_once __DIR__ . '/database.php';
 
 clms_session_start();
@@ -11,6 +12,8 @@ clms_try_remember_autologin();
 
 $isLoggedIn = clms_logged_in();
 $userRole = clms_current_role();
+
+$clmsThemeSettings = clms_get_theme_settings($pdo);
 
 $dashboardTarget = 'login.php';
 if ($userRole === 'admin') {
@@ -85,7 +88,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Criminology Learning Management System for strict, self-paced board exam preparation.">
-  <title>CLMS | Criminology Learning Management System</title>
+  <title><?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CLMS', ENT_QUOTES, 'UTF-8'); ?> | Criminology Learning Management System</title>
   <link rel="icon" type="image/png" href="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>">
   <link rel="apple-touch-icon" href="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>">
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -97,12 +100,13 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <link rel="stylesheet" href="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/css/custom.css', ENT_QUOTES, 'UTF-8'); ?>">
   <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+  <?php echo clms_render_theme_css($clmsThemeSettings); ?>
   <style>
     /* Landing-only layout; maroon theme with Bootstrap primary */
     :root {
-      --clms-maroon: #800000;
-      --clms-maroon-light: #a52a2a;
-      --clms-maroon-dark: #5c0a0a;
+      --clms-maroon: var(--clms-primary-color);
+      --clms-maroon-light: color-mix(in srgb, var(--clms-primary-color) 110%, white);
+      --clms-maroon-dark: color-mix(in srgb, var(--clms-primary-color) 85%, black);
       --clms-cream: #fdfcf0;
       --clms-radius: 0.5rem;
       --clms-shadow: 0 4px 6px -1px rgba(128, 0, 0, 0.10), 0 2px 4px -1px rgba(128, 0, 0, 0.06);
@@ -782,7 +786,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     <div class="container">
       <a class="brand-logo fs-4" href="<?php echo htmlspecialchars($clmsWebBase ?: '/', ENT_QUOTES, 'UTF-8'); ?>/">
         <img class="brand-logo-icon" src="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>" alt="CLMS Logo">
-        <span>CLMS</span>
+        <span><?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CLMS', ENT_QUOTES, 'UTF-8'); ?></span>
       </a>
 
       <button class="navbar-toggler ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#landingNavbar" aria-controls="landingNavbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -808,7 +812,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
         <div class="col-lg-8">
           <h1 class="display-4 hero-title mb-3">Master the Criminology Board Exams</h1>
           <p class="lead mb-4">Train with a strict, self-paced learning system built for discipline: complete each module in sequence, pass high-standard assessments, and earn verified certification only when requirements are fully met.</p>
-          <a href="register.php" class="btn btn-clms btn-clms-primary btn-lg px-4">Start Your CLMS Account</a>
+          <a href="register.php" class="btn btn-clms btn-clms-primary btn-lg px-4">Start Your <?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CLMS', ENT_QUOTES, 'UTF-8'); ?> Account</a>
           <div class="hero-kpis">
             <div class="hero-kpi">
               <div class="hero-kpi-value">Self-Paced</div>
@@ -934,7 +938,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
         <div class="row g-4 align-items-center">
           <div class="col-lg-6">
             <h2 class="section-title h3 mb-3">Certification You Can Earn</h2>
-            <p class="mb-3 text-secondary">After completing all required modules and passing final assessments, learners receive a verified CLMS certificate issued by the review center with course-level traceability.</p>
+            <p class="mb-3 text-secondary">After completing all required modules and passing final assessments, learners receive a verified <?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CLMS', ENT_QUOTES, 'UTF-8'); ?> certificate issued by the review center with course-level traceability.</p>
             <ul class="list-unstyled mb-0">
               <li class="mb-2"><i class="bx bx-check-circle me-2 text-primary" aria-hidden="true"></i>Issued only after full requirement completion</li>
               <li class="mb-2"><i class="bx bx-check-circle me-2 text-primary" aria-hidden="true"></i>Tied to course and learner identity records</li>
@@ -947,7 +951,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
                 <img
                   class="cert-template-img"
                   src="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/images/blank_cert_template.jpg', ENT_QUOTES, 'UTF-8'); ?>"
-                  alt="Sample CLMS certificate template"
+                  alt="Sample <?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CLMS', ENT_QUOTES, 'UTF-8'); ?> certificate template"
                   loading="lazy" />
               </div>
             </div>
@@ -958,7 +962,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
     <section class="py-5">
       <div class="container">
-        <h2 class="section-title h3 text-center mb-4">How CLMS Works</h2>
+        <h2 class="section-title h3 text-center mb-4">How <?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'CLMS', ENT_QUOTES, 'UTF-8'); ?> Works</h2>
         <div class="row g-4">
           <div class="col-md-4">
             <div class="feature-item p-4">
@@ -988,7 +992,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
   <footer class="site-footer py-4 mt-5">
     <div class="container text-center">
-      <p class="mb-0">&copy; <?php echo date('Y'); ?> Criminology Learning Management System. All rights reserved.</p>
+      <p class="mb-0">&copy; <?php echo date('Y'); ?> <?php echo htmlspecialchars($clmsThemeSettings['site_title'] ?? 'Criminology Learning Management System', ENT_QUOTES, 'UTF-8'); ?>. All rights reserved.</p>
     </div>
   </footer>
 

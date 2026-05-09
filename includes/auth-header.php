@@ -5,8 +5,12 @@ declare(strict_types=1);
 $pageTitle = $pageTitle ?? 'Criminology LMS';
 
 require_once __DIR__ . '/sneat-paths.php';
+require_once __DIR__ . '/theme-settings.php';
+require_once __DIR__ . '/../database.php';
 
 $clmsAssetsPath = $clmsSneatBase . '/assets/';
+$clmsThemeSettings = clms_get_theme_settings($pdo);
+$pageTitle = $clmsThemeSettings['site_title'] . ' | ' . $pageTitle;
 
 ?>
 <!doctype html>
@@ -53,6 +57,7 @@ $clmsAssetsPath = $clmsSneatBase . '/assets/';
 
   <script src="<?php echo htmlspecialchars($clmsSneatBase, ENT_QUOTES, 'UTF-8'); ?>/assets/vendor/js/helpers.js"></script>
   <script src="<?php echo htmlspecialchars($clmsSneatBase, ENT_QUOTES, 'UTF-8'); ?>/assets/js/config.js"></script>
+  <?php echo clms_render_theme_css($clmsThemeSettings); ?>
 </head>
 
 <body>

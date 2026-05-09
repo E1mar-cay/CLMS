@@ -6,12 +6,14 @@ require_once __DIR__ . '/includes/sneat-paths.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/user-approval.php';
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/includes/theme-settings.php';
 
 clms_session_start();
 clms_redirect_if_logged_in();
 clms_user_approval_ensure_schema($pdo);
 
-$pageTitle = 'Register | Criminology LMS';
+$clmsThemeSettings = clms_get_theme_settings($pdo);
+$pageTitle = 'Register | ' . ($clmsThemeSettings['site_title'] ?? 'Criminology LMS');
 $formError = '';
 $firstName = '';
 $lastName = '';
@@ -89,7 +91,7 @@ $showUpgradeToPro = false;
 ?>
 <style>
   body {
-    background: linear-gradient(180deg, var(--clms-cream, #fdfcf0) 0%, #faf5f6 55%, #f4f1df 100%) !important;
+    background: var(--clms-cream, #fdfcf0) !important;
   }
 
   .clms-auth-shell {
@@ -101,18 +103,21 @@ $showUpgradeToPro = false;
 
   .clms-auth-card {
     border-radius: 0.5rem;
-    border: 1px solid rgba(128, 0, 0, 0.1);
-    box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+    border: 1px solid color-mix(in srgb, var(--clms-primary-color) 20%, white);
+    box-shadow: 0 10px 15px -3px color-mix(in srgb, var(--clms-primary-color) 25%, white), 0 4px 6px -2px color-mix(in srgb, var(--clms-primary-color) 15%, white);
     overflow: hidden;
     transition: all 0.3s ease;
   }
 
   .clms-auth-card:hover {
-    box-shadow: 0 20px 25px -5px rgba(128, 0, 0, 0.15), 0 10px 10px -5px rgba(128, 0, 0, 0.08);
+    box-shadow: 0 20px 25px -5px color-mix(in srgb, var(--clms-primary-color) 30%, white), 0 10px 10px -5px color-mix(in srgb, var(--clms-primary-color) 20%, white);
   }
 
   .clms-auth-panel {
-    background: linear-gradient(160deg, #5c0a0a 0%, #800000 40%, #a52a2a 92%);
+    background: linear-gradient(160deg, 
+      var(--clms-primary-dark, #5c0000) 0%, 
+      var(--clms-primary-color, #800000) 40%, 
+      var(--clms-primary-light, #a52a2a) 92%);
     color: #fff;
     height: 100%;
     padding: 2rem;
@@ -137,10 +142,12 @@ $showUpgradeToPro = false;
     color: #fff;
     font-weight: 700;
     margin-bottom: .75rem;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   }
 
   .clms-auth-panel p {
-    color: rgba(255, 255, 255, 0.88);
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
 
   .clms-point {
@@ -148,8 +155,9 @@ $showUpgradeToPro = false;
     gap: .5rem;
     align-items: flex-start;
     margin-bottom: .9rem;
-    color: rgba(255, 255, 255, 0.92);
+    color: rgba(255, 255, 255, 0.95);
     transition: all 0.3s ease;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   }
 
   .clms-point:hover {
@@ -174,16 +182,16 @@ $showUpgradeToPro = false;
   }
 
   .clms-auth-form h1 {
-    color: #800000;
+    color: var(--clms-primary-color);
     font-size: 1.55rem;
     font-weight: 700;
     line-height: 1.2;
-    text-shadow: 0 1px 2px rgba(128, 0, 0, 0.1);
+    text-shadow: 0 1px 2px color-mix(in srgb, var(--clms-primary-color) 10%, transparent);
   }
 
   .btn-clms-primary {
-    background-color: #800000;
-    border-color: #800000;
+    background-color: var(--clms-primary-color);
+    border-color: var(--clms-primary-color);
     color: #fff;
     transition: all 0.3s ease;
     position: relative;
@@ -206,31 +214,31 @@ $showUpgradeToPro = false;
   }
 
   .btn-clms-primary:hover {
-    background-color: #5c0a0a;
-    border-color: #5c0a0a;
+    background-color: color-mix(in srgb, var(--clms-primary-color) 85%, black);
+    border-color: color-mix(in srgb, var(--clms-primary-color) 85%, black);
     transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+    box-shadow: 0 10px 15px -3px color-mix(in srgb, var(--clms-primary-color) 30%, white), 0 4px 6px -2px color-mix(in srgb, var(--clms-primary-color) 20%, white);
   }
 
   .form-control {
     border-radius: 0.5rem;
-    border: 1px solid rgba(128, 0, 0, 0.2);
+    border: 1px solid color-mix(in srgb, var(--clms-primary-color) 25%, white);
     transition: all 0.3s ease;
   }
 
   .form-control:focus {
-    border-color: #800000;
-    box-shadow: 0 0 0 0.2rem rgba(128, 0, 0, 0.15);
+    border-color: var(--clms-primary-color);
+    box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--clms-primary-color) 25%, white);
   }
 
   .clms-auth-footer-link {
-    color: #800000;
+    color: var(--clms-primary-color);
     text-decoration: none;
     transition: all 0.3s ease;
   }
 
   .clms-auth-footer-link:hover {
-    color: #5c0a0a;
+    color: color-mix(in srgb, var(--clms-primary-color) 85%, black);
     text-decoration: underline;
   }
 
