@@ -628,7 +628,7 @@ require_once __DIR__ . '/includes/layout-top.php';
               <div class="d-flex flex-wrap justify-content-between align-items-center py-3 mb-3 gap-2">
                 <div>
                   <h4 class="fw-bold mb-1">Reports</h4>
-                  <small class="text-muted">Select a date range and course for CSV exports and questionnaire printing. Administrators also see live cohort and module analytics below.</small>
+                  <small class="text-muted">Select a date range and course for CSV exports and questionnaire printing. Administrators also see live cohort and module analytics in tabs below.</small>
                 </div>
               </div>
 
@@ -636,7 +636,7 @@ require_once __DIR__ . '/includes/layout-top.php';
               <div class="alert alert-danger" role="alert"><?php echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8'); ?></div>
 <?php endif; ?>
 
-              <div class="card">
+              <div class="card mb-4">
                 <h5 class="card-header">Generate Report</h5>
                 <div class="card-body">
                   <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/admin/reports.php', ENT_QUOTES, 'UTF-8'); ?>">
@@ -724,10 +724,40 @@ require_once __DIR__ . '/includes/layout-top.php';
               </div>
 
 <?php if ($isReportsAdmin) : ?>
-              <div class="card mt-4">
-                <h5 class="card-header">Master course list</h5>
-                <div class="card-body">
-                  <div class="table-responsive">
+              <div class="card">
+                <div class="card-body p-0">
+                  <ul class="nav nav-tabs nav-fill" role="tablist">
+                    <li class="nav-item" role="presentation">
+                      <button class="nav-link active" id="tab-master-courses" data-bs-toggle="tab" data-bs-target="#content-master-courses" type="button" role="tab" aria-controls="content-master-courses" aria-selected="true">
+                        <i class="bx bx-book me-1"></i>Master Course List
+                      </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                      <button class="nav-link" id="tab-reviewees-batch" data-bs-toggle="tab" data-bs-target="#content-reviewees-batch" type="button" role="tab" aria-controls="content-reviewees-batch" aria-selected="false">
+                        <i class="bx bx-group me-1"></i>Reviewees by Batch
+                      </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                      <button class="nav-link" id="tab-top-reviewees" data-bs-toggle="tab" data-bs-target="#content-top-reviewees" type="button" role="tab" aria-controls="content-top-reviewees" aria-selected="false">
+                        <i class="bx bx-trophy me-1"></i>Top Reviewees
+                      </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                      <button class="nav-link" id="tab-module-progress" data-bs-toggle="tab" data-bs-target="#content-module-progress" type="button" role="tab" aria-controls="content-module-progress" aria-selected="false">
+                        <i class="bx bx-bar-chart me-1"></i>Module Progress
+                      </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                      <button class="nav-link" id="tab-assessment-analytics" data-bs-toggle="tab" data-bs-target="#content-assessment-analytics" type="button" role="tab" aria-controls="content-assessment-analytics" aria-selected="false">
+                        <i class="bx bx-line-chart me-1"></i>Assessment Analytics
+                      </button>
+                    </li>
+                  </ul>
+
+                  <div class="tab-content p-4">
+                    <div class="tab-pane fade show active" id="content-master-courses" role="tabpanel" aria-labelledby="tab-master-courses">
+                      <h5 class="mb-3">Master Course List</h5>
+                      <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0">
                       <thead>
                         <tr>
@@ -764,22 +794,20 @@ require_once __DIR__ . '/includes/layout-top.php';
         'mt-3'
     );
 ?>
-                </div>
-              </div>
+                    </div>
 
-              <div class="card mt-4">
-                <h5 class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-                  <span>Reviewees by batch</span>
+                    <div class="tab-pane fade" id="content-reviewees-batch" role="tabpanel" aria-labelledby="tab-reviewees-batch">
+                      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                        <h5 class="mb-0">Reviewees by Batch</h5>
 <?php if ($rbBatchCount > 0) : ?>
                   <small class="text-muted fw-normal">
                     <?php echo (int) $rbBatchCount; ?> batch group<?php echo $rbBatchCount === 1 ? '' : 's'; ?>
 <?php if ($rpRbTotalPages > 1) : ?>
                     · Showing <?php echo (int) ($rbOffset + 1); ?>&ndash;<?php echo (int) min($rbOffset + $rpRbPer, $rbBatchCount); ?>
 <?php endif; ?>
-                  </small>
+                        </small>
 <?php endif; ?>
-                </h5>
-                <div class="card-body">
+                      </div>
 <?php if ($reportsRevieweesByBatch === []) : ?>
                   <p class="text-muted mb-0">No student accounts found.</p>
 <?php else : ?>
@@ -837,14 +865,12 @@ require_once __DIR__ . '/includes/layout-top.php';
     );
 ?>
 <?php endif; ?>
-                </div>
-              </div>
+                    </div>
 
-              <div class="card mt-4">
-                <h5 class="card-header">Top performing reviewees (module assessments)</h5>
-                <div class="card-body">
-                  <p class="small text-muted">Ranked by average quiz percentage across all module attempts.</p>
-                  <div class="table-responsive">
+                    <div class="tab-pane fade" id="content-top-reviewees" role="tabpanel" aria-labelledby="tab-top-reviewees">
+                      <h5 class="mb-3">Top Performing Reviewees (Module Assessments)</h5>
+                      <p class="small text-muted">Ranked by average quiz percentage across all module attempts.</p>
+                      <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0">
                       <thead>
                         <tr>
@@ -885,14 +911,12 @@ require_once __DIR__ . '/includes/layout-top.php';
         'mt-3'
     );
 ?>
-                </div>
-              </div>
+                    </div>
 
-              <div class="card mt-4">
-                <h5 class="card-header">Review progress by course &amp; module</h5>
-                <div class="card-body">
-                  <p class="small text-muted">Video completed = learners with completed video on the module. Quiz passed = distinct learners with at least one attempt ≥70% on that module.</p>
-                  <div class="table-responsive">
+                    <div class="tab-pane fade" id="content-module-progress" role="tabpanel" aria-labelledby="tab-module-progress">
+                      <h5 class="mb-3">Review Progress by Course &amp; Module</h5>
+                      <p class="small text-muted">Video completed = learners with completed video on the module. Quiz passed = distinct learners with at least one attempt ≥70% on that module.</p>
+                      <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0">
                       <thead>
                         <tr>
@@ -931,14 +955,12 @@ require_once __DIR__ . '/includes/layout-top.php';
         'mt-3'
     );
 ?>
-                </div>
-              </div>
+                    </div>
 
-              <div class="card mt-4">
-                <h5 class="card-header">Module assessment analytics</h5>
-                <div class="card-body">
-                  <p class="small text-muted">Per-module aggregates: average raw score vs. average total points, mean percentage, and overall pass rate (attempts ≥70%).</p>
-                  <div class="table-responsive mb-4">
+                    <div class="tab-pane fade" id="content-assessment-analytics" role="tabpanel" aria-labelledby="tab-assessment-analytics">
+                      <h5 class="mb-3">Module Assessment Analytics</h5>
+                      <p class="small text-muted">Per-module aggregates: average raw score vs. average total points, mean percentage, and overall pass rate (attempts ≥70%).</p>
+                      <div class="table-responsive mb-4">
                     <table class="table table-sm table-hover mb-0">
                       <thead>
                         <tr>
@@ -979,8 +1001,8 @@ require_once __DIR__ . '/includes/layout-top.php';
         'mt-3'
     );
 ?>
-                  <h6 class="mb-2">Recent attempts (raw / total / %)</h6>
-                  <div class="table-responsive">
+                      <h6 class="mb-2">Recent attempts (raw / total / %)</h6>
+                      <div class="table-responsive">
                     <table class="table table-sm mb-0">
                       <thead>
                         <tr>
@@ -1021,6 +1043,8 @@ require_once __DIR__ . '/includes/layout-top.php';
         'mt-3'
     );
 ?>
+                    </div>
+                  </div>
                 </div>
               </div>
 <?php endif; ?>
