@@ -13,17 +13,17 @@ $userRole = clms_current_role();
 
 $dashboardTarget = 'login.php';
 if ($userRole === 'admin') {
-    $dashboardTarget = 'admin/dashboard.php';
+  $dashboardTarget = 'admin/dashboard.php';
 } elseif ($userRole === 'instructor') {
-    $dashboardTarget = 'instructor/dashboard.php';
+  $dashboardTarget = 'instructor/dashboard.php';
 } elseif ($userRole === 'student') {
-    $dashboardTarget = 'student/dashboard.php';
+  $dashboardTarget = 'student/dashboard.php';
 }
 
 $courses = [];
 try {
-    $courseStmt = $pdo->prepare(
-        'SELECT
+  $courseStmt = $pdo->prepare(
+    'SELECT
             c.id,
             c.title,
             c.description,
@@ -40,45 +40,46 @@ try {
          WHERE c.is_published = 1
          ORDER BY c.id DESC
          LIMIT 6'
-    );
-    $courseStmt->execute();
-    /** @var list<array{id:int|string,title:string,description:string|null,thumbnail_url:string|null,level:string|null}> $courses */
-    $courses = $courseStmt->fetchAll();
+  );
+  $courseStmt->execute();
+  /** @var list<array{id:int|string,title:string,description:string|null,thumbnail_url:string|null,level:string|null}> $courses */
+  $courses = $courseStmt->fetchAll();
 } catch (Throwable $e) {
-    $courses = [];
+  $courses = [];
 }
 
 $formatDuration = static function (int $totalMinutes): string {
-    if ($totalMinutes <= 0) {
-        return 'Self-paced';
-    }
-    if ($totalMinutes < 60) {
-        return $totalMinutes . ' min';
-    }
-    $hours = intdiv($totalMinutes, 60);
-    $minutes = $totalMinutes % 60;
-    if ($minutes === 0) {
-        return $hours . ($hours === 1 ? ' hr' : ' hrs');
-    }
-    return $hours . ' hr ' . $minutes . ' min';
+  if ($totalMinutes <= 0) {
+    return 'Self-paced';
+  }
+  if ($totalMinutes < 60) {
+    return $totalMinutes . ' min';
+  }
+  $hours = intdiv($totalMinutes, 60);
+  $minutes = $totalMinutes % 60;
+  if ($minutes === 0) {
+    return $hours . ($hours === 1 ? ' hr' : ' hrs');
+  }
+  return $hours . ' hr ' . $minutes . ' min';
 };
 
 $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): string {
-    $path = trim((string) $rawPath);
-    if ($path === '') {
-        return '';
-    }
-    if (preg_match('/^(https?:)?\/\//i', $path) === 1 || str_starts_with($path, 'data:')) {
-        return $path;
-    }
-    if (str_starts_with($path, '/')) {
-        return rtrim((string) $clmsWebBase, '/') . $path;
-    }
-    return rtrim((string) $clmsWebBase, '/') . '/' . ltrim($path, '/');
+  $path = trim((string) $rawPath);
+  if ($path === '') {
+    return '';
+  }
+  if (preg_match('/^(https?:)?\/\//i', $path) === 1 || str_starts_with($path, 'data:')) {
+    return $path;
+  }
+  if (str_starts_with($path, '/')) {
+    return rtrim((string) $clmsWebBase, '/') . $path;
+  }
+  return rtrim((string) $clmsWebBase, '/') . '/' . ltrim($path, '/');
 };
 ?>
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -649,6 +650,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
   </style>
 </head>
+
 <body>
   <nav class="navbar navbar-expand-lg sticky-top site-navbar py-3">
     <div class="container">
@@ -712,20 +714,20 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
           <?php if ($courses !== []) : ?>
             <?php foreach ($courses as $course) : ?>
               <?php
-                $thumb = $resolveThumbnailUrl((string) ($course['thumbnail_url'] ?? ''));
-                $title = (string) ($course['title'] ?? 'Course');
-                $level = trim((string) ($course['level'] ?? ''));
-                $description = trim((string) ($course['description'] ?? ''));
-                $descText = $description === ''
-                    ? 'Course overview will be provided upon enrollment request approval.'
-                    : mb_strimwidth($description, 0, 120, '...');
-                $levelText = $level !== '' ? $level : 'All Levels';
-                $initials = mb_strtoupper(mb_substr($title, 0, 2));
-                $modalId = 'landingCourseInfoModal-' . (int) ($course['id'] ?? 0);
-                $totalModules = (int) ($course['total_modules'] ?? 0);
-                $learnerCount = (int) ($course['learner_count'] ?? 0);
-                $questionCount = (int) ($course['question_count'] ?? 0);
-                $durationDisplay = $formatDuration((int) ($course['total_duration_minutes'] ?? 0));
+              $thumb = $resolveThumbnailUrl((string) ($course['thumbnail_url'] ?? ''));
+              $title = (string) ($course['title'] ?? 'Course');
+              $level = trim((string) ($course['level'] ?? ''));
+              $description = trim((string) ($course['description'] ?? ''));
+              $descText = $description === ''
+                ? 'Course overview will be provided upon enrollment request approval.'
+                : mb_strimwidth($description, 0, 120, '...');
+              $levelText = $level !== '' ? $level : 'All Levels';
+              $initials = mb_strtoupper(mb_substr($title, 0, 2));
+              $modalId = 'landingCourseInfoModal-' . (int) ($course['id'] ?? 0);
+              $totalModules = (int) ($course['total_modules'] ?? 0);
+              $learnerCount = (int) ($course['learner_count'] ?? 0);
+              $questionCount = (int) ($course['question_count'] ?? 0);
+              $durationDisplay = $formatDuration((int) ($course['total_duration_minutes'] ?? 0));
               ?>
               <div class="col-sm-6 col-lg-4 col-xl-3">
                 <article class="landing-catalog-card">
@@ -770,15 +772,15 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
                         <span class="landing-modal-chip landing-modal-chip-meta"><i class="bx bx-book-open me-1"></i><?php echo $totalModules; ?> modules</span>
                         <span class="landing-modal-chip landing-modal-chip-meta"><i class="bx bx-time-five me-1"></i><?php echo htmlspecialchars($durationDisplay, ENT_QUOTES, 'UTF-8'); ?></span>
                         <span class="landing-modal-chip landing-modal-chip-meta"><i class="bx bx-group me-1"></i><?php echo number_format($learnerCount); ?> learners</span>
-<?php if ($questionCount > 0) : ?>
-                        <span class="landing-modal-chip landing-modal-chip-exam"><i class="bx bx-certification me-1"></i>Final Exam</span>
-<?php endif; ?>
+                        <?php if ($questionCount > 0) : ?>
+                          <span class="landing-modal-chip landing-modal-chip-exam"><i class="bx bx-certification me-1"></i>Final Exam</span>
+                        <?php endif; ?>
                       </div>
-<?php if ($description !== '') : ?>
-                      <p class="mb-0" style="white-space: pre-wrap;"><?php echo htmlspecialchars($description, ENT_QUOTES, 'UTF-8'); ?></p>
-<?php else : ?>
-                      <p class="mb-0 text-muted">No detailed course description is available yet.</p>
-<?php endif; ?>
+                      <?php if ($description !== '') : ?>
+                        <p class="mb-0" style="white-space: pre-wrap;"><?php echo htmlspecialchars($description, ENT_QUOTES, 'UTF-8'); ?></p>
+                      <?php else : ?>
+                        <p class="mb-0 text-muted">No detailed course description is available yet.</p>
+                      <?php endif; ?>
                     </div>
                     <div class="modal-footer">
                       <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
@@ -872,4 +874,5 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
+
 </html>
