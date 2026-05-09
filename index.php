@@ -185,7 +185,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       left: -100%;
       width: 100%;
       height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
       transition: left 0.5s;
     }
 
@@ -733,6 +733,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
         opacity: 0;
         transform: translateY(20px);
       }
+
       to {
         opacity: 1;
         transform: translateY(0);

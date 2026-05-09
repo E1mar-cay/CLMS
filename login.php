@@ -25,84 +25,84 @@ $registered = isset($_GET['registered']) && $_GET['registered'] === '1';
 $pendingApproval = isset($_GET['pending']) && $_GET['pending'] === '1';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $emailValue = trim((string) ($_POST['email'] ?? ''));
-    if (!clms_csrf_validate($_POST['csrf_token'] ?? null)) {
-        $formError = 'Your session expired. Please try again.';
+  $emailValue = trim((string) ($_POST['email'] ?? ''));
+  if (!clms_csrf_validate($_POST['csrf_token'] ?? null)) {
+    $formError = 'Your session expired. Please try again.';
+  } else {
+    $password = (string) ($_POST['password'] ?? '');
+
+    if ($emailValue === '' || $password === '') {
+      $formError = 'Please enter your email and password.';
     } else {
-        $password = (string) ($_POST['password'] ?? '');
+      $selectSql = clms_users_has_approval_column($pdo)
+        ? 'SELECT id, email, password_hash, role, first_name, account_approval_status, account_is_disabled, avatar_url, mfa_totp_secret, mfa_enabled FROM users WHERE email = :email LIMIT 1'
+        : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status, 0 AS account_is_disabled, avatar_url, mfa_totp_secret, mfa_enabled FROM users WHERE email = :email LIMIT 1";
+      $stmt = $pdo->prepare($selectSql);
+      $stmt->execute(['email' => $emailValue]);
+      $user = $stmt->fetch();
 
-        if ($emailValue === '' || $password === '') {
-            $formError = 'Please enter your email and password.';
+      if (
+        !$user
+        || !is_string($user['password_hash'] ?? null)
+        || !password_verify($password, $user['password_hash'])
+      ) {
+        $formError = 'Invalid email or password.';
+        clms_audit_log(
+          $pdo,
+          'login_failed',
+          'user',
+          $user && isset($user['id']) ? (int) $user['id'] : null,
+          ['email' => $emailValue],
+          null
+        );
+      } else {
+        $role = $user['role'] ?? '';
+        if (!in_array($role, ['student', 'instructor', 'admin'], true)) {
+          $formError = 'Your account is not authorized.';
+          clms_audit_log($pdo, 'login_failed', 'user', (int) $user['id'], ['reason' => 'invalid_role'], null);
+        } elseif (!clms_user_approval_can_login((string) $role, $user['account_approval_status'] ?? null, $user['account_is_disabled'] ?? 0)) {
+          $formError = clms_user_approval_login_error(
+            (string) ($user['account_approval_status'] ?? 'pending'),
+            $user['account_is_disabled'] ?? 0
+          );
+          clms_audit_log($pdo, 'login_denied', 'user', (int) $user['id'], ['reason' => 'approval'], null);
+        } elseif (clms_mfa_user_must_challenge($pdo, $user)) {
+          session_regenerate_id(true);
+          $_SESSION['clms_mfa_pending'] = [
+            'user_id' => (int) $user['id'],
+            'remember' => isset($_POST['remember']) && $_POST['remember'] !== '',
+            'ts' => time(),
+          ];
+          clms_redirect('login_mfa.php');
         } else {
-            $selectSql = clms_users_has_approval_column($pdo)
-                ? 'SELECT id, email, password_hash, role, first_name, account_approval_status, account_is_disabled, avatar_url, mfa_totp_secret, mfa_enabled FROM users WHERE email = :email LIMIT 1'
-                : "SELECT id, email, password_hash, role, first_name, 'approved' AS account_approval_status, 0 AS account_is_disabled, avatar_url, mfa_totp_secret, mfa_enabled FROM users WHERE email = :email LIMIT 1";
-            $stmt = $pdo->prepare($selectSql);
-            $stmt->execute(['email' => $emailValue]);
-            $user = $stmt->fetch();
+          session_regenerate_id(true);
+          $_SESSION['user_id'] = (int) $user['id'];
+          $_SESSION['role'] = $role;
+          $_SESSION['email'] = (string) $user['email'];
+          $_SESSION['first_name'] = (string) ($user['first_name'] ?? '');
+          $_SESSION['avatar_url'] = (string) ($user['avatar_url'] ?? '');
 
-            if (
-                !$user
-                || !is_string($user['password_hash'] ?? null)
-                || !password_verify($password, $user['password_hash'])
-            ) {
-                $formError = 'Invalid email or password.';
-                clms_audit_log(
-                    $pdo,
-                    'login_failed',
-                    'user',
-                    $user && isset($user['id']) ? (int) $user['id'] : null,
-                    ['email' => $emailValue],
-                    null
-                );
-            } else {
-                $role = $user['role'] ?? '';
-                if (!in_array($role, ['student', 'instructor', 'admin'], true)) {
-                    $formError = 'Your account is not authorized.';
-                    clms_audit_log($pdo, 'login_failed', 'user', (int) $user['id'], ['reason' => 'invalid_role'], null);
-                } elseif (!clms_user_approval_can_login((string) $role, $user['account_approval_status'] ?? null, $user['account_is_disabled'] ?? 0)) {
-                    $formError = clms_user_approval_login_error(
-                        (string) ($user['account_approval_status'] ?? 'pending'),
-                        $user['account_is_disabled'] ?? 0
-                    );
-                    clms_audit_log($pdo, 'login_denied', 'user', (int) $user['id'], ['reason' => 'approval'], null);
-                } elseif (clms_mfa_user_must_challenge($pdo, $user)) {
-                    session_regenerate_id(true);
-                    $_SESSION['clms_mfa_pending'] = [
-                        'user_id' => (int) $user['id'],
-                        'remember' => isset($_POST['remember']) && $_POST['remember'] !== '',
-                        'ts' => time(),
-                    ];
-                    clms_redirect('login_mfa.php');
-                } else {
-                    session_regenerate_id(true);
-                    $_SESSION['user_id'] = (int) $user['id'];
-                    $_SESSION['role'] = $role;
-                    $_SESSION['email'] = (string) $user['email'];
-                    $_SESSION['first_name'] = (string) ($user['first_name'] ?? '');
-                    $_SESSION['avatar_url'] = (string) ($user['avatar_url'] ?? '');
+          $rememberChecked = isset($_POST['remember']) && $_POST['remember'] !== '';
+          if ($rememberChecked) {
+            clms_remember_issue_token((int) $user['id']);
+          } else {
+            clms_remember_revoke_current();
+          }
 
-                    $rememberChecked = isset($_POST['remember']) && $_POST['remember'] !== '';
-                    if ($rememberChecked) {
-                        clms_remember_issue_token((int) $user['id']);
-                    } else {
-                        clms_remember_revoke_current();
-                    }
+          clms_audit_log($pdo, 'login_success', 'user', (int) $user['id'], ['via' => 'password'], (int) $user['id']);
 
-                    clms_audit_log($pdo, 'login_success', 'user', (int) $user['id'], ['via' => 'password'], (int) $user['id']);
+          if ($role === 'admin') {
+            clms_redirect('admin/dashboard.php');
+          }
+          if ($role === 'instructor') {
+            clms_redirect('instructor/dashboard.php');
+          }
 
-                    if ($role === 'admin') {
-                        clms_redirect('admin/dashboard.php');
-                    }
-                    if ($role === 'instructor') {
-                        clms_redirect('instructor/dashboard.php');
-                    }
-
-                    clms_redirect('student/dashboard.php');
-                }
-            }
+          clms_redirect('student/dashboard.php');
         }
+      }
     }
+  }
 }
 
 $showUpgradeToPro = false;
@@ -110,390 +110,430 @@ $showUpgradeToPro = false;
 require_once __DIR__ . '/includes/auth-header.php';
 
 ?>
-    <style>
-      /* --- Login hero layout (scoped to this page) ------------------
+<style>
+  /* --- Login hero layout (scoped to this page) ------------------
          Two-column branded shell: maroon hero on the left, form card
          on the right. Collapses to a single column at <992px. */
-      html, body { height: 100%; }
-      body.clms-auth-body {
-        background-color: var(--clms-cream, #fdfcf0);
-        margin: 0;
-      }
+  html,
+  body {
+    height: 100%;
+  }
 
-      .clms-auth-shell {
-        display: grid;
-        grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-        min-height: 100vh;
-      }
-      @media (max-width: 991.98px) {
-        .clms-auth-shell { grid-template-columns: 1fr; }
-      }
+  body.clms-auth-body {
+    background-color: var(--clms-cream, #fdfcf0);
+    margin: 0;
+  }
 
-      /* ---- Left: branded hero ---- */
-      .clms-auth-hero {
-        position: relative;
-        color: #fff;
-        padding: 3rem 2.75rem;
-        background: linear-gradient(135deg, #5c0a0a 0%, #800000 42%, #a52a2a 88%);
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-      }
-      @media (max-width: 991.98px) {
-        .clms-auth-hero { display: none; }
-      }
-      /* Subtle dot pattern echoes the "network nodes" in the logo */
-      .clms-auth-hero::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, .08) 1px, transparent 0);
-        background-size: 24px 24px;
-        opacity: .55;
-        pointer-events: none;
-      }
-      /* Soft gold glow in the corner, nodding to the cert gold in the logo */
-      .clms-auth-hero::after {
-        content: '';
-        position: absolute;
-        right: -80px;
-        top: -80px;
-        width: 320px;
-        height: 320px;
-        background: radial-gradient(circle, rgba(212, 175, 55, .18) 0%, transparent 65%);
-        pointer-events: none;
-      }
-      .clms-auth-hero-top,
-      .clms-auth-hero-main,
-      .clms-auth-hero-bottom { position: relative; }
+  .clms-auth-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    min-height: 100vh;
+  }
 
-      .clms-auth-hero-brand {
-        display: inline-flex;
-        align-items: center;
-        gap: .75rem;
-        color: #fff;
-        text-decoration: none;
-        transition: all 0.3s ease;
-      }
-      .clms-auth-hero-brand:hover {
-        transform: scale(1.05);
-      }
-      .clms-auth-hero-brand-mark {
-        width: 42px;
-        height: 42px;
-        object-fit: contain;
-      }
-      .clms-auth-hero-brand-text {
-        font-weight: 700;
-        font-size: 1rem;
-        letter-spacing: .5px;
-      }
+  @media (max-width: 991.98px) {
+    .clms-auth-shell {
+      grid-template-columns: 1fr;
+    }
+  }
 
-      .clms-auth-hero-main {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        max-width: 540px;
-      }
-      .clms-auth-hero-logo {
-        width: 148px;
-        height: 148px;
-        margin-bottom: 2rem;
-        object-fit: contain;
-        filter: drop-shadow(0 14px 40px rgba(0, 0, 0, .35));
-        transition: all 0.3s ease;
-      }
-      .clms-auth-hero-logo:hover {
-        transform: scale(1.05);
-      }
-      .clms-auth-hero-title {
-        font-size: 2.25rem;
-        font-weight: 700;
-        line-height: 1.15;
-        margin: 0 0 1rem;
-        color: #fff;
-        text-shadow: 0 2px 4px rgba(128, 0, 0, 0.3);
-      }
-      .clms-auth-hero-subtitle {
-        font-size: 1.05rem;
-        line-height: 1.55;
-        color: rgba(255, 255, 255, .78);
-        margin: 0 0 2rem;
-      }
-      .clms-auth-hero-pillars {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: grid;
-        gap: .85rem;
-      }
-      .clms-auth-hero-pillars li {
-        display: flex;
-        align-items: flex-start;
-        gap: .75rem;
-        color: rgba(255, 255, 255, .85);
-        font-size: .95rem;
-        transition: all 0.3s ease;
-      }
-      .clms-auth-hero-pillars li:hover {
-        transform: translateX(5px);
-      }
-      .clms-auth-hero-pillars i {
-        color: #d4af37;
-        font-size: 1.25rem;
-        line-height: 1.25;
-        flex-shrink: 0;
-        transition: all 0.3s ease;
-      }
-      .clms-auth-hero-pillars li:hover i {
-        transform: scale(1.1);
-      }
+  /* ---- Left: branded hero ---- */
+  .clms-auth-hero {
+    position: relative;
+    color: #fff;
+    padding: 3rem 2.75rem;
+    background: linear-gradient(135deg, #5c0a0a 0%, #800000 42%, #a52a2a 88%);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
 
-      .clms-auth-hero-bottom {
-        font-size: .8rem;
-        color: rgba(255, 255, 255, .55);
-      }
+  @media (max-width: 991.98px) {
+    .clms-auth-hero {
+      display: none;
+    }
+  }
 
-      /* ---- Right: form column ---- */
-      .clms-auth-form-col {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 2.25rem 1.25rem;
-      }
-      .clms-auth-card {
-        width: 100%;
-        max-width: 440px;
-        background: #fff;
-        border: 1px solid rgba(128, 0, 0, .06);
-        border-radius: 0.5rem;
-        box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
-        padding: 2.5rem 2.25rem;
-        transition: all 0.3s ease;
-      }
-      .clms-auth-card:hover {
-        box-shadow: 0 20px 25px -5px rgba(128, 0, 0, 0.15), 0 10px 10px -5px rgba(128, 0, 0, 0.08);
-      }
-      @media (max-width: 575.98px) {
-        .clms-auth-card { padding: 1.75rem 1.25rem; }
-      }
+  /* Subtle dot pattern echoes the "network nodes" in the logo */
+  .clms-auth-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, .08) 1px, transparent 0);
+    background-size: 24px 24px;
+    opacity: .55;
+    pointer-events: none;
+  }
 
-      .clms-auth-mobile-brand {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: .5rem;
-        margin-bottom: 1.25rem;
-      }
-      .clms-auth-mobile-brand img {
-        width: 64px;
-        height: 64px;
-        object-fit: contain;
-        transition: all 0.3s ease;
-      }
-      .clms-auth-mobile-brand img:hover {
-        transform: scale(1.05);
-      }
-      .clms-auth-mobile-brand span {
-        font-weight: 700;
-        color: #800000;
-        letter-spacing: .3px;
-      }
+  /* Soft gold glow in the corner, nodding to the cert gold in the logo */
+  .clms-auth-hero::after {
+    content: '';
+    position: absolute;
+    right: -80px;
+    top: -80px;
+    width: 320px;
+    height: 320px;
+    background: radial-gradient(circle, rgba(212, 175, 55, .18) 0%, transparent 65%);
+    pointer-events: none;
+  }
 
-      .clms-auth-welcome {
-        font-size: 1.55rem;
-        font-weight: 700;
-        color: #2c1810;
-        line-height: 1.2;
-        margin: 0 0 .4rem;
-      }
-      .clms-auth-lead {
-        color: #8b4513;
-        font-size: .95rem;
-        margin: 0 0 1.5rem;
-      }
+  .clms-auth-hero-top,
+  .clms-auth-hero-main,
+  .clms-auth-hero-bottom {
+    position: relative;
+  }
 
-      /* Button improvements */
-      .btn-clms-primary {
-        background-color: #800000;
-        border-color: #800000;
-        color: #fff;
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
-      }
-      .btn-clms-primary::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-        transition: left 0.5s;
-      }
-      .btn-clms-primary:hover::before {
-        left: 100%;
-      }
-      .btn-clms-primary:hover {
-        background-color: #5c0a0a;
-        border-color: #5c0a0a;
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
-      }
+  .clms-auth-hero-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: .75rem;
+    color: #fff;
+    text-decoration: none;
+    transition: all 0.3s ease;
+  }
 
-      /* Alert improvements */
-      .alert-danger {
-        border-radius: 0.5rem;
-        border: 1px solid rgba(128, 0, 0, 0.2);
-        background: rgba(128, 0, 0, 0.05);
-        color: #800000;
-      }
+  .clms-auth-hero-brand:hover {
+    transform: scale(1.05);
+  }
 
-      /* Form improvements */
-      .form-control {
-        border-radius: 0.5rem;
-        border: 1px solid rgba(128, 0, 0, 0.2);
-        transition: all 0.3s ease;
-      }
-      .form-control:focus {
-        border-color: #800000;
-        box-shadow: 0 0 0 0.2rem rgba(128, 0, 0, 0.15);
-      }
+  .clms-auth-hero-brand-mark {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+  }
 
-      /* Shared auth input/button/link tokens are in public/assets/css/auth-public.css */
-    </style>
+  .clms-auth-hero-brand-text {
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: .5px;
+  }
 
-    <div class="clms-auth-shell">
-      <!-- LEFT: branded hero (hidden on mobile) -->
-      <div class="clms-auth-hero">
-        <div class="clms-auth-hero-top">
-          <a class="clms-auth-hero-brand" href="<?php echo htmlspecialchars($clmsWebBase . '/login.php', ENT_QUOTES, 'UTF-8'); ?>">
-            <img
-              class="clms-auth-hero-brand-mark"
-              src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
-              alt="CLMS" />
-            <span class="clms-auth-hero-brand-text">CRIMINOLOGY LMS</span>
-          </a>
-        </div>
+  .clms-auth-hero-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    max-width: 540px;
+  }
 
-        <div class="clms-auth-hero-main">
-          <img
-            class="clms-auth-hero-logo"
-            src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
-            alt="Criminology Learning Management System" />
-          <h1 class="clms-auth-hero-title">Where justice education meets modern learning.</h1>
-          <p class="clms-auth-hero-subtitle">
-            A dedicated learning platform for criminology students, instructors, and administrators &mdash; built around real coursework, exams, and measurable progress.
-          </p>
-          <ul class="clms-auth-hero-pillars">
-            <li><i class="bx bx-book-open"></i><span>Structured courses, modules, and readings.</span></li>
-            <li><i class="bx bx-task"></i><span>Timed exams with automated and essay grading.</span></li>
-            <li><i class="bx bx-award"></i><span>Certificates that track real learner outcomes.</span></li>
-          </ul>
-        </div>
+  .clms-auth-hero-logo {
+    width: 148px;
+    height: 148px;
+    margin-bottom: 2rem;
+    object-fit: contain;
+    filter: drop-shadow(0 14px 40px rgba(0, 0, 0, .35));
+    transition: all 0.3s ease;
+  }
 
-        <div class="clms-auth-hero-bottom">
-          &copy; <?php echo date('Y'); ?> Criminology Learning Management System
-        </div>
-      </div>
+  .clms-auth-hero-logo:hover {
+    transform: scale(1.05);
+  }
 
-      <!-- RIGHT: sign-in card -->
-      <div class="clms-auth-form-col">
-        <div class="clms-auth-card">
-          <!-- Mobile-only brand (left hero is hidden there) -->
-          <div class="clms-auth-mobile-brand d-lg-none">
-            <img
-              src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
-              alt="CLMS" />
-            <span>CRIMINOLOGY LMS</span>
-          </div>
+  .clms-auth-hero-title {
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1.15;
+    margin: 0 0 1rem;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(128, 0, 0, 0.3);
+  }
 
-          <h2 class="clms-auth-welcome">Welcome back</h2>
-          <p class="clms-auth-lead">Sign in to continue your learning journey.</p>
+  .clms-auth-hero-subtitle {
+    font-size: 1.05rem;
+    line-height: 1.55;
+    color: rgba(255, 255, 255, .78);
+    margin: 0 0 2rem;
+  }
 
-<?php if ($formError !== '') : ?>
-          <div class="alert alert-danger mb-4 d-flex align-items-center" role="alert">
-            <i class="bx bx-error-circle me-2"></i>
-            <span><?php echo htmlspecialchars($formError, ENT_QUOTES, 'UTF-8'); ?></span>
-          </div>
-<?php endif; ?>
+  .clms-auth-hero-pillars {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: .85rem;
+  }
 
-          <form id="formAuthentication" class="mb-3" action="<?php echo htmlspecialchars($clmsWebBase . '/login.php', ENT_QUOTES, 'UTF-8'); ?>" method="post" novalidate>
-            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+  .clms-auth-hero-pillars li {
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+    color: rgba(255, 255, 255, .85);
+    font-size: .95rem;
+    transition: all 0.3s ease;
+  }
 
-            <div class="mb-3">
-              <label for="email" class="form-label">Email</label>
-              <input
-                type="email"
-                class="form-control"
-                id="email"
-                name="email"
-                placeholder="you@example.com"
-                value="<?php echo htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8'); ?>"
-                autofocus
-                required />
-            </div>
+  .clms-auth-hero-pillars li:hover {
+    transform: translateX(5px);
+  }
 
-            <div class="mb-3 form-password-toggle">
-              <div class="d-flex justify-content-between">
-                <label class="form-label" for="password">Password</label>
-                <a href="javascript:void(0);" class="small text-decoration-none">Forgot password?</a>
-              </div>
-              <div class="input-group input-group-merge">
-                <input
-                  type="password"
-                  id="password"
-                  class="form-control"
-                  name="password"
-                  placeholder="&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;"
-                  aria-describedby="password"
-                  required />
-                <span class="input-group-text cursor-pointer"><i class="icon-base bx bx-hide"></i></span>
-              </div>
-            </div>
+  .clms-auth-hero-pillars i {
+    color: #d4af37;
+    font-size: 1.25rem;
+    line-height: 1.25;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+  }
 
-            <div class="mb-4">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="remember-me" name="remember" />
-                <label class="form-check-label" for="remember-me">Keep me signed in</label>
-              </div>
-            </div>
+  .clms-auth-hero-pillars li:hover i {
+    transform: scale(1.1);
+  }
 
-            <button class="btn btn-clms-primary w-100" type="submit">
-              <i class="bx bx-log-in-circle me-1"></i>Sign in
-            </button>
-          </form>
+  .clms-auth-hero-bottom {
+    font-size: .8rem;
+    color: rgba(255, 255, 255, .55);
+  }
 
-          <p class="text-center mb-0">
-            <span class="text-muted">New here?</span>
-            <a href="<?php echo htmlspecialchars($clmsWebBase . '/register.php', ENT_QUOTES, 'UTF-8'); ?>">Create an account</a>
-          </p>
-        </div>
-      </div>
+  /* ---- Right: form column ---- */
+  .clms-auth-form-col {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2.25rem 1.25rem;
+  }
+
+  .clms-auth-card {
+    width: 100%;
+    max-width: 440px;
+    background: #fff;
+    border: 1px solid rgba(128, 0, 0, .06);
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+    padding: 2.5rem 2.25rem;
+    transition: all 0.3s ease;
+  }
+
+  .clms-auth-card:hover {
+    box-shadow: 0 20px 25px -5px rgba(128, 0, 0, 0.15), 0 10px 10px -5px rgba(128, 0, 0, 0.08);
+  }
+
+  @media (max-width: 575.98px) {
+    .clms-auth-card {
+      padding: 1.75rem 1.25rem;
+    }
+  }
+
+  .clms-auth-mobile-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .clms-auth-mobile-brand img {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    transition: all 0.3s ease;
+  }
+
+  .clms-auth-mobile-brand img:hover {
+    transform: scale(1.05);
+  }
+
+  .clms-auth-mobile-brand span {
+    font-weight: 700;
+    color: #800000;
+    letter-spacing: .3px;
+  }
+
+  .clms-auth-welcome {
+    font-size: 1.55rem;
+    font-weight: 700;
+    color: #2c1810;
+    line-height: 1.2;
+    margin: 0 0 .4rem;
+  }
+
+  .clms-auth-lead {
+    color: #8b4513;
+    font-size: .95rem;
+    margin: 0 0 1.5rem;
+  }
+
+  /* Button improvements */
+  .btn-clms-primary {
+    background-color: #800000;
+    border-color: #800000;
+    color: #fff;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-clms-primary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+  }
+
+  .btn-clms-primary:hover::before {
+    left: 100%;
+  }
+
+  .btn-clms-primary:hover {
+    background-color: #5c0a0a;
+    border-color: #5c0a0a;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+  }
+
+  /* Alert improvements */
+  .alert-danger {
+    border-radius: 0.5rem;
+    border: 1px solid rgba(128, 0, 0, 0.2);
+    background: rgba(128, 0, 0, 0.05);
+    color: #800000;
+  }
+
+  /* Form improvements */
+  .form-control {
+    border-radius: 0.5rem;
+    border: 1px solid rgba(128, 0, 0, 0.2);
+    transition: all 0.3s ease;
+  }
+
+  .form-control:focus {
+    border-color: #800000;
+    box-shadow: 0 0 0 0.2rem rgba(128, 0, 0, 0.15);
+  }
+
+  /* Shared auth input/button/link tokens are in public/assets/css/auth-public.css */
+</style>
+
+<div class="clms-auth-shell">
+  <!-- LEFT: branded hero (hidden on mobile) -->
+  <div class="clms-auth-hero">
+    <div class="clms-auth-hero-top">
+      <a class="clms-auth-hero-brand" href="<?php echo htmlspecialchars($clmsWebBase . '/login.php', ENT_QUOTES, 'UTF-8'); ?>">
+        <img
+          class="clms-auth-hero-brand-mark"
+          src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
+          alt="CLMS" />
+        <span class="clms-auth-hero-brand-text">CRIMINOLOGY LMS</span>
+      </a>
     </div>
 
-    <script>
-      /* Apply the cream background reliably even if another stylesheet
+    <div class="clms-auth-hero-main">
+      <img
+        class="clms-auth-hero-logo"
+        src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
+        alt="Criminology Learning Management System" />
+      <h1 class="clms-auth-hero-title">Where justice education meets modern learning.</h1>
+      <p class="clms-auth-hero-subtitle">
+        A dedicated learning platform for criminology students, instructors, and administrators &mdash; built around real coursework, exams, and measurable progress.
+      </p>
+      <ul class="clms-auth-hero-pillars">
+        <li><i class="bx bx-book-open"></i><span>Structured courses, modules, and readings.</span></li>
+        <li><i class="bx bx-task"></i><span>Timed exams with automated and essay grading.</span></li>
+        <li><i class="bx bx-award"></i><span>Certificates that track real learner outcomes.</span></li>
+      </ul>
+    </div>
+
+    <div class="clms-auth-hero-bottom">
+      &copy; <?php echo date('Y'); ?> Criminology Learning Management System
+    </div>
+  </div>
+
+  <!-- RIGHT: sign-in card -->
+  <div class="clms-auth-form-col">
+    <div class="clms-auth-card">
+      <!-- Mobile-only brand (left hero is hidden there) -->
+      <div class="clms-auth-mobile-brand d-lg-none">
+        <img
+          src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>"
+          alt="CLMS" />
+        <span>CRIMINOLOGY LMS</span>
+      </div>
+
+      <h2 class="clms-auth-welcome">Welcome back</h2>
+      <p class="clms-auth-lead">Sign in to continue your learning journey.</p>
+
+      <?php if ($formError !== '') : ?>
+        <div class="alert alert-danger mb-4 d-flex align-items-center" role="alert">
+          <i class="bx bx-error-circle me-2"></i>
+          <span><?php echo htmlspecialchars($formError, ENT_QUOTES, 'UTF-8'); ?></span>
+        </div>
+      <?php endif; ?>
+
+      <form id="formAuthentication" class="mb-3" action="<?php echo htmlspecialchars($clmsWebBase . '/login.php', ENT_QUOTES, 'UTF-8'); ?>" method="post" novalidate>
+        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+
+        <div class="mb-3">
+          <label for="email" class="form-label">Email</label>
+          <input
+            type="email"
+            class="form-control"
+            id="email"
+            name="email"
+            placeholder="you@example.com"
+            value="<?php echo htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8'); ?>"
+            autofocus
+            required />
+        </div>
+
+        <div class="mb-3 form-password-toggle">
+          <div class="d-flex justify-content-between">
+            <label class="form-label" for="password">Password</label>
+            <a href="javascript:void(0);" class="small text-decoration-none">Forgot password?</a>
+          </div>
+          <div class="input-group input-group-merge">
+            <input
+              type="password"
+              id="password"
+              class="form-control"
+              name="password"
+              placeholder="&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;&#xb7;"
+              aria-describedby="password"
+              required />
+            <span class="input-group-text cursor-pointer"><i class="icon-base bx bx-hide"></i></span>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="remember-me" name="remember" />
+            <label class="form-check-label" for="remember-me">Keep me signed in</label>
+          </div>
+        </div>
+
+        <button class="btn btn-clms-primary w-100" type="submit">
+          <i class="bx bx-log-in-circle me-1"></i>Sign in
+        </button>
+      </form>
+
+      <p class="text-center mb-0">
+        <span class="text-muted">New here?</span>
+        <a href="<?php echo htmlspecialchars($clmsWebBase . '/register.php', ENT_QUOTES, 'UTF-8'); ?>">Create an account</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* Apply the cream background reliably even if another stylesheet
          beats Sneat's body reset. Scoping via a class keeps it tidy. */
-      document.body.classList.add('clms-auth-body');
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  document.body.classList.add('clms-auth-body');
+</script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <?php if ($registered) : ?>
-    <script>
-      Swal.fire({
-        icon: 'success',
-        title: 'Account Created',
-        text: <?php echo json_encode(
-            $pendingApproval
+  <script>
+    Swal.fire({
+      icon: 'success',
+      title: 'Account Created',
+      text: <?php echo json_encode(
+              $pendingApproval
                 ? 'Registration successful. Your account is pending admin approval before you can sign in.'
                 : 'Registration successful. You can sign in below.',
-            JSON_UNESCAPED_SLASHES
-        ); ?>,
-        confirmButtonColor: '#800000',
-      });
-    </script>
+              JSON_UNESCAPED_SLASHES
+            ); ?>,
+      confirmButtonColor: '#800000',
+    });
+  </script>
 <?php endif; ?>
 
 <?php require __DIR__ . '/includes/auth-footer.php'; ?>

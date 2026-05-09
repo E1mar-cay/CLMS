@@ -17,68 +17,68 @@ $lastName = '';
 $email = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $firstName = trim((string) ($_POST['first_name'] ?? ''));
-    $lastName = trim((string) ($_POST['last_name'] ?? ''));
-    $email = trim((string) ($_POST['email'] ?? ''));
-    if (!clms_csrf_validate($_POST['csrf_token'] ?? null)) {
-        $formError = 'Your session expired. Please try again.';
-    } else {
-        $password = (string) ($_POST['password'] ?? '');
+  $firstName = trim((string) ($_POST['first_name'] ?? ''));
+  $lastName = trim((string) ($_POST['last_name'] ?? ''));
+  $email = trim((string) ($_POST['email'] ?? ''));
+  if (!clms_csrf_validate($_POST['csrf_token'] ?? null)) {
+    $formError = 'Your session expired. Please try again.';
+  } else {
+    $password = (string) ($_POST['password'] ?? '');
 
-        if ($firstName === '' || $lastName === '') {
-            $formError = 'Please enter your first and last name.';
-        } elseif (strlen($firstName) > 50 || strlen($lastName) > 50) {
-            $formError = 'Name fields must be 50 characters or fewer.';
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $formError = 'Please enter a valid email address.';
-        } elseif (strlen($email) > 100) {
-            $formError = 'Email must be 100 characters or fewer.';
-        } elseif (strlen($password) < 8) {
-            $formError = 'Password must be at least 8 characters.';
-        } else {
-            $hash = password_hash($password, PASSWORD_DEFAULT);
-            if ($hash === false) {
-                $formError = 'Registration could not be completed. Please try again.';
-            } else {
-                try {
-                    if (clms_users_has_approval_column($pdo)) {
-                        $stmt = $pdo->prepare(
-                            'INSERT INTO users (first_name, last_name, email, password_hash, role, account_approval_status, account_approved_at)
+    if ($firstName === '' || $lastName === '') {
+      $formError = 'Please enter your first and last name.';
+    } elseif (strlen($firstName) > 50 || strlen($lastName) > 50) {
+      $formError = 'Name fields must be 50 characters or fewer.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      $formError = 'Please enter a valid email address.';
+    } elseif (strlen($email) > 100) {
+      $formError = 'Email must be 100 characters or fewer.';
+    } elseif (strlen($password) < 8) {
+      $formError = 'Password must be at least 8 characters.';
+    } else {
+      $hash = password_hash($password, PASSWORD_DEFAULT);
+      if ($hash === false) {
+        $formError = 'Registration could not be completed. Please try again.';
+      } else {
+        try {
+          if (clms_users_has_approval_column($pdo)) {
+            $stmt = $pdo->prepare(
+              'INSERT INTO users (first_name, last_name, email, password_hash, role, account_approval_status, account_approved_at)
                              VALUES (:first_name, :last_name, :email, :password_hash, :role, :account_approval_status, NULL)'
-                        );
-                        $stmt->execute([
-                            'first_name' => $firstName,
-                            'last_name' => $lastName,
-                            'email' => $email,
-                            'password_hash' => $hash,
-                            'role' => 'student',
-                            'account_approval_status' => 'pending',
-                        ]);
-                        clms_redirect('login.php?registered=1&pending=1');
-                    } else {
-                        $stmt = $pdo->prepare(
-                            'INSERT INTO users (first_name, last_name, email, password_hash, role) VALUES (:first_name, :last_name, :email, :password_hash, :role)'
-                        );
-                        $stmt->execute([
-                            'first_name' => $firstName,
-                            'last_name' => $lastName,
-                            'email' => $email,
-                            'password_hash' => $hash,
-                            'role' => 'student',
-                        ]);
-                        clms_redirect('login.php?registered=1');
-                    }
-                } catch (PDOException $e) {
-                    if (isset($e->errorInfo[1]) && (int) $e->errorInfo[1] === 1062) {
-                        $formError = 'An account with this email already exists.';
-                    } else {
-                        error_log($e->getMessage());
-                        $formError = 'Registration could not be completed. Please try again.';
-                    }
-                }
-            }
+            );
+            $stmt->execute([
+              'first_name' => $firstName,
+              'last_name' => $lastName,
+              'email' => $email,
+              'password_hash' => $hash,
+              'role' => 'student',
+              'account_approval_status' => 'pending',
+            ]);
+            clms_redirect('login.php?registered=1&pending=1');
+          } else {
+            $stmt = $pdo->prepare(
+              'INSERT INTO users (first_name, last_name, email, password_hash, role) VALUES (:first_name, :last_name, :email, :password_hash, :role)'
+            );
+            $stmt->execute([
+              'first_name' => $firstName,
+              'last_name' => $lastName,
+              'email' => $email,
+              'password_hash' => $hash,
+              'role' => 'student',
+            ]);
+            clms_redirect('login.php?registered=1');
+          }
+        } catch (PDOException $e) {
+          if (isset($e->errorInfo[1]) && (int) $e->errorInfo[1] === 1062) {
+            $formError = 'An account with this email already exists.';
+          } else {
+            error_log($e->getMessage());
+            $formError = 'Registration could not be completed. Please try again.';
+          }
         }
+      }
     }
+  }
 }
 
 require_once __DIR__ . '/includes/auth-header.php';
@@ -86,269 +86,269 @@ require_once __DIR__ . '/includes/auth-header.php';
 $showUpgradeToPro = false;
 
 ?>
-    <style>
-      body {
-        background: linear-gradient(180deg, var(--clms-cream, #fdfcf0) 0%, #faf5f6 55%, #f4f1df 100%) !important;
-      }
+<style>
+  body {
+    background: linear-gradient(180deg, var(--clms-cream, #fdfcf0) 0%, #faf5f6 55%, #f4f1df 100%) !important;
+  }
 
-      .clms-auth-shell {
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        padding: 2rem 0;
-      }
+  .clms-auth-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding: 2rem 0;
+  }
 
-      .clms-auth-card {
-        border-radius: 0.5rem;
-        border: 1px solid rgba(128, 0, 0, 0.1);
-        box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
-        overflow: hidden;
-        transition: all 0.3s ease;
-      }
+  .clms-auth-card {
+    border-radius: 0.5rem;
+    border: 1px solid rgba(128, 0, 0, 0.1);
+    box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
 
-      .clms-auth-card:hover {
-        box-shadow: 0 20px 25px -5px rgba(128, 0, 0, 0.15), 0 10px 10px -5px rgba(128, 0, 0, 0.08);
-      }
+  .clms-auth-card:hover {
+    box-shadow: 0 20px 25px -5px rgba(128, 0, 0, 0.15), 0 10px 10px -5px rgba(128, 0, 0, 0.08);
+  }
 
-      .clms-auth-panel {
-        background: linear-gradient(160deg, #5c0a0a 0%, #800000 40%, #a52a2a 92%);
-        color: #fff;
-        height: 100%;
-        padding: 2rem;
-        position: relative;
-      }
+  .clms-auth-panel {
+    background: linear-gradient(160deg, #5c0a0a 0%, #800000 40%, #a52a2a 92%);
+    color: #fff;
+    height: 100%;
+    padding: 2rem;
+    position: relative;
+  }
 
-      .clms-auth-panel::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.07) 1px, transparent 0);
-        background-size: 22px 22px;
-        opacity: 0.45;
-        pointer-events: none;
-      }
+  .clms-auth-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.07) 1px, transparent 0);
+    background-size: 22px 22px;
+    opacity: 0.45;
+    pointer-events: none;
+  }
 
-      .clms-auth-panel > * {
-        position: relative;
-      }
+  .clms-auth-panel>* {
+    position: relative;
+  }
 
-      .clms-auth-panel h2 {
-        color: #fff;
-        font-weight: 700;
-        margin-bottom: .75rem;
-      }
+  .clms-auth-panel h2 {
+    color: #fff;
+    font-weight: 700;
+    margin-bottom: .75rem;
+  }
 
-      .clms-auth-panel p {
-        color: rgba(255, 255, 255, 0.88);
-      }
+  .clms-auth-panel p {
+    color: rgba(255, 255, 255, 0.88);
+  }
 
-      .clms-point {
-        display: flex;
-        gap: .5rem;
-        align-items: flex-start;
-        margin-bottom: .9rem;
-        color: rgba(255, 255, 255, 0.92);
-        transition: all 0.3s ease;
-      }
+  .clms-point {
+    display: flex;
+    gap: .5rem;
+    align-items: flex-start;
+    margin-bottom: .9rem;
+    color: rgba(255, 255, 255, 0.92);
+    transition: all 0.3s ease;
+  }
 
-      .clms-point:hover {
-        transform: translateX(5px);
-      }
+  .clms-point:hover {
+    transform: translateX(5px);
+  }
 
-      .clms-point i {
-        color: #d4af37;
-        font-size: 1.1rem;
-        line-height: 1.2;
-        flex-shrink: 0;
-        transition: all 0.3s ease;
-      }
+  .clms-point i {
+    color: #d4af37;
+    font-size: 1.1rem;
+    line-height: 1.2;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+  }
 
-      .clms-point:hover i {
-        transform: scale(1.1);
-      }
+  .clms-point:hover i {
+    transform: scale(1.1);
+  }
 
-      .clms-auth-form {
-        padding: 2rem;
-        background: #fff;
-      }
+  .clms-auth-form {
+    padding: 2rem;
+    background: #fff;
+  }
 
-      .clms-auth-form h1 {
-        color: #800000;
-        font-size: 1.55rem;
-        font-weight: 700;
-        line-height: 1.2;
-        text-shadow: 0 1px 2px rgba(128, 0, 0, 0.1);
-      }
+  .clms-auth-form h1 {
+    color: #800000;
+    font-size: 1.55rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-shadow: 0 1px 2px rgba(128, 0, 0, 0.1);
+  }
 
-      .btn-clms-primary {
-        background-color: #800000;
-        border-color: #800000;
-        color: #fff;
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
-      }
+  .btn-clms-primary {
+    background-color: #800000;
+    border-color: #800000;
+    color: #fff;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
 
-      .btn-clms-primary::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-        transition: left 0.5s;
-      }
+  .btn-clms-primary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+  }
 
-      .btn-clms-primary:hover::before {
-        left: 100%;
-      }
+  .btn-clms-primary:hover::before {
+    left: 100%;
+  }
 
-      .btn-clms-primary:hover {
-        background-color: #5c0a0a;
-        border-color: #5c0a0a;
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
-      }
+  .btn-clms-primary:hover {
+    background-color: #5c0a0a;
+    border-color: #5c0a0a;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+  }
 
-      .form-control {
-        border-radius: 0.5rem;
-        border: 1px solid rgba(128, 0, 0, 0.2);
-        transition: all 0.3s ease;
-      }
+  .form-control {
+    border-radius: 0.5rem;
+    border: 1px solid rgba(128, 0, 0, 0.2);
+    transition: all 0.3s ease;
+  }
 
-      .form-control:focus {
-        border-color: #800000;
-        box-shadow: 0 0 0 0.2rem rgba(128, 0, 0, 0.15);
-      }
+  .form-control:focus {
+    border-color: #800000;
+    box-shadow: 0 0 0 0.2rem rgba(128, 0, 0, 0.15);
+  }
 
-      .clms-auth-footer-link {
-        color: #800000;
-        text-decoration: none;
-        transition: all 0.3s ease;
-      }
+  .clms-auth-footer-link {
+    color: #800000;
+    text-decoration: none;
+    transition: all 0.3s ease;
+  }
 
-      .clms-auth-footer-link:hover {
-        color: #5c0a0a;
-        text-decoration: underline;
-      }
+  .clms-auth-footer-link:hover {
+    color: #5c0a0a;
+    text-decoration: underline;
+  }
 
-      @media (max-width: 991.98px) {
-        .clms-auth-panel {
-          border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-        }
-      }
+  @media (max-width: 991.98px) {
+    .clms-auth-panel {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+  }
 
-      @media (max-width: 575.98px) {
-        .clms-auth-panel,
-        .clms-auth-form {
-          padding: 1.25rem;
-        }
-      }
+  @media (max-width: 575.98px) {
 
-      /* Fade-in animation */
-      .clms-auth-card {
-        animation: fadeIn 0.8s ease-in-out;
-      }
+    .clms-auth-panel,
+    .clms-auth-form {
+      padding: 1.25rem;
+    }
+  }
 
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-          transform: translateY(20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-    </style>
-    <div class="container-xxl">
-      <div class="clms-auth-shell">
-        <div class="container">
-          <div class="row justify-content-center">
-            <div class="col-xl-10 col-lg-11">
-              <div class="card clms-auth-card">
-                <div class="row g-0">
-                  <div class="col-lg-5">
-                    <div class="clms-auth-panel">
-                      <h2>Join CLMS</h2>
-                      <p class="mb-4">Create your student account to request course access and begin your structured board exam review journey.</p>
-                      <div class="clms-point"><i class="bx bx-check-shield" aria-hidden="true"></i><span>Strict progression with mastery-based assessments</span></div>
-                      <div class="clms-point"><i class="bx bx-video" aria-hidden="true"></i><span>Self-paced module videos aligned to criminology outcomes</span></div>
-                      <div class="clms-point"><i class="bx bx-certification" aria-hidden="true"></i><span>Verified certification upon full completion</span></div>
-                    </div>
-                  </div>
-                  <div class="col-lg-7">
-                    <div class="clms-auth-form">
-                      <h1 class="mb-2">Create Student Account</h1>
-                      <p class="text-muted mb-4">Use your active email address. Password must be at least 8 characters.</p>
-                      <form id="formAuthentication" class="mb-4" action="<?php echo htmlspecialchars($clmsWebBase . '/register.php', ENT_QUOTES, 'UTF-8'); ?>" method="post" novalidate>
-                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
-                        <div class="row g-3">
-                          <div class="col-sm-6">
-                            <label for="first_name" class="form-label">First name</label>
-                            <input
-                              type="text"
-                              class="form-control"
-                              id="first_name"
-                              name="first_name"
-                              placeholder="Enter first name"
-                              value="<?php echo htmlspecialchars($firstName, ENT_QUOTES, 'UTF-8'); ?>"
-                              maxlength="50"
-                              autofocus
-                              required />
-                          </div>
-                          <div class="col-sm-6">
-                            <label for="last_name" class="form-label">Last name</label>
-                            <input
-                              type="text"
-                              class="form-control"
-                              id="last_name"
-                              name="last_name"
-                              placeholder="Enter last name"
-                              value="<?php echo htmlspecialchars($lastName, ENT_QUOTES, 'UTF-8'); ?>"
-                              maxlength="50"
-                              required />
-                          </div>
-                          <div class="col-12">
-                            <label for="email" class="form-label">Email address</label>
-                            <input
-                              type="email"
-                              class="form-control"
-                              id="email"
-                              name="email"
-                              placeholder="name@example.com"
-                              value="<?php echo htmlspecialchars($email, ENT_QUOTES, 'UTF-8'); ?>"
-                              maxlength="100"
-                              required />
-                          </div>
-                          <div class="col-12 form-password-toggle">
-                            <label class="form-label" for="password">Password</label>
-                            <div class="input-group input-group-merge">
-                              <input
-                                type="password"
-                                id="password"
-                                class="form-control"
-                                name="password"
-                                placeholder="Enter at least 8 characters"
-                                aria-describedby="password"
-                                minlength="8"
-                                required />
-                              <span class="input-group-text cursor-pointer"><i class="icon-base bx bx-hide"></i></span>
-                            </div>
-                          </div>
+  /* Fade-in animation */
+  .clms-auth-card {
+    animation: fadeIn 0.8s ease-in-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+</style>
+<div class="container-xxl">
+  <div class="clms-auth-shell">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-xl-10 col-lg-11">
+          <div class="card clms-auth-card">
+            <div class="row g-0">
+              <div class="col-lg-5">
+                <div class="clms-auth-panel">
+                  <h2>Join CLMS</h2>
+                  <p class="mb-4">Create your student account to request course access and begin your structured board exam review journey.</p>
+                  <div class="clms-point"><i class="bx bx-check-shield" aria-hidden="true"></i><span>Strict progression with mastery-based assessments</span></div>
+                  <div class="clms-point"><i class="bx bx-video" aria-hidden="true"></i><span>Self-paced module videos aligned to criminology outcomes</span></div>
+                  <div class="clms-point"><i class="bx bx-certification" aria-hidden="true"></i><span>Verified certification upon full completion</span></div>
+                </div>
+              </div>
+              <div class="col-lg-7">
+                <div class="clms-auth-form">
+                  <h1 class="mb-2">Create Student Account</h1>
+                  <p class="text-muted mb-4">Use your active email address. Password must be at least 8 characters.</p>
+                  <form id="formAuthentication" class="mb-4" action="<?php echo htmlspecialchars($clmsWebBase . '/register.php', ENT_QUOTES, 'UTF-8'); ?>" method="post" novalidate>
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                    <div class="row g-3">
+                      <div class="col-sm-6">
+                        <label for="first_name" class="form-label">First name</label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="first_name"
+                          name="first_name"
+                          placeholder="Enter first name"
+                          value="<?php echo htmlspecialchars($firstName, ENT_QUOTES, 'UTF-8'); ?>"
+                          maxlength="50"
+                          autofocus
+                          required />
+                      </div>
+                      <div class="col-sm-6">
+                        <label for="last_name" class="form-label">Last name</label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="last_name"
+                          name="last_name"
+                          placeholder="Enter last name"
+                          value="<?php echo htmlspecialchars($lastName, ENT_QUOTES, 'UTF-8'); ?>"
+                          maxlength="50"
+                          required />
+                      </div>
+                      <div class="col-12">
+                        <label for="email" class="form-label">Email address</label>
+                        <input
+                          type="email"
+                          class="form-control"
+                          id="email"
+                          name="email"
+                          placeholder="name@example.com"
+                          value="<?php echo htmlspecialchars($email, ENT_QUOTES, 'UTF-8'); ?>"
+                          maxlength="100"
+                          required />
+                      </div>
+                      <div class="col-12 form-password-toggle">
+                        <label class="form-label" for="password">Password</label>
+                        <div class="input-group input-group-merge">
+                          <input
+                            type="password"
+                            id="password"
+                            class="form-control"
+                            name="password"
+                            placeholder="Enter at least 8 characters"
+                            aria-describedby="password"
+                            minlength="8"
+                            required />
+                          <span class="input-group-text cursor-pointer"><i class="icon-base bx bx-hide"></i></span>
                         </div>
-                        <button class="btn btn-clms-primary d-grid w-100 mt-4" type="submit">Create Account</button>
-                      </form>
-
-                      <p class="text-center mb-0">
-                        <span class="text-muted">Already have an account?</span>
-                        <a class="clms-auth-footer-link" href="<?php echo htmlspecialchars($clmsWebBase . '/login.php', ENT_QUOTES, 'UTF-8'); ?>">
-                          Sign in
-                        </a>
-                      </p>
+                      </div>
                     </div>
-                  </div>
+                    <button class="btn btn-clms-primary d-grid w-100 mt-4" type="submit">Create Account</button>
+                  </form>
+
+                  <p class="text-center mb-0">
+                    <span class="text-muted">Already have an account?</span>
+                    <a class="clms-auth-footer-link" href="<?php echo htmlspecialchars($clmsWebBase . '/login.php', ENT_QUOTES, 'UTF-8'); ?>">
+                      Sign in
+                    </a>
+                  </p>
                 </div>
               </div>
             </div>
@@ -356,17 +356,19 @@ $showUpgradeToPro = false;
         </div>
       </div>
     </div>
+  </div>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <?php if ($formError !== '') : ?>
-    <script>
-      Swal.fire({
-        icon: 'error',
-        title: 'Registration Failed',
-        text: <?php echo json_encode($formError, JSON_UNESCAPED_SLASHES); ?>,
-        confirmButtonColor: '#800000',
-      });
-    </script>
+  <script>
+    Swal.fire({
+      icon: 'error',
+      title: 'Registration Failed',
+      text: <?php echo json_encode($formError, JSON_UNESCAPED_SLASHES); ?>,
+      confirmButtonColor: '#800000',
+    });
+  </script>
 <?php endif; ?>
 
 <?php require __DIR__ . '/includes/auth-footer.php'; ?>
