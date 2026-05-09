@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/includes/sneat-paths.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/user-approval.php';
 require_once __DIR__ . '/includes/remember.php';
