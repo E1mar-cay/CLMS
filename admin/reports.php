@@ -1049,5 +1049,57 @@ require_once __DIR__ . '/includes/layout-top.php';
               </div>
 <?php endif; ?>
 
+<script>
+(function() {
+  // Wait for DOM to be fully loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTabRestoration);
+  } else {
+    initTabRestoration();
+  }
+  
+  function initTabRestoration() {
+    var tabButtons = document.querySelectorAll('[data-bs-toggle="tab"]');
+    var activeTabKey = 'clms_reports_active_tab';
+    var scrollPosKey = 'clms_reports_scroll_pos';
+    
+    // Restore active tab on page load
+    var savedTab = localStorage.getItem(activeTabKey);
+    if (savedTab) {
+      var targetBtn = document.querySelector('[data-bs-target="' + savedTab + '"]');
+      if (targetBtn && typeof bootstrap !== 'undefined') {
+        var tab = new bootstrap.Tab(targetBtn);
+        tab.show();
+      }
+    }
+    
+    // Restore scroll position after tab is shown
+    var savedScroll = sessionStorage.getItem(scrollPosKey);
+    if (savedScroll) {
+      setTimeout(function() {
+        window.scrollTo(0, parseInt(savedScroll, 10));
+        sessionStorage.removeItem(scrollPosKey);
+      }, 100);
+    }
+    
+    // Save active tab when clicked
+    tabButtons.forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        var target = e.currentTarget.getAttribute('data-bs-target');
+        localStorage.setItem(activeTabKey, target);
+      });
+    });
+    
+    // Save scroll position before pagination navigation
+    var paginationLinks = document.querySelectorAll('.pagination a');
+    paginationLinks.forEach(function(link) {
+      link.addEventListener('click', function() {
+        sessionStorage.setItem(scrollPosKey, window.pageYOffset.toString());
+      });
+    });
+  }
+})();
+</script>
+
 <?php
 require_once __DIR__ . '/includes/layout-bottom.php';
