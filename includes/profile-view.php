@@ -233,7 +233,7 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
                         showCancelButton: true,
                         confirmButtonText: 'Yes, save',
                         cancelButtonText: 'Cancel',
-                        confirmButtonColor: '#b01030',
+                        confirmButtonColor: '#800000',
                       }).then((result) => {
                         if (result.isConfirmed) {
                           infoForm.dataset.confirmed = '1';
@@ -258,7 +258,7 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
                           icon: 'error',
                           title: 'File too large',
                           text: 'Please choose an image that is 2MB or smaller.',
-                          confirmButtonColor: '#b01030',
+                          confirmButtonColor: '#800000',
                         });
                         return;
                       }
@@ -269,7 +269,7 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
                         showCancelButton: true,
                         confirmButtonText: 'Yes, upload',
                         cancelButtonText: 'Cancel',
-                        confirmButtonColor: '#b01030',
+                        confirmButtonColor: '#800000',
                       }).then((result) => {
                         if (result.isConfirmed) {
                           avatarForm.dataset.confirmed = '1';
@@ -292,7 +292,7 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
                           icon: 'error',
                           title: 'Passwords do not match',
                           text: 'New password and confirmation must be identical.',
-                          confirmButtonColor: '#b01030',
+                          confirmButtonColor: '#800000',
                         });
                         return;
                       }
@@ -304,7 +304,7 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
                         showCancelButton: true,
                         confirmButtonText: 'Yes, change it',
                         cancelButtonText: 'Cancel',
-                        confirmButtonColor: '#b01030',
+                        confirmButtonColor: '#800000',
                       }).then((result) => {
                         if (result.isConfirmed) {
                           pwForm.dataset.confirmed = '1';

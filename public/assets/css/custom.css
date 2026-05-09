@@ -8,7 +8,7 @@
    ============================================================ */
 
 /* ---- 1. Brand palette --------------------------------------
-   Primary brand: crimson. Cream is the app canvas. The -rgb
+   Primary brand: maroon. Cream is the app canvas. The -rgb
    triplets are what Bootstrap uses internally for
    rgba(var(--bs-primary-rgb), .5) style alpha mixes, so we
    must override both the hex and the triplet.
@@ -16,13 +16,17 @@
    unchanged for a consistent soft depth (per design review).
 ------------------------------------------------------------- */
 :root {
-  --clms-navy: #dc143c;
-  --clms-navy-rgb: 220, 20, 60;
+  --clms-maroon: #800000;
+  --clms-maroon-rgb: 128, 0, 0;
+  --clms-maroon-light: #a52a2a;
+  --clms-maroon-dark: #5c0a0a;
+  --clms-navy: var(--clms-maroon); /* Keep for backward compatibility */
+  --clms-navy-rgb: var(--clms-maroon-rgb);
   --clms-cream: #fdfcf0;
   --clms-cream-rgb: 253, 252, 240;
 
-  --bs-primary: var(--clms-navy);
-  --bs-primary-rgb: var(--clms-navy-rgb);
+  --bs-primary: var(--clms-maroon);
+  --bs-primary-rgb: var(--clms-maroon-rgb);
 
   --bs-body-bg: var(--clms-cream);
   --bs-body-bg-rgb: var(--clms-cream-rgb);
@@ -58,8 +62,8 @@ body {
 .btn-primary:hover,
 .btn-primary:focus,
 .btn-primary:active {
-  background-color: #9b0c28 !important;
-  border-color: #9b0c28 !important;
+  background-color: var(--clms-maroon-dark) !important;
+  border-color: var(--clms-maroon-dark) !important;
 }
 
 .text-primary {
@@ -82,7 +86,7 @@ a {
 }
 
 a:hover {
-  color: #7a0920;
+  color: var(--clms-maroon-dark);
 }
 
 /* ---- 4. SweetAlert2 stacking context -----------------------
@@ -194,7 +198,7 @@ a:hover {
   text-align: center;
   padding: 2.25rem 1.5rem 1.75rem;
   color: #fff;
-  background: linear-gradient(135deg, #7a0920 0%, #b01030 55%, #dc143c 100%);
+  background: linear-gradient(135deg, var(--clms-maroon-dark) 0%, var(--clms-maroon) 55%, var(--clms-maroon-light) 100%);
 }
 .clms-exam-result__hero::after {
   content: '';
@@ -205,7 +209,7 @@ a:hover {
   opacity: .9;
 }
 .clms-exam-result--success .clms-exam-result__hero {
-  background: linear-gradient(135deg, #5c0718 0%, #9b0c28 55%, #1d5f3e 130%);
+  background: linear-gradient(135deg, var(--clms-maroon-dark) 0%, var(--clms-maroon) 55%, #1d5f3e 130%);
 }
 .clms-exam-result--warning .clms-exam-result__hero {
   background: linear-gradient(135deg, #3a1d1d 0%, #7a2e2e 55%, #a23b3b 130%);
@@ -214,7 +218,7 @@ a:hover {
   background: linear-gradient(90deg, #ffd86b, #ff8b4d, #ffd86b);
 }
 .clms-exam-result--info .clms-exam-result__hero {
-  background: linear-gradient(135deg, #6a0820 0%, #a62944 60%, #4a6dad 130%);
+  background: linear-gradient(135deg, var(--clms-maroon-dark) 0%, var(--clms-maroon) 60%, #4a6dad 130%);
 }
 
 .clms-exam-result__hero-icon {
@@ -278,7 +282,7 @@ a:hover {
 }
 .clms-exam-result--success .clms-exam-result__percent { color: #1d6f43; }
 .clms-exam-result--warning .clms-exam-result__percent { color: #a23b3b; }
-.clms-exam-result--info    .clms-exam-result__percent { color: #9b0c28; }
+.clms-exam-result--info    .clms-exam-result__percent { color: var(--clms-maroon); }
 
 .clms-exam-result__score-label {
   margin-top: .35rem;
@@ -307,7 +311,7 @@ a:hover {
   background: linear-gradient(90deg, #a23b3b, #e05a5a);
 }
 .clms-exam-result--info .clms-exam-result__bar-fill {
-  background: linear-gradient(90deg, #b01030, #5b7cba);
+  background: linear-gradient(90deg, var(--clms-maroon), #5b7cba);
 }
 /* Marker lives OUTSIDE the clipping fill so it paints over the full track. */
 .clms-exam-result__bar-marker {
@@ -383,9 +387,9 @@ a:hover {
   align-items: center;
   gap: 1rem;
   padding: 1rem 1.1rem;
-  border: 1px solid rgba(29, 111, 67, .25);
+  border: 1px solid rgba(128, 0, 0, .25);
   border-radius: .75rem;
-  background: linear-gradient(135deg, rgba(29, 111, 67, .06), rgba(212, 175, 55, .08));
+  background: linear-gradient(135deg, rgba(128, 0, 0, .06), rgba(212, 175, 55, .08));
   flex-wrap: wrap;
 }
 .clms-exam-result__certificate-icon {

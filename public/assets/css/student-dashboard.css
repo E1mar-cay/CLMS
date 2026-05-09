@@ -1,9 +1,9 @@
-/* Student dashboard — crimson brand (pairs with custom.css --clms-navy) */
+/* Student dashboard — maroon brand (pairs with custom.css --clms-maroon) */
 
 .clms-dashboard.clms-student-dashboard {
-  --clms-student-hero-deep: #4d0614;
-  --clms-student-hero-mid: #9b0c28;
-  --clms-student-hero-bright: #dc143c;
+  --clms-student-hero-deep: #5c0a0a;
+  --clms-student-hero-mid: #800000;
+  --clms-student-hero-bright: #a52a2a;
   --clms-student-gold: #d4af37;
 }
 
@@ -19,7 +19,7 @@
   color: #fff;
   border: 1px solid rgba(77, 6, 20, 0.35);
   box-shadow:
-    0 12px 28px rgba(122, 9, 32, 0.22),
+    0 12px 28px rgba(128, 0, 0, 0.22),
     0 4px 10px rgba(15, 32, 75, 0.08);
   overflow: hidden;
 }
@@ -101,7 +101,7 @@
   width: 4px;
   height: 1.15em;
   border-radius: 2px;
-  background: linear-gradient(180deg, var(--clms-navy) 0%, #9b0c28 100%);
+  background: linear-gradient(180deg, var(--clms-maroon) 0%, var(--clms-maroon-light) 100%);
   flex-shrink: 0;
 }
 
@@ -161,8 +161,8 @@
 }
 
 .clms-dashboard.clms-student-dashboard .clms-stat-icon.bg-label-info {
-  background: rgba(220, 20, 60, 0.08) !important;
-  color: #9b0c28 !important;
+  background: rgba(128, 0, 0, 0.08) !important;
+  color: var(--clms-maroon) !important;
 }
 
 .clms-continue-card {
@@ -194,7 +194,7 @@
 }
 
 .clms-continue-card .progress-bar.bg-primary {
-  background: linear-gradient(90deg, #9b0c28, var(--clms-navy)) !important;
+  background: linear-gradient(90deg, var(--clms-maroon), var(--clms-maroon)) !important;
 }
 
 .clms-course-card {
@@ -214,7 +214,7 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--clms-navy) 0%, #b01030 45%, #d4af37 100%);
+  background: linear-gradient(90deg, var(--clms-maroon) 0%, var(--clms-maroon-light) 45%, #d4af37 100%);
   opacity: 0;
   transition: var(--clms-transition);
   z-index: 3;
@@ -406,7 +406,7 @@
 
 .clms-course-progress .progress-bar {
   border-radius: 999px;
-  background: linear-gradient(90deg, #9b0c28, var(--clms-navy)) !important;
+  background: linear-gradient(90deg, var(--clms-maroon), var(--clms-maroon)) !important;
 }
 
 .clms-course-actions {

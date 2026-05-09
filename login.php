@@ -112,7 +112,7 @@ require_once __DIR__ . '/includes/auth-header.php';
 ?>
     <style>
       /* --- Login hero layout (scoped to this page) ------------------
-         Two-column branded shell: crimson hero on the left, form card
+         Two-column branded shell: maroon hero on the left, form card
          on the right. Collapses to a single column at <992px. */
       html, body { height: 100%; }
       body.clms-auth-body {
@@ -134,7 +134,7 @@ require_once __DIR__ . '/includes/auth-header.php';
         position: relative;
         color: #fff;
         padding: 3rem 2.75rem;
-        background: linear-gradient(135deg, #4d0614 0%, #9b0c28 42%, #dc143c 88%);
+        background: linear-gradient(135deg, #5c0a0a 0%, #800000 42%, #a52a2a 88%);
         overflow: hidden;
         display: flex;
         flex-direction: column;
@@ -173,6 +173,10 @@ require_once __DIR__ . '/includes/auth-header.php';
         gap: .75rem;
         color: #fff;
         text-decoration: none;
+        transition: all 0.3s ease;
+      }
+      .clms-auth-hero-brand:hover {
+        transform: scale(1.05);
       }
       .clms-auth-hero-brand-mark {
         width: 42px;
@@ -198,6 +202,10 @@ require_once __DIR__ . '/includes/auth-header.php';
         margin-bottom: 2rem;
         object-fit: contain;
         filter: drop-shadow(0 14px 40px rgba(0, 0, 0, .35));
+        transition: all 0.3s ease;
+      }
+      .clms-auth-hero-logo:hover {
+        transform: scale(1.05);
       }
       .clms-auth-hero-title {
         font-size: 2.25rem;
@@ -205,6 +213,7 @@ require_once __DIR__ . '/includes/auth-header.php';
         line-height: 1.15;
         margin: 0 0 1rem;
         color: #fff;
+        text-shadow: 0 2px 4px rgba(128, 0, 0, 0.3);
       }
       .clms-auth-hero-subtitle {
         font-size: 1.05rem;
@@ -225,12 +234,20 @@ require_once __DIR__ . '/includes/auth-header.php';
         gap: .75rem;
         color: rgba(255, 255, 255, .85);
         font-size: .95rem;
+        transition: all 0.3s ease;
+      }
+      .clms-auth-hero-pillars li:hover {
+        transform: translateX(5px);
       }
       .clms-auth-hero-pillars i {
         color: #d4af37;
         font-size: 1.25rem;
         line-height: 1.25;
         flex-shrink: 0;
+        transition: all 0.3s ease;
+      }
+      .clms-auth-hero-pillars li:hover i {
+        transform: scale(1.1);
       }
 
       .clms-auth-hero-bottom {
@@ -249,10 +266,14 @@ require_once __DIR__ . '/includes/auth-header.php';
         width: 100%;
         max-width: 440px;
         background: #fff;
-        border: 1px solid rgba(15, 32, 75, .06);
-        border-radius: var(--clms-radius);
-        box-shadow: var(--clms-shadow-hover);
+        border: 1px solid rgba(128, 0, 0, .06);
+        border-radius: 0.5rem;
+        box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
         padding: 2.5rem 2.25rem;
+        transition: all 0.3s ease;
+      }
+      .clms-auth-card:hover {
+        box-shadow: 0 20px 25px -5px rgba(128, 0, 0, 0.15), 0 10px 10px -5px rgba(128, 0, 0, 0.08);
       }
       @media (max-width: 575.98px) {
         .clms-auth-card { padding: 1.75rem 1.25rem; }
@@ -269,24 +290,76 @@ require_once __DIR__ . '/includes/auth-header.php';
         width: 64px;
         height: 64px;
         object-fit: contain;
+        transition: all 0.3s ease;
+      }
+      .clms-auth-mobile-brand img:hover {
+        transform: scale(1.05);
       }
       .clms-auth-mobile-brand span {
         font-weight: 700;
-        color: var(--clms-navy);
+        color: #800000;
         letter-spacing: .3px;
       }
 
       .clms-auth-welcome {
         font-size: 1.55rem;
         font-weight: 700;
-        color: #1a2340;
+        color: #2c1810;
         line-height: 1.2;
         margin: 0 0 .4rem;
       }
       .clms-auth-lead {
-        color: #6b7280;
+        color: #8b4513;
         font-size: .95rem;
         margin: 0 0 1.5rem;
+      }
+
+      /* Button improvements */
+      .btn-clms-primary {
+        background-color: #800000;
+        border-color: #800000;
+        color: #fff;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+      .btn-clms-primary::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
+      }
+      .btn-clms-primary:hover::before {
+        left: 100%;
+      }
+      .btn-clms-primary:hover {
+        background-color: #5c0a0a;
+        border-color: #5c0a0a;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+      }
+
+      /* Alert improvements */
+      .alert-danger {
+        border-radius: 0.5rem;
+        border: 1px solid rgba(128, 0, 0, 0.2);
+        background: rgba(128, 0, 0, 0.05);
+        color: #800000;
+      }
+
+      /* Form improvements */
+      .form-control {
+        border-radius: 0.5rem;
+        border: 1px solid rgba(128, 0, 0, 0.2);
+        transition: all 0.3s ease;
+      }
+      .form-control:focus {
+        border-color: #800000;
+        box-shadow: 0 0 0 0.2rem rgba(128, 0, 0, 0.15);
       }
 
       /* Shared auth input/button/link tokens are in public/assets/css/auth-public.css */
@@ -418,7 +491,7 @@ require_once __DIR__ . '/includes/auth-header.php';
                 : 'Registration successful. You can sign in below.',
             JSON_UNESCAPED_SLASHES
         ); ?>,
-        confirmButtonColor: '#b01030',
+        confirmButtonColor: '#800000',
       });
     </script>
 <?php endif; ?>

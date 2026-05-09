@@ -97,23 +97,28 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
   <link rel="stylesheet" href="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/css/custom.css', ENT_QUOTES, 'UTF-8'); ?>">
   <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
   <style>
-    /* Landing-only layout; brand palette + Bootstrap primary come from custom.css */
+    /* Landing-only layout; maroon theme with Bootstrap primary */
     :root {
-      --clms-radius: 0.375rem;
-      --clms-shadow: 0 4px 6px -1px rgba(15, 32, 75, 0.10), 0 2px 4px -1px rgba(15, 32, 75, 0.06);
-      --clms-shadow-hover: 0 10px 15px -3px rgba(15, 32, 75, 0.12), 0 4px 6px -2px rgba(15, 32, 75, 0.08);
-      --clms-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      --clms-maroon: #800000;
+      --clms-maroon-light: #a52a2a;
+      --clms-maroon-dark: #5c0a0a;
+      --clms-cream: #fdfcf0;
+      --clms-radius: 0.5rem;
+      --clms-shadow: 0 4px 6px -1px rgba(128, 0, 0, 0.10), 0 2px 4px -1px rgba(128, 0, 0, 0.06);
+      --clms-shadow-hover: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+      --clms-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     body {
       font-family: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      color: #1f2a44;
+      color: #2c1810;
       line-height: 1.6;
+      background-color: var(--clms-cream);
     }
 
     .site-navbar {
       background-color: rgba(253, 252, 240, 0.96);
-      border-bottom: 1px solid rgba(15, 32, 75, 0.1);
+      border-bottom: 1px solid rgba(128, 0, 0, 0.1);
       backdrop-filter: saturate(120%) blur(6px);
     }
 
@@ -122,25 +127,26 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       align-items: center;
       gap: .45rem;
       font-weight: 800;
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       letter-spacing: 0.3px;
       text-decoration: none;
       transition: var(--clms-transition);
     }
 
     .brand-logo-icon {
-      width: 30px;
-      height: 30px;
+      width: 32px;
+      height: 32px;
       object-fit: contain;
       flex-shrink: 0;
     }
 
     .brand-logo:hover {
-      color: #9b0c28;
+      color: var(--clms-maroon-dark);
+      transform: scale(1.05);
     }
 
     .site-navbar .navbar-toggler {
-      border: 1px solid rgba(15, 32, 75, 0.2);
+      border: 1px solid rgba(128, 0, 0, 0.2);
       border-radius: var(--clms-radius);
       padding: .35rem .45rem;
       box-shadow: var(--clms-shadow);
@@ -149,16 +155,17 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
     .site-navbar .navbar-toggler:hover {
       box-shadow: var(--clms-shadow-hover);
+      background-color: rgba(128, 0, 0, 0.05);
     }
 
     .site-navbar .navbar-toggler:focus {
-      box-shadow: 0 0 0 .2rem rgba(15, 32, 75, 0.15);
+      box-shadow: 0 0 0 .2rem rgba(128, 0, 0, 0.15);
     }
 
     .site-navbar .navicon {
       font-size: 1.35rem;
       line-height: 1;
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       display: block;
     }
 
@@ -167,40 +174,70 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       box-shadow: var(--clms-shadow);
       transition: var(--clms-transition);
       font-weight: 600;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-clms::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
+    }
+
+    .btn-clms:hover::before {
+      left: 100%;
     }
 
     .btn-clms:hover {
       box-shadow: var(--clms-shadow-hover);
-      transform: translateY(-1px);
+      transform: translateY(-2px);
     }
 
     .btn-clms-primary {
-      background-color: var(--clms-navy);
-      border-color: var(--clms-navy);
+      background-color: var(--clms-maroon);
+      border-color: var(--clms-maroon);
       color: #fff;
     }
 
     .btn-clms-primary:hover {
-      background-color: #9b0c28;
-      border-color: #9b0c28;
+      background-color: var(--clms-maroon-dark);
+      border-color: var(--clms-maroon-dark);
       color: #fff;
     }
 
     .btn-clms-outline {
-      border-color: var(--clms-navy);
-      color: var(--clms-navy);
+      border-color: var(--clms-maroon);
+      color: var(--clms-maroon);
       background-color: transparent;
     }
 
     .btn-clms-outline:hover {
-      background-color: var(--clms-navy);
-      border-color: var(--clms-navy);
+      background-color: var(--clms-maroon);
+      border-color: var(--clms-maroon);
       color: #fff;
     }
 
     .hero-section {
-      background: linear-gradient(180deg, var(--clms-cream) 0%, #f4f1df 100%);
+      background: linear-gradient(180deg, var(--clms-cream) 0%, #f4f1df 50%, rgba(128, 0, 0, 0.05) 100%);
       padding: 6rem 0 5rem;
+      position: relative;
+    }
+
+    .hero-section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="2" fill="rgba(128,0,0,0.1)"/></svg>') repeat;
+      opacity: 0.3;
+      pointer-events: none;
     }
 
     .hero-kpis {
@@ -212,21 +249,23 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .hero-kpi {
-      border: 1px solid rgba(15, 32, 75, 0.12);
+      border: 1px solid rgba(128, 0, 0, 0.12);
       border-radius: var(--clms-radius);
-      background: rgba(255, 255, 255, 0.7);
+      background: rgba(255, 255, 255, 0.8);
       box-shadow: var(--clms-shadow);
       transition: var(--clms-transition);
       padding: .7rem .8rem;
+      backdrop-filter: blur(10px);
     }
 
     .hero-kpi:hover {
       box-shadow: var(--clms-shadow-hover);
-      transform: translateY(-2px);
+      transform: translateY(-3px);
+      background: rgba(255, 255, 255, 0.9);
     }
 
     .hero-kpi-value {
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       font-size: 1.05rem;
       font-weight: 800;
       line-height: 1.1;
@@ -234,44 +273,46 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
     .hero-kpi-label {
       font-size: .74rem;
-      color: #55617d;
+      color: #8b4513;
       text-transform: uppercase;
       letter-spacing: .07em;
       font-weight: 600;
     }
 
     .hero-title {
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       font-weight: 800;
       letter-spacing: -0.02em;
       line-height: 1.15;
+      text-shadow: 0 2px 4px rgba(128, 0, 0, 0.1);
     }
 
     .section-title {
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       font-weight: 700;
     }
 
     .course-card,
     .feature-item {
-      border: 1px solid rgba(15, 32, 75, 0.1);
+      border: 1px solid rgba(128, 0, 0, 0.1);
       border-radius: var(--clms-radius);
       box-shadow: var(--clms-shadow);
       transition: var(--clms-transition);
       background-color: #fff;
       height: 100%;
+      overflow: hidden;
     }
 
     .course-card:hover,
     .feature-item:hover {
       box-shadow: var(--clms-shadow-hover);
-      transform: translateY(-2px);
+      transform: translateY(-4px);
     }
 
     .course-thumb {
       border-radius: var(--clms-radius);
       overflow: hidden;
-      border: 1px solid rgba(15, 32, 75, 0.1);
+      border: 1px solid rgba(128, 0, 0, 0.1);
       box-shadow: var(--clms-shadow);
       margin-bottom: 1rem;
       aspect-ratio: 16 / 9;
@@ -279,6 +320,23 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
+    }
+
+    .course-thumb::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(45deg, transparent 30%, rgba(128, 0, 0, 0.1) 50%, transparent 70%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .course-card:hover .course-thumb::after {
+      opacity: 1;
     }
 
     .course-thumb img {
@@ -290,11 +348,11 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .course-card:hover .course-thumb img {
-      transform: scale(1.03);
+      transform: scale(1.05);
     }
 
     .course-thumb-fallback {
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       text-align: center;
       padding: 1rem;
     }
@@ -306,7 +364,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .course-title {
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       font-weight: 700;
     }
 
@@ -317,14 +375,14 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
     .request-badge {
       border-radius: var(--clms-radius);
-      background-color: rgba(15, 32, 75, 0.08);
-      color: var(--clms-navy);
-      border: 1px solid rgba(15, 32, 75, 0.15);
+      background-color: rgba(128, 0, 0, 0.08);
+      color: var(--clms-maroon);
+      border: 1px solid rgba(128, 0, 0, 0.15);
       font-weight: 600;
     }
 
     .landing-catalog-card {
-      border: 1px solid rgba(15, 32, 75, 0.1);
+      border: 1px solid rgba(128, 0, 0, 0.1);
       border-radius: var(--clms-radius);
       box-shadow: var(--clms-shadow);
       transition: var(--clms-transition);
@@ -337,13 +395,13 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
     .landing-catalog-card:hover {
       box-shadow: var(--clms-shadow-hover);
-      transform: translateY(-2px);
+      transform: translateY(-4px);
     }
 
     .landing-catalog-media {
       position: relative;
       aspect-ratio: 16 / 9;
-      background: linear-gradient(135deg, #6a0818 0%, #b01030 45%, #dc143c 100%);
+      background: linear-gradient(135deg, var(--clms-maroon) 0%, var(--clms-maroon-light) 45%, var(--clms-maroon-dark) 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -358,7 +416,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .landing-catalog-card:hover .landing-catalog-media img {
-      transform: scale(1.03);
+      transform: scale(1.05);
     }
 
     .landing-catalog-placeholder {
@@ -374,8 +432,8 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       left: .6rem;
       border-radius: var(--clms-radius);
       background: rgba(255, 255, 255, 0.94);
-      color: var(--clms-navy);
-      border: 1px solid rgba(15, 32, 75, 0.15);
+      color: var(--clms-maroon);
+      border: 1px solid rgba(128, 0, 0, 0.15);
       font-size: .72rem;
       font-weight: 700;
       padding: .25rem .45rem;
@@ -418,9 +476,9 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .landing-meta-chip {
-      border: 1px solid rgba(15, 32, 75, 0.12);
-      background: rgba(15, 32, 75, 0.05);
-      color: #304267;
+      border: 1px solid rgba(128, 0, 0, 0.12);
+      background: rgba(128, 0, 0, 0.05);
+      color: #8b4513;
       border-radius: var(--clms-radius);
       font-size: .75rem;
       font-weight: 600;
@@ -440,13 +498,13 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
     .landing-modal-chip-info {
       background: #fdeef1;
-      color: #9b0c28;
+      color: var(--clms-maroon);
       border-color: #f5c4cd;
     }
 
     .landing-modal-chip-meta {
       background: #eef2f7;
-      color: #213150;
+      color: #8b4513;
       border-color: #d6deea;
     }
 
@@ -458,27 +516,38 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
 
     .feature-icon {
       font-size: 1.5rem;
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       line-height: 1;
+      transition: var(--clms-transition);
+    }
+
+    .feature-item:hover .feature-icon {
+      transform: scale(1.1);
+      color: var(--clms-maroon-dark);
     }
 
     .cert-section {
       background: linear-gradient(180deg, #f7f4e5 0%, var(--clms-cream) 100%);
-      border-top: 1px solid rgba(15, 32, 75, 0.08);
-      border-bottom: 1px solid rgba(15, 32, 75, 0.08);
+      border-top: 1px solid rgba(128, 0, 0, 0.08);
+      border-bottom: 1px solid rgba(128, 0, 0, 0.08);
     }
 
     .cert-preview {
       border-radius: var(--clms-radius);
       background: #fff;
-      border: 1px solid rgba(15, 32, 75, 0.15);
+      border: 1px solid rgba(128, 0, 0, 0.15);
       box-shadow: var(--clms-shadow-hover);
       padding: 1.2rem;
+      transition: var(--clms-transition);
+    }
+
+    .cert-preview:hover {
+      transform: scale(1.02);
     }
 
     .cert-paper {
       border-radius: var(--clms-radius);
-      border: 2px solid rgba(15, 32, 75, 0.17);
+      border: 2px solid rgba(128, 0, 0, 0.17);
       background: linear-gradient(180deg, #fffef7 0%, #fff 100%);
       padding: .75rem;
       position: relative;
@@ -493,18 +562,18 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       height: 44px;
       border-radius: 50%;
       border: 3px solid #d4af37;
-      box-shadow: 0 4px 6px -1px rgba(15, 32, 75, 0.10), 0 2px 4px -1px rgba(15, 32, 75, 0.06);
+      box-shadow: 0 4px 6px -1px rgba(128, 0, 0, 0.10), 0 2px 4px -1px rgba(128, 0, 0, 0.06);
       background: #f8edd0;
     }
 
     .cert-title {
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
       font-weight: 800;
       margin-bottom: .25rem;
     }
 
     .cert-subline {
-      color: #4d5a78;
+      color: #8b4513;
       font-size: .92rem;
       margin-bottom: .4rem;
     }
@@ -514,9 +583,14 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       height: auto;
       display: block;
       border-radius: calc(var(--clms-radius) - 1px);
-      border: 1px solid rgba(15, 32, 75, 0.12);
+      border: 1px solid rgba(128, 0, 0, 0.12);
       box-shadow: var(--clms-shadow);
       background: #fff;
+      transition: var(--clms-transition);
+    }
+
+    .cert-preview:hover .cert-template-img {
+      transform: scale(1.02);
     }
 
     a,
@@ -525,7 +599,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .site-footer {
-      background-color: var(--clms-navy);
+      background-color: var(--clms-maroon);
       color: rgba(255, 255, 255, 0.9);
     }
 
@@ -540,10 +614,10 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     }
 
     .cta-strip {
-      background: linear-gradient(135deg, #5c0718 0%, #9b0c28 45%, #dc143c 100%);
+      background: linear-gradient(135deg, var(--clms-maroon-dark) 0%, var(--clms-maroon) 45%, var(--clms-maroon-light) 100%);
       color: #fff;
       border-top: 1px solid rgba(255, 255, 255, 0.08);
-      border-bottom: 1px solid rgba(15, 32, 75, 0.18);
+      border-bottom: 1px solid rgba(128, 0, 0, 0.18);
     }
 
     .cta-strip-title {
@@ -559,13 +633,13 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     .btn-cta-light {
       background-color: #fff;
       border-color: #fff;
-      color: var(--clms-navy);
+      color: var(--clms-maroon);
     }
 
     .btn-cta-light:hover {
       background-color: #fff5f6;
       border-color: #fff5f6;
-      color: #7a0920;
+      color: var(--clms-maroon-dark);
     }
 
     @media (max-width: 767.98px) {
@@ -629,7 +703,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       z-index: 1035;
       padding: .65rem .75rem max(.65rem, env(safe-area-inset-bottom));
       background: rgba(253, 252, 240, 0.98);
-      border-top: 1px solid rgba(15, 32, 75, 0.12);
+      border-top: 1px solid rgba(128, 0, 0, 0.12);
       backdrop-filter: blur(4px);
     }
 
@@ -647,6 +721,44 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       .site-footer {
         padding-bottom: 4.6rem !important;
       }
+    }
+
+    /* Additional animations and improvements */
+    .fade-in {
+      animation: fadeIn 0.8s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .hero-section,
+    .section-title,
+    .course-card,
+    .feature-item,
+    .cert-preview {
+      animation: fadeIn 1s ease-in-out;
+    }
+
+    .hero-section {
+      animation-delay: 0.2s;
+    }
+
+    .section-title {
+      animation-delay: 0.4s;
+    }
+
+    .course-card,
+    .feature-item,
+    .cert-preview {
+      animation-delay: 0.6s;
     }
   </style>
 </head>

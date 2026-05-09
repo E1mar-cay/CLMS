@@ -354,7 +354,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                       <li class="clms-bell-item">
                         <a class="d-flex align-items-start gap-2 px-3 py-2 text-decoration-none text-body"
                            href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php?pending=1&q=' . rawurlencode((string) $pendingAccount['email']), ENT_QUOTES, 'UTF-8'); ?>">
-                          <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-navy, #0f204b); box-shadow: 0 0 0 3px rgba(15, 32, 75, .12);"></span>
+                          <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-maroon, #800000); box-shadow: 0 0 0 3px rgba(128, 0, 0, .12);"></span>
                           <div class="flex-grow-1 min-w-0">
                             <div class="d-flex justify-content-between align-items-baseline gap-2">
                               <span class="fw-semibold text-body text-truncate">
@@ -484,12 +484,12 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
             }
             .clms-navbar-search .clms-navbar-search-input.form-control:focus {
               background-color: #fff;
-              border-color: var(--clms-navy, #dc143c);
+              border-color: var(--clms-maroon, #800000);
               box-shadow: 0 0 0 .15rem rgba(15, 32, 75, 0.12);
             }
             .clms-navbar-search-input:focus + .clms-navbar-search-kbd,
             .clms-navbar-search-wrapper:focus-within .clms-navbar-search-icon {
-              color: var(--clms-navy, #dc143c);
+              color: var(--clms-maroon, #800000);
             }
             /* Hide the native search input clear "x" (we have our own UX) */
             .clms-navbar-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
@@ -517,7 +517,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
               justify-content: center;
               font-weight: 600;
               color: #fff;
-              background: linear-gradient(135deg, #b01030 0%, #dc143c 100%);
+              background: linear-gradient(135deg, #5c0a0a 0%, #800000 100%);
               box-shadow: 0 2px 6px rgba(15, 32, 75, 0.35);
               font-size: 1rem;
               user-select: none;
@@ -582,7 +582,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
               padding: .35rem .5rem;
               color: #566a7f;
             }
-            .clms-bell-btn:hover { color: var(--clms-navy, #0f204b); }
+            .clms-bell-btn:hover { color: var(--clms-maroon, #800000); }
             .clms-bell-btn .icon-md { font-size: 1.45rem; line-height: 1; }
             .clms-bell-badge {
               position: absolute;
@@ -634,11 +634,11 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
               background-color: rgba(15, 32, 75, .03);
             }
             .clms-bell-item.is-unread .clms-bell-dot {
-              background: var(--clms-navy, #0f204b);
+              background: var(--clms-maroon, #800000);
               box-shadow: 0 0 0 3px rgba(15, 32, 75, .12);
             }
             .clms-bell-item--mfa {
-              border-left: 3px solid var(--clms-navy, #0f204b);
+              border-left: 3px solid var(--clms-maroon, #800000);
             }
             .clms-bell-body {
               display: -webkit-box;
@@ -648,10 +648,10 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
               white-space: normal;
             }
             .clms-bell-mark-all {
-              color: var(--clms-navy, #0f204b);
+              color: var(--clms-maroon, #800000);
               font-weight: 600;
             }
-            .dropdown-footer a { color: var(--clms-navy, #0f204b); }
+            .dropdown-footer a { color: var(--clms-maroon, #800000); }
           </style>
 
           <script>
@@ -1185,7 +1185,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                   <li class="clms-bell-item">
                     <a class="d-flex align-items-start gap-2 px-3 py-2 text-decoration-none text-body"
                        href="${escapeHtml(item.url || '#')}">
-                      <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-navy, #0f204b); box-shadow: 0 0 0 3px rgba(15, 32, 75, .12);"></span>
+                      <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-maroon, #800000); box-shadow: 0 0 0 3px rgba(128, 0, 0, .12);"></span>
                       <div class="flex-grow-1 min-w-0">
                         <div class="d-flex justify-content-between align-items-baseline gap-2">
                           <span class="fw-semibold text-body text-truncate">${escapeHtml(item.name || '')}</span>

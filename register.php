@@ -99,14 +99,19 @@ $showUpgradeToPro = false;
       }
 
       .clms-auth-card {
-        border-radius: var(--clms-radius);
-        border: 1px solid rgba(15, 32, 75, 0.1);
-        box-shadow: var(--clms-shadow-hover);
+        border-radius: 0.5rem;
+        border: 1px solid rgba(128, 0, 0, 0.1);
+        box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
         overflow: hidden;
+        transition: all 0.3s ease;
+      }
+
+      .clms-auth-card:hover {
+        box-shadow: 0 20px 25px -5px rgba(128, 0, 0, 0.15), 0 10px 10px -5px rgba(128, 0, 0, 0.08);
       }
 
       .clms-auth-panel {
-        background: linear-gradient(160deg, #4d0614 0%, #9b0c28 40%, #dc143c 92%);
+        background: linear-gradient(160deg, #5c0a0a 0%, #800000 40%, #a52a2a 92%);
         color: #fff;
         height: 100%;
         padding: 2rem;
@@ -143,6 +148,11 @@ $showUpgradeToPro = false;
         align-items: flex-start;
         margin-bottom: .9rem;
         color: rgba(255, 255, 255, 0.92);
+        transition: all 0.3s ease;
+      }
+
+      .clms-point:hover {
+        transform: translateX(5px);
       }
 
       .clms-point i {
@@ -150,6 +160,11 @@ $showUpgradeToPro = false;
         font-size: 1.1rem;
         line-height: 1.2;
         flex-shrink: 0;
+        transition: all 0.3s ease;
+      }
+
+      .clms-point:hover i {
+        transform: scale(1.1);
       }
 
       .clms-auth-form {
@@ -158,10 +173,64 @@ $showUpgradeToPro = false;
       }
 
       .clms-auth-form h1 {
-        color: var(--clms-navy, #dc143c);
+        color: #800000;
         font-size: 1.55rem;
         font-weight: 700;
         line-height: 1.2;
+        text-shadow: 0 1px 2px rgba(128, 0, 0, 0.1);
+      }
+
+      .btn-clms-primary {
+        background-color: #800000;
+        border-color: #800000;
+        color: #fff;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .btn-clms-primary::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
+      }
+
+      .btn-clms-primary:hover::before {
+        left: 100%;
+      }
+
+      .btn-clms-primary:hover {
+        background-color: #5c0a0a;
+        border-color: #5c0a0a;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(128, 0, 0, 0.12), 0 4px 6px -2px rgba(128, 0, 0, 0.08);
+      }
+
+      .form-control {
+        border-radius: 0.5rem;
+        border: 1px solid rgba(128, 0, 0, 0.2);
+        transition: all 0.3s ease;
+      }
+
+      .form-control:focus {
+        border-color: #800000;
+        box-shadow: 0 0 0 0.2rem rgba(128, 0, 0, 0.15);
+      }
+
+      .clms-auth-footer-link {
+        color: #800000;
+        text-decoration: none;
+        transition: all 0.3s ease;
+      }
+
+      .clms-auth-footer-link:hover {
+        color: #5c0a0a;
+        text-decoration: underline;
       }
 
       @media (max-width: 991.98px) {
@@ -174,6 +243,22 @@ $showUpgradeToPro = false;
         .clms-auth-panel,
         .clms-auth-form {
           padding: 1.25rem;
+        }
+      }
+
+      /* Fade-in animation */
+      .clms-auth-card {
+        animation: fadeIn 0.8s ease-in-out;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
         }
       }
     </style>
@@ -279,7 +364,7 @@ $showUpgradeToPro = false;
         icon: 'error',
         title: 'Registration Failed',
         text: <?php echo json_encode($formError, JSON_UNESCAPED_SLASHES); ?>,
-        confirmButtonColor: '#b01030',
+        confirmButtonColor: '#800000',
       });
     </script>
 <?php endif; ?>

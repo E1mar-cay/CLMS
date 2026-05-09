@@ -185,12 +185,12 @@ $levelStyleFor = static function (?string $raw): array {
 };
 
 $placeholderGradients = [
-    'linear-gradient(135deg, #4d0614 0%, #7a0920 45%, #b01030 100%)',
-    'linear-gradient(135deg, #5c0718 0%, #9b0c28 50%, #dc143c 100%)',
-    'linear-gradient(135deg, #3d050f 0%, #6b081c 40%, #9b0c28 100%)',
-    'linear-gradient(135deg, #6b081c 0%, #b01030 55%, #e85a6e 100%)',
-    'linear-gradient(135deg, #4d0614 0%, #9b0c28 35%, #c41e3a 100%)',
-    'linear-gradient(135deg, #7a0920 0%, #dc143c 60%, #9b0c28 100%)',
+    'linear-gradient(135deg, #5c0a0a 0%, #800000 45%, #a52a2a 100%)',
+    'linear-gradient(135deg, #5c0a0a 0%, #800000 50%, #a52a2a 100%)',
+    'linear-gradient(135deg, #3d050f 0%, #5c0a0a 40%, #800000 100%)',
+    'linear-gradient(135deg, #5c0a0a 0%, #800000 55%, #a52a2a 100%)',
+    'linear-gradient(135deg, #5c0a0a 0%, #800000 35%, #a52a2a 100%)',
+    'linear-gradient(135deg, #5c0a0a 0%, #a52a2a 60%, #800000 100%)',
 ];
 
 $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): string {

@@ -48,8 +48,8 @@
 
 .clms-dashboard .btn-primary:hover,
 .clms-dashboard .btn-primary:focus {
-  background-color: #9b0c28;
-  border-color: #9b0c28;
+  background-color: var(--clms-maroon-dark);
+  border-color: var(--clms-maroon-dark);
 }
 
 .clms-dashboard .btn-outline-primary {
