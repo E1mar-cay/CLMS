@@ -143,6 +143,7 @@ a:hover {
   width: 96px;
   height: 96px;
   object-fit: contain;
+  -webkit-filter: drop-shadow(0 4px 10px rgba(15, 32, 75, .15));
   filter: drop-shadow(0 4px 10px rgba(15, 32, 75, .15));
 }
 

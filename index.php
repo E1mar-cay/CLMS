@@ -120,6 +120,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     .site-navbar {
       background-color: rgba(253, 252, 240, 0.96);
       border-bottom: 1px solid rgba(128, 0, 0, 0.1);
+      -webkit-backdrop-filter: saturate(120%) blur(6px);
       backdrop-filter: saturate(120%) blur(6px);
     }
 
@@ -249,6 +250,15 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       max-width: 560px;
     }
 
+    @supports not (display: grid) {
+      .hero-kpis {
+        display: block;
+      }
+      .hero-kpis > * {
+        margin-bottom: .75rem;
+      }
+    }
+
     .hero-kpi {
       border: 1px solid rgba(128, 0, 0, 0.12);
       border-radius: var(--clms-radius);
@@ -256,6 +266,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       box-shadow: var(--clms-shadow);
       transition: var(--clms-transition);
       padding: .7rem .8rem;
+      -webkit-backdrop-filter: blur(10px);
       backdrop-filter: blur(10px);
     }
 

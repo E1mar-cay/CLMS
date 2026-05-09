@@ -131,6 +131,12 @@ require_once __DIR__ . '/includes/auth-header.php';
     min-height: 100vh;
   }
 
+  @supports not (display: grid) {
+    .clms-auth-shell {
+      display: block;
+    }
+  }
+
   @media (max-width: 991.98px) {
     .clms-auth-shell {
       grid-template-columns: 1fr;
@@ -221,6 +227,8 @@ require_once __DIR__ . '/includes/auth-header.php';
     height: 148px;
     margin-bottom: 2rem;
     object-fit: contain;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, .18);
+    -webkit-filter: drop-shadow(0 14px 40px rgba(0, 0, 0, .35));
     filter: drop-shadow(0 14px 40px rgba(0, 0, 0, .35));
     transition: all 0.3s ease;
   }

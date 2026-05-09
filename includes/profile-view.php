@@ -27,6 +27,11 @@ if ($initials === '') {
 }
 
 $clmsWebBase = $clmsWebBase ?? '';
+$profileFormValues = $profileFormValues ?? [
+  'first_name' => '',
+  'last_name' => '',
+  'email' => '',
+];
 $profileAvatarHref = '';
 if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) {
   $profileAvatarHref = clms_avatar_resolve_url($profileUser['avatar_url'], $clmsWebBase);
