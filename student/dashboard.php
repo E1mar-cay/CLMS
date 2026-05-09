@@ -357,6 +357,9 @@ require_once __DIR__ . '/includes/layout-top.php';
   <?php if ($notice === 'modules_incomplete') : ?>
     <div class="alert alert-warning" role="alert">You must complete every module assessment before taking the final exam.</div>
   <?php endif; ?>
+  <?php if ($notice === 'no_mock_questions') : ?>
+    <div class="alert alert-info" role="alert">This course has no mock exam questions yet. You can proceed directly to the final exam.</div>
+  <?php endif; ?>
 
   <div class="row g-4 mb-4">
     <div class="col-6 col-md-3">

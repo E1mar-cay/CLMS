@@ -90,7 +90,7 @@ $questionsStmt = $pdo->prepare(
     'SELECT q.id AS question_id, q.question_type, a.id AS answer_id
      FROM questions q
      LEFT JOIN answers a ON a.question_id = q.id
-     WHERE q.course_id = :course_id'
+     WHERE q.course_id = :course_id AND q.module_id IS NULL'
 );
 $questionsStmt->execute(['course_id' => (int) $courseId]);
 $rows = $questionsStmt->fetchAll();

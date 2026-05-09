@@ -254,7 +254,8 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       .hero-kpis {
         display: block;
       }
-      .hero-kpis > * {
+
+      .hero-kpis>* {
         margin-bottom: .75rem;
       }
     }

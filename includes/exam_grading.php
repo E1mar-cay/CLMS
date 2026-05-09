@@ -64,7 +64,7 @@ function clms_finalize_exam_attempt(
                 a.id AS answer_id, a.answer_text, a.is_correct, a.sequence_position
          FROM questions q
          LEFT JOIN answers a ON a.question_id = q.id
-         WHERE q.course_id = :course_id
+         WHERE q.course_id = :course_id AND q.module_id IS NULL
          ORDER BY q.id ASC, a.id ASC'
     );
     $questionsStmt->execute(['course_id' => $courseId]);
@@ -473,7 +473,7 @@ function clms_load_exam_attempt_summary(
     $possibleStmt = $pdo->prepare(
         'SELECT COALESCE(SUM(points), 0) AS total_possible
          FROM questions
-         WHERE course_id = :course_id'
+         WHERE course_id = :course_id AND module_id IS NULL'
     );
     $possibleStmt->execute(['course_id' => $courseId]);
     $totalPossiblePoints = (float) ($possibleStmt->fetchColumn() ?: 0);

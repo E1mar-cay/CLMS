@@ -969,7 +969,7 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
     if (isset($_COOKIE[$defModCookieKey])) {
       $cv = trim((string) $_COOKIE[$defModCookieKey]);
       if ($cv === '' || $cv === '0') {
-        $attachModulePrefillId = 0;
+        $attachModulePrefillId = 0; // explicitly set to Final Exam
       } else {
         $tryId = (int) $cv;
         $validMod = false;
@@ -979,10 +979,10 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
             break;
           }
         }
-        $attachModulePrefillId = $validMod ? $tryId : (int) $courseModulesForPicker[0]['id'];
+        $attachModulePrefillId = $validMod ? $tryId : 0; // default to Final Exam if cookie is stale
       }
     } else {
-      $attachModulePrefillId = (int) $courseModulesForPicker[0]['id'];
+      $attachModulePrefillId = 0; // default to "Course-level (Final Exam)" — not the first module
     }
   }
 }

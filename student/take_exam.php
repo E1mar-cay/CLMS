@@ -97,11 +97,32 @@ foreach ($moduleRows as $mRow) {
     }
 }
 
+// Gate: require a passed mock exam before the final exam (when module questions exist)
+try {
+    $mockGateStmt = $pdo->prepare(
+        "SELECT 1 FROM questions WHERE course_id = :cid AND module_id IS NOT NULL LIMIT 1"
+    );
+    $mockGateStmt->execute(['cid' => (int) $courseId]);
+    if ($mockGateStmt->fetchColumn()) {
+        $mockPassedGateStmt = $pdo->prepare(
+            "SELECT 1 FROM mock_exam_attempts
+             WHERE user_id = :uid AND course_id = :cid AND status = 'completed' AND is_passed = 1
+             LIMIT 1"
+        );
+        $mockPassedGateStmt->execute(['uid' => (int) $_SESSION['user_id'], 'cid' => (int) $courseId]);
+        if (!$mockPassedGateStmt->fetchColumn()) {
+            clms_redirect('student/take_mock_exam.php?course_id=' . (int) $courseId);
+        }
+    }
+} catch (Throwable $e) {
+    error_log('take_exam: mock gate check failed: ' . $e->getMessage());
+}
+
 $questionsStmt = $pdo->prepare(
     'SELECT q.id, q.question_text, q.question_type, q.points, a.id AS answer_id, a.answer_text
      FROM questions q
      LEFT JOIN answers a ON a.question_id = q.id
-     WHERE q.course_id = :course_id
+     WHERE q.course_id = :course_id AND q.module_id IS NULL
      ORDER BY q.id ASC, a.id ASC'
 );
 $questionsStmt->execute(['course_id' => $courseId]);

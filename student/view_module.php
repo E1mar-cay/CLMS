@@ -108,13 +108,37 @@ if ($moduleId !== false && $moduleId !== null && $moduleId > 0) {
     }
 
     if ($firstIncompleteId === null) {
-        // All modules done — prefer the final exam when it exists.
-        $finalExamExistsStmt = $pdo->prepare(
-            'SELECT 1 FROM questions WHERE course_id = :course_id LIMIT 1'
+        // All modules done — require mock exam before final exam.
+        $mockQExistsStmt = $pdo->prepare(
+            'SELECT 1 FROM questions WHERE course_id = :course_id AND module_id IS NOT NULL LIMIT 1'
         );
-        $finalExamExistsStmt->execute(['course_id' => $courseIdInt]);
-        if ($finalExamExistsStmt->fetchColumn()) {
-            clms_redirect('student/take_exam.php?course_id=' . $courseIdInt);
+        $mockQExistsStmt->execute(['course_id' => $courseIdInt]);
+        if ($mockQExistsStmt->fetchColumn()) {
+            $mockPassedStmt = $pdo->prepare(
+                "SELECT 1 FROM mock_exam_attempts
+                 WHERE user_id = :uid AND course_id = :cid AND status = 'completed' AND is_passed = 1
+                 LIMIT 1"
+            );
+            $mockPassedStmt->execute(['uid' => (int) $_SESSION['user_id'], 'cid' => $courseIdInt]);
+            if ($mockPassedStmt->fetchColumn()) {
+                $finalExamExistsStmt = $pdo->prepare(
+                    'SELECT 1 FROM questions WHERE course_id = :course_id LIMIT 1'
+                );
+                $finalExamExistsStmt->execute(['course_id' => $courseIdInt]);
+                if ($finalExamExistsStmt->fetchColumn()) {
+                    clms_redirect('student/take_exam.php?course_id=' . $courseIdInt);
+                }
+            } else {
+                clms_redirect('student/take_mock_exam.php?course_id=' . $courseIdInt);
+            }
+        } else {
+            $finalExamExistsStmt = $pdo->prepare(
+                'SELECT 1 FROM questions WHERE course_id = :course_id LIMIT 1'
+            );
+            $finalExamExistsStmt->execute(['course_id' => $courseIdInt]);
+            if ($finalExamExistsStmt->fetchColumn()) {
+                clms_redirect('student/take_exam.php?course_id=' . $courseIdInt);
+            }
         }
         // No exam to take: land on the first module as a review starting point.
         $targetModuleId = (int) $progressList[0]['id'];
@@ -841,10 +865,29 @@ require_once __DIR__ . '/includes/layout-top.php';
                   </button>
 <?php endif; ?>
 <?php elseif ($hasFinalExam) : ?>
-<?php if ($allModulesCompleted) : ?>
+<?php if ($allModulesCompleted) :
+    $mockPassedNav = false;
+    $hasMockQNav = false;
+    try {
+        $mockQNavStmt = $pdo->prepare("SELECT 1 FROM questions WHERE course_id = :cid AND module_id IS NOT NULL LIMIT 1");
+        $mockQNavStmt->execute(['cid' => (int) $module['course_id']]);
+        $hasMockQNav = (bool) $mockQNavStmt->fetchColumn();
+        if ($hasMockQNav) {
+            $mockNavStmt = $pdo->prepare("SELECT 1 FROM mock_exam_attempts WHERE user_id = :uid AND course_id = :cid AND status = 'completed' AND is_passed = 1 LIMIT 1");
+            $mockNavStmt->execute(['uid' => (int) $_SESSION['user_id'], 'cid' => (int) $module['course_id']]);
+            $mockPassedNav = (bool) $mockNavStmt->fetchColumn();
+        }
+    } catch (Throwable $e) {}
+?>
+<?php if (!$hasMockQNav || $mockPassedNav) : ?>
                   <a class="btn btn-success" href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_exam.php?course_id=' . (int) $module['course_id'], ENT_QUOTES, 'UTF-8'); ?>">
                     <i class="bx bx-certification me-1"></i> Take Final Exam
                   </a>
+<?php else : ?>
+                  <a class="btn btn-warning text-white" href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_mock_exam.php?course_id=' . (int) $module['course_id'], ENT_QUOTES, 'UTF-8'); ?>">
+                    <i class="bx bx-brain me-1"></i> Take Mock Exam
+                  </a>
+<?php endif; ?>
 <?php else : ?>
                   <button class="btn btn-success" type="button" disabled title="Finish every module assessment first">
                     <i class="bx bx-lock-alt me-1"></i> Final Exam Locked
@@ -1198,10 +1241,29 @@ require_once __DIR__ . '/includes/layout-top.php';
                       <a class="btn btn-primary" href="<?php echo htmlspecialchars($clmsWebBase . '/student/view_module.php?module_id=' . (int) $nextModuleRow['id'], ENT_QUOTES, 'UTF-8'); ?>">
                         Next Module <i class="bx bx-chevron-right ms-1"></i>
                       </a>
-<?php elseif ($hasFinalExam && $allModulesCompleted) : ?>
+<?php elseif ($hasFinalExam && $allModulesCompleted) :
+    $mockPassedModal = false;
+    $hasMockQModal = false;
+    try {
+        $mockQModalStmt = $pdo->prepare("SELECT 1 FROM questions WHERE course_id = :cid AND module_id IS NOT NULL LIMIT 1");
+        $mockQModalStmt->execute(['cid' => (int) $module['course_id']]);
+        $hasMockQModal = (bool) $mockQModalStmt->fetchColumn();
+        if ($hasMockQModal) {
+            $mockModalStmt = $pdo->prepare("SELECT 1 FROM mock_exam_attempts WHERE user_id = :uid AND course_id = :cid AND status = 'completed' AND is_passed = 1 LIMIT 1");
+            $mockModalStmt->execute(['uid' => (int) $_SESSION['user_id'], 'cid' => (int) $module['course_id']]);
+            $mockPassedModal = (bool) $mockModalStmt->fetchColumn();
+        }
+    } catch (Throwable $e) {}
+?>
+<?php if (!$hasMockQModal || $mockPassedModal) : ?>
                       <a class="btn btn-success" href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_exam.php?course_id=' . (int) $module['course_id'], ENT_QUOTES, 'UTF-8'); ?>">
                         <i class="bx bx-certification me-1"></i> Take Final Exam
                       </a>
+<?php else : ?>
+                      <a class="btn btn-warning text-white" href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_mock_exam.php?course_id=' . (int) $module['course_id'], ENT_QUOTES, 'UTF-8'); ?>">
+                        <i class="bx bx-brain me-1"></i> Take Mock Exam First
+                      </a>
+<?php endif; ?>
 <?php endif; ?>
                       <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Review Answers</button>
 <?php else : ?>
