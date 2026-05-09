@@ -71,16 +71,18 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
             <?php echo htmlspecialchars($initials, ENT_QUOTES, 'UTF-8'); ?>
           <?php endif; ?>
         </div>
-        <form method="post" enctype="multipart/form-data" action="" class="mb-3" id="profileAvatarForm">
+        <form method="post" enctype="multipart/form-data" action="" class="mb-3" id="profileAvatarForm" style="display:none;">
           <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
           <input type="hidden" name="action" value="upload_avatar" />
-          <label for="avatar" class="form-label small text-muted mb-1">Profile photo</label>
-          <input type="file" class="form-control form-control-sm" id="avatar" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required />
-          <div class="form-text small">JPG, PNG, WEBP, or GIF. Square crop is applied automatically. Max 2MB.</div>
-          <button type="submit" class="btn btn-sm btn-outline-primary mt-2">
-            <i class="bx bx-upload me-1"></i>Upload photo
-          </button>
+          <input type="file" id="avatarFileInput" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" />
         </form>
+        <div class="mb-3">
+          <label class="form-label small text-muted mb-1">Profile photo</label>
+          <div class="form-text small mb-2">JPG, PNG, WEBP, or GIF. Max 2MB.</div>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="selectPhotoBtn">
+            <i class="bx bx-image-add me-1"></i>Select photo
+          </button>
+        </div>
         <h5 class="mb-1"><?php echo htmlspecialchars($userFullName !== '' ? $userFullName : 'Your Name', ENT_QUOTES, 'UTF-8'); ?></h5>
         <p class="text-muted mb-2 small">
           <?php echo htmlspecialchars((string) ($profileUser['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
@@ -217,6 +219,32 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
   </div>
 </div>
 
+<div class="modal fade" id="cropperModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Crop Profile Photo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="text-center mb-3">
+          <div style="max-height: 400px; overflow: hidden;">
+            <img id="cropperImage" style="max-width: 100%; display: block;" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="cropAndUploadBtn">
+          <i class="bx bx-crop me-1"></i>Crop & Upload
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
   (() => {
@@ -226,6 +254,190 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
     const errorMsg = <?php echo json_encode($profileError, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
     if (successMsg) ClmsNotify.success(successMsg);
     if (errorMsg) ClmsNotify.error(errorMsg, 'Profile update failed');
+
+    // Image cropper functionality
+    let cropper = null;
+    const selectPhotoBtn = document.getElementById('selectPhotoBtn');
+    const avatarFileInput = document.getElementById('avatarFileInput');
+    const cropperModal = document.getElementById('cropperModal');
+    const cropperImage = document.getElementById('cropperImage');
+    const cropAndUploadBtn = document.getElementById('cropAndUploadBtn');
+    const avatarForm = document.getElementById('profileAvatarForm');
+    let bsModal = null;
+
+    if (cropperModal && typeof bootstrap !== 'undefined') {
+      bsModal = new bootstrap.Modal(cropperModal);
+    }
+
+    if (selectPhotoBtn && avatarFileInput) {
+      selectPhotoBtn.addEventListener('click', () => {
+        avatarFileInput.click();
+      });
+
+      avatarFileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        console.log('File selected:', file.name);
+
+        const maxBytes = 2097152;
+        if (file.size > maxBytes) {
+          Swal.fire({
+            icon: 'error',
+            title: 'File too large',
+            text: 'Please choose an image that is 2MB or smaller.',
+            confirmButtonColor: '#800000',
+          });
+          avatarFileInput.value = '';
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          console.log('Image loaded, setting src');
+          cropperImage.src = event.target.result;
+          
+          if (cropper) {
+            cropper.destroy();
+            cropper = null;
+          }
+          
+          console.log('Showing modal...');
+          if (bsModal) {
+            bsModal.show();
+          } else {
+            cropperModal.classList.add('show');
+            cropperModal.style.display = 'block';
+            document.body.classList.add('modal-open');
+          }
+          
+          setTimeout(() => {
+            console.log('Initializing cropper...');
+            if (typeof Cropper !== 'undefined') {
+              cropper = new Cropper(cropperImage, {
+                aspectRatio: 1,
+                viewMode: 1,
+                autoCropArea: 0.8,
+                responsive: true,
+                restore: false,
+                guides: true,
+                center: true,
+                highlight: true,
+                cropBoxResizable: true,
+                cropBoxMovable: true,
+                toggleDragModeOnDblclick: false,
+                dragMode: 'move',
+                minCropBoxWidth: 100,
+                minCropBoxHeight: 100,
+              });
+              console.log('Cropper initialized');
+            } else {
+              console.error('Cropper library not loaded');
+            }
+          }, 300);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (cropAndUploadBtn && avatarForm) {
+      cropAndUploadBtn.addEventListener('click', () => {
+        if (!cropper) return;
+
+        cropper.getCroppedCanvas({
+          width: 512,
+          height: 512,
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: 'high',
+        }).toBlob((blob) => {
+          if (!blob) {
+            Swal.fire({
+              icon: 'error',
+              title: 'Crop failed',
+              text: 'Could not process the image. Please try again.',
+              confirmButtonColor: '#800000',
+            });
+            return;
+          }
+
+          const dataTransfer = new DataTransfer();
+          const croppedFile = new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
+          dataTransfer.items.add(croppedFile);
+          avatarFileInput.files = dataTransfer.files;
+
+          if (bsModal) bsModal.hide();
+          if (cropper) {
+            cropper.destroy();
+            cropper = null;
+          }
+
+          Swal.fire({
+            title: 'Update profile photo?',
+            text: 'Your new picture will appear in the header for every page.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, upload',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#800000',
+          }).then((result) => {
+            if (result.isConfirmed) {
+              avatarForm.submit();
+            }
+          });
+        }, 'image/jpeg', 0.9);
+      });
+    }
+
+    if (cropperModal) {
+      cropperModal.addEventListener('hidden.bs.modal', () => {
+        if (cropper) {
+          cropper.destroy();
+          cropper = null;
+        }
+        if (avatarFileInput) avatarFileInput.value = '';
+      });
+      
+      const closeBtn = cropperModal.querySelector('.btn-close');
+      const cancelBtn = cropperModal.querySelector('.btn-secondary');
+      
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          if (bsModal) {
+            bsModal.hide();
+          } else {
+            cropperModal.classList.remove('show');
+            cropperModal.style.display = 'none';
+            document.body.classList.remove('modal-open');
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) backdrop.remove();
+          }
+          if (cropper) {
+            cropper.destroy();
+            cropper = null;
+          }
+          if (avatarFileInput) avatarFileInput.value = '';
+        });
+      }
+      
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+          if (bsModal) {
+            bsModal.hide();
+          } else {
+            cropperModal.classList.remove('show');
+            cropperModal.style.display = 'none';
+            document.body.classList.remove('modal-open');
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) backdrop.remove();
+          }
+          if (cropper) {
+            cropper.destroy();
+            cropper = null;
+          }
+          if (avatarFileInput) avatarFileInput.value = '';
+        });
+      }
+    }
 
     const infoForm = document.getElementById('profileInfoForm');
     if (infoForm) {
@@ -249,41 +461,7 @@ if (isset($profileUser['avatar_url']) && is_string($profileUser['avatar_url'])) 
       });
     }
 
-    const avatarForm = document.getElementById('profileAvatarForm');
-    if (avatarForm) {
-      avatarForm.addEventListener('submit', (event) => {
-        if (avatarForm.dataset.confirmed === '1') return;
-        event.preventDefault();
-        const fileInput = document.getElementById('avatar');
-        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-          return;
-        }
-        const maxBytes = 2097152;
-        if (fileInput.files[0].size > maxBytes) {
-          Swal.fire({
-            icon: 'error',
-            title: 'File too large',
-            text: 'Please choose an image that is 2MB or smaller.',
-            confirmButtonColor: '#800000',
-          });
-          return;
-        }
-        Swal.fire({
-          title: 'Update profile photo?',
-          text: 'Your new picture will appear in the header for every page.',
-          icon: 'question',
-          showCancelButton: true,
-          confirmButtonText: 'Yes, upload',
-          cancelButtonText: 'Cancel',
-          confirmButtonColor: '#800000',
-        }).then((result) => {
-          if (result.isConfirmed) {
-            avatarForm.dataset.confirmed = '1';
-            avatarForm.submit();
-          }
-        });
-      });
-    }
+
 
     const pwForm = document.getElementById('profilePasswordForm');
     if (pwForm) {
