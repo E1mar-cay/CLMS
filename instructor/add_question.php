@@ -1133,7 +1133,7 @@ $selectedModuleIdForForm = ($editQuestion && isset($editQuestion['module_id']) &
 ?>
 <?php foreach ($courseModulesForPicker as $modOption) : ?>
                           <option value="<?php echo (int) $modOption['id']; ?>" <?php echo $selectedModuleIdForForm === (int) $modOption['id'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars('Module ' . (int) $modOption['sequence_order'] . ': ' . (string) $modOption['title'], ENT_QUOTES, 'UTF-8'); ?>
+                            <?php echo htmlspecialchars((string) $modOption['title'], ENT_QUOTES, 'UTF-8'); ?>
                           </option>
 <?php endforeach; ?>
                         </select>
