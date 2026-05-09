@@ -779,9 +779,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $verifyStmt = $pdo->prepare(
                     "SELECT q.id
                      FROM questions q
-                     INNER JOIN course_instructors ci ON ci.course_id = q.course_id
+                     LEFT JOIN course_instructors ci
+                       ON ci.course_id = q.course_id
+                      AND ci.instructor_user_id = :instructor_id
                      WHERE q.id = :question_id
-                       AND ci.instructor_user_id = :instructor_id
+                       AND (
+                         ci.instructor_user_id IS NOT NULL
+                         OR NOT EXISTS (
+                           SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = q.course_id
+                         )
+                       )
                      LIMIT 1"
                 );
                 $verifyStmt->execute([
@@ -848,6 +855,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? 'Question updated successfully.'
                 : 'Question added successfully.';
             $selectedCourseId = (int) $courseId;
+
+            if (!empty($_POST['remember_default_module'])) {
+                $cookieVal = $moduleIdForQuestion === null ? '' : (string) (int) $moduleIdForQuestion;
+                $cookieName = 'clms_instr_def_mod_' . (int) $courseId;
+                setcookie(
+                    $cookieName,
+                    $cookieVal,
+                    time() + 365 * 24 * 60 * 60,
+                    '/',
+                    '',
+                    !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+                    false
+                );
+                $_COOKIE[$cookieName] = $cookieVal;
+                if ($moduleIdForQuestion === null) {
+                    $attachModulePrefillId = 0;
+                } else {
+                    $attachModulePrefillId = (int) $moduleIdForQuestion;
+                }
+            }
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -900,6 +927,7 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
 
 $courseQuestions = [];
 $courseModulesForPicker = [];
+$attachModulePrefillId = 0;
 if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourseId > 0 && isset($assignedSet[(int) $selectedCourseId])) {
     $questionListStmt = $pdo->prepare(
         'SELECT q.id, q.module_id, q.question_text, q.question_type, q.points, m.title AS module_title
@@ -931,6 +959,28 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
     );
     $courseModulesStmt->execute(['course_id' => (int) $selectedCourseId]);
     $courseModulesForPicker = $courseModulesStmt->fetchAll();
+
+    $defModCookieKey = 'clms_instr_def_mod_' . (int) $selectedCourseId;
+    if ($courseModulesForPicker !== []) {
+        if (isset($_COOKIE[$defModCookieKey])) {
+            $cv = trim((string) $_COOKIE[$defModCookieKey]);
+            if ($cv === '' || $cv === '0') {
+                $attachModulePrefillId = 0;
+            } else {
+                $tryId = (int) $cv;
+                $validMod = false;
+                foreach ($courseModulesForPicker as $mo) {
+                    if ((int) $mo['id'] === $tryId) {
+                        $validMod = true;
+                        break;
+                    }
+                }
+                $attachModulePrefillId = $validMod ? $tryId : (int) $courseModulesForPicker[0]['id'];
+            }
+        } else {
+            $attachModulePrefillId = (int) $courseModulesForPicker[0]['id'];
+        }
+    }
 }
 
 $questionCount = count($courseQuestions);
@@ -1073,20 +1123,27 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                         </select>
                       </div>
                       <div class="col-md-6">
-                        <label class="form-label">Attach to Module <small class="text-muted">(optional — leave blank for the course-level final exam)</small></label>
-                        <select class="form-select" name="module_id">
+                        <label class="form-label" for="instructor_attach_module">Attach to Module <small class="text-muted">(optional — leave blank for the course-level final exam)</small></label>
+                        <select class="form-select" name="module_id" id="instructor_attach_module">
                           <option value="">Course-level (Final Exam)</option>
 <?php
-$currentModuleIdValue = isset($editQuestion['module_id']) && $editQuestion['module_id'] !== null
+$selectedModuleIdForForm = ($editQuestion && isset($editQuestion['module_id']) && $editQuestion['module_id'] !== null)
     ? (int) $editQuestion['module_id']
-    : 0;
+    : (int) $attachModulePrefillId;
 ?>
 <?php foreach ($courseModulesForPicker as $modOption) : ?>
-                          <option value="<?php echo (int) $modOption['id']; ?>" <?php echo $currentModuleIdValue === (int) $modOption['id'] ? 'selected' : ''; ?>>
+                          <option value="<?php echo (int) $modOption['id']; ?>" <?php echo $selectedModuleIdForForm === (int) $modOption['id'] ? 'selected' : ''; ?>>
                             <?php echo htmlspecialchars('Module ' . (int) $modOption['sequence_order'] . ': ' . (string) $modOption['title'], ENT_QUOTES, 'UTF-8'); ?>
                           </option>
 <?php endforeach; ?>
                         </select>
+<?php if ($courseModulesForPicker !== []) : ?>
+                        <div class="form-check mt-2 mb-0">
+                          <input class="form-check-input" type="checkbox" name="remember_default_module" id="remember_default_module" value="1" />
+                          <label class="form-check-label" for="remember_default_module">Set as Default</label>
+                          <small class="text-muted d-block">Remember this attachment for new questions in this course (stored in your browser).</small>
+                        </div>
+<?php endif; ?>
                       </div>
                       <div class="col-md-3">
                         <label class="form-label">Question Type</label>
@@ -1443,17 +1500,17 @@ foreach ($sampleBody as $i => $row) :
                           <td><?php echo htmlspecialchars((string) $q['question_text'], ENT_QUOTES, 'UTF-8'); ?></td>
                           <td><span class="badge bg-label-primary"><?php echo htmlspecialchars($typeLabel, ENT_QUOTES, 'UTF-8'); ?></span></td>
                           <td><?php echo number_format((float) $q['points'], 2); ?></td>
-                          <td>
-                            <div class="d-flex gap-1 flex-wrap">
+                          <td class="align-middle" style="width: 1%;">
+                            <div class="d-flex flex-row flex-nowrap gap-2 align-items-stretch" style="min-width: 10.5rem;">
                               <a
-                                class="btn btn-sm btn-warning edit-question-btn"
+                                class="btn btn-sm btn-warning edit-question-btn flex-grow-1 text-center text-nowrap"
                                 href="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId . '&edit=' . (int) $q['id'], ENT_QUOTES, 'UTF-8'); ?>"
                                 data-question-id="<?php echo (int) $q['id']; ?>"
                                 data-question-text="<?php echo htmlspecialchars((string) $q['question_text'], ENT_QUOTES, 'UTF-8'); ?>">
                                 <i class="bx bx-edit-alt"></i> Edit
                               </a>
                               <a
-                                class="btn btn-sm btn-danger delete-question-btn"
+                                class="btn btn-sm btn-danger delete-question-btn flex-grow-1 text-center text-nowrap"
                                 href="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId . '&delete=' . (int) $q['id'], ENT_QUOTES, 'UTF-8'); ?>"
                                 data-question-text="<?php echo htmlspecialchars((string) $q['question_text'], ENT_QUOTES, 'UTF-8'); ?>">
                                 <i class="bx bx-trash"></i> Delete

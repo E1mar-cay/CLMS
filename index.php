@@ -86,6 +86,9 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
   <title>CLMS | Criminology Learning Management System</title>
   <link rel="icon" type="image/png" href="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>">
   <link rel="apple-touch-icon" href="<?php echo htmlspecialchars(($clmsWebBase ?: '') . '/public/assets/img/logo-clms.png', ENT_QUOTES, 'UTF-8'); ?>">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#fdfcf0" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
