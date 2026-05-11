@@ -5,6 +5,9 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
 require_once dirname(__DIR__) . '/includes/exam_grading.php';
+require_once dirname(__DIR__) . '/includes/clms-exam-types-schema.php';
+
+clms_ensure_exam_types_schema($pdo);
 
 clms_require_roles(['student']);
 

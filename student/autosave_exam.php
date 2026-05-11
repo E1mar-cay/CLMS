@@ -15,6 +15,9 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
+require_once dirname(__DIR__) . '/includes/clms-exam-types-schema.php';
+
+clms_ensure_exam_types_schema($pdo);
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -64,7 +67,7 @@ if (!is_array($rawResponses)) {
  * a no-op from the client's perspective.
  */
 $attemptStmt = $pdo->prepare(
-    'SELECT id
+    'SELECT id, exam_type_id
      FROM exam_attempts
      WHERE id = :attempt_id
        AND user_id = :user_id
@@ -78,8 +81,16 @@ $attemptStmt->execute([
     'course_id' => (int) $courseId,
     'status' => 'in_progress',
 ]);
-if (!$attemptStmt->fetch()) {
+$attemptRow = $attemptStmt->fetch();
+if (!$attemptRow) {
     clms_autosave_respond(403, ['ok' => false, 'error' => 'attempt_not_active']);
+}
+
+$attemptExamTypeId = $attemptRow['exam_type_id'] ?? null;
+if ($attemptExamTypeId !== null && $attemptExamTypeId !== '') {
+    $attemptExamTypeId = (int) $attemptExamTypeId;
+} else {
+    $attemptExamTypeId = null;
 }
 
 /*
@@ -90,9 +101,9 @@ $questionsStmt = $pdo->prepare(
     'SELECT q.id AS question_id, q.question_type, a.id AS answer_id
      FROM questions q
      LEFT JOIN answers a ON a.question_id = q.id
-     WHERE q.course_id = :course_id AND q.module_id IS NULL'
+     WHERE q.course_id = :course_id AND q.module_id IS NULL AND q.exam_type_id <=> :exam_type_id'
 );
-$questionsStmt->execute(['course_id' => (int) $courseId]);
+$questionsStmt->execute(['course_id' => (int) $courseId, 'exam_type_id' => $attemptExamTypeId]);
 $rows = $questionsStmt->fetchAll();
 
 $questionTypes = [];   // qid => type

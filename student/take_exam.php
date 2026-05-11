@@ -5,8 +5,11 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
 require_once dirname(__DIR__) . '/includes/exam_grading.php';
+require_once dirname(__DIR__) . '/includes/clms-exam-types-schema.php';
 
 clms_require_roles(['student']);
+
+clms_ensure_exam_types_schema($pdo);
 
 /*
  * Ensure the columns we rely on exist. Two migrations:
@@ -54,6 +57,20 @@ $courseStmt->execute(['course_id' => $courseId]);
 $course = $courseStmt->fetch();
 if (!$course) {
     clms_redirect('student/dashboard.php');
+}
+
+$requestedExamTypeId = filter_input(INPUT_GET, 'exam_type_id', FILTER_VALIDATE_INT);
+$activeExamTypeId = null;
+$activeExamTypeName = null;
+if ($requestedExamTypeId !== false && $requestedExamTypeId !== null && $requestedExamTypeId > 0) {
+    $etCheck = $pdo->prepare('SELECT id, name FROM exam_types WHERE id = :id AND is_active = 1 LIMIT 1');
+    $etCheck->execute(['id' => (int) $requestedExamTypeId]);
+    $etRow = $etCheck->fetch();
+    if (!$etRow) {
+        clms_redirect('student/dashboard.php?notice=invalid_exam_type');
+    }
+    $activeExamTypeId = (int) $etRow['id'];
+    $activeExamTypeName = (string) $etRow['name'];
 }
 
 $enrollmentCheckStmt = $pdo->prepare(
@@ -118,14 +135,25 @@ try {
     error_log('take_exam: mock gate check failed: ' . $e->getMessage());
 }
 
-$questionsStmt = $pdo->prepare(
-    'SELECT q.id, q.question_text, q.question_type, q.points, a.id AS answer_id, a.answer_text
-     FROM questions q
-     LEFT JOIN answers a ON a.question_id = q.id
-     WHERE q.course_id = :course_id AND q.module_id IS NULL
-     ORDER BY q.id ASC, a.id ASC'
-);
-$questionsStmt->execute(['course_id' => $courseId]);
+if ($activeExamTypeId !== null) {
+    $questionsStmt = $pdo->prepare(
+        'SELECT q.id, q.question_text, q.question_type, q.points, a.id AS answer_id, a.answer_text
+         FROM questions q
+         LEFT JOIN answers a ON a.question_id = q.id
+         WHERE q.course_id = :course_id AND q.module_id IS NULL AND q.exam_type_id = :exam_type_id
+         ORDER BY q.id ASC, a.id ASC'
+    );
+    $questionsStmt->execute(['course_id' => $courseId, 'exam_type_id' => $activeExamTypeId]);
+} else {
+    $questionsStmt = $pdo->prepare(
+        'SELECT q.id, q.question_text, q.question_type, q.points, a.id AS answer_id, a.answer_text
+         FROM questions q
+         LEFT JOIN answers a ON a.question_id = q.id
+         WHERE q.course_id = :course_id AND q.module_id IS NULL AND q.exam_type_id IS NULL
+         ORDER BY q.id ASC, a.id ASC'
+    );
+    $questionsStmt->execute(['course_id' => $courseId]);
+}
 $rows = $questionsStmt->fetchAll();
 
 if ($rows === []) {
@@ -172,6 +200,7 @@ $attemptStmt = $pdo->prepare(
      WHERE user_id = :user_id
        AND course_id = :course_id
        AND status = :status
+       AND exam_type_id <=> :exam_type_id
      ORDER BY id DESC
      LIMIT 1'
 );
@@ -179,6 +208,7 @@ $attemptStmt->execute([
     'user_id' => (int) $_SESSION['user_id'],
     'course_id' => (int) $courseId,
     'status' => 'in_progress',
+    'exam_type_id' => $activeExamTypeId,
 ]);
 $attempt = $attemptStmt->fetch();
 
@@ -187,12 +217,13 @@ if (!$attempt) {
     // duration. Any later admin/instructor edit to the course time limit
     // will not retroactively change this attempt.
     $insertAttemptStmt = $pdo->prepare(
-        'INSERT INTO exam_attempts (user_id, course_id, status, total_score, is_passed, deadline_at)
-         VALUES (:user_id, :course_id, :status, 0.00, 0, DATE_ADD(NOW(), INTERVAL :duration MINUTE))'
+        'INSERT INTO exam_attempts (user_id, course_id, exam_type_id, status, total_score, is_passed, deadline_at)
+         VALUES (:user_id, :course_id, :exam_type_id, :status, 0.00, 0, DATE_ADD(NOW(), INTERVAL :duration MINUTE))'
     );
     $insertAttemptStmt->execute([
         'user_id' => (int) $_SESSION['user_id'],
         'course_id' => (int) $courseId,
+        'exam_type_id' => $activeExamTypeId,
         'status' => 'in_progress',
         'duration' => $durationMinutes,
     ]);
@@ -329,8 +360,8 @@ $activeStudentPage = 'dashboard';
 
 require_once __DIR__ . '/includes/layout-top.php';
 ?>
-              <h4 class="fw-bold py-3 mb-2">Course Exam</h4>
-              <p class="mb-1 text-muted"><?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?></p>
+              <h4 class="fw-bold py-3 mb-2"><?php echo $activeExamTypeName !== null ? 'Timed Exam' : 'Course Exam'; ?></h4>
+              <p class="mb-1 text-muted"><?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?><?php echo $activeExamTypeName !== null ? ' · ' . htmlspecialchars($activeExamTypeName, ENT_QUOTES, 'UTF-8') : ''; ?></p>
               <p class="mb-4 small text-muted">
                 Time limit set by instructor: <strong><?php echo (int) $durationMinutes; ?> minute<?php echo $durationMinutes === 1 ? '' : 's'; ?></strong>.
                 Your answers are saved automatically while you work.
@@ -344,7 +375,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
               </div>
 
-              <form id="examForm" class="pb-5" data-clms-exam-progress-key="<?php echo htmlspecialchars('clms-exam-pane-final-' . (int) $attemptId, ENT_QUOTES, 'UTF-8'); ?>" action="<?php echo htmlspecialchars($clmsWebBase . '/student/grade_exam.php', ENT_QUOTES, 'UTF-8'); ?>" method="post">
+              <form id="examForm" class="pb-5" data-clms-exam-progress-key="<?php echo htmlspecialchars('clms-exam-pane-attempt-' . (int) $attemptId, ENT_QUOTES, 'UTF-8'); ?>" action="<?php echo htmlspecialchars($clmsWebBase . '/student/grade_exam.php', ENT_QUOTES, 'UTF-8'); ?>" method="post">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                 <input type="hidden" name="course_id" value="<?php echo (int) $courseId; ?>" />
                 <input type="hidden" name="attempt_id" value="<?php echo $attemptId; ?>" />
@@ -513,6 +544,7 @@ require_once __DIR__ . '/includes/layout-top.php';
 
                   const attemptId = <?php echo (int) $attemptId; ?>;
                   const courseId = <?php echo (int) $courseId; ?>;
+                  const examTypeId = <?php echo $activeExamTypeId === null ? 'null' : (int) $activeExamTypeId; ?>;
                   // Server-authoritative deadline as a real Unix epoch. Matches
                   // both PHP time() and JS Date.now()/1000 regardless of the
                   // DB's or browser's local timezone.
@@ -591,6 +623,9 @@ require_once __DIR__ . '/includes/layout-top.php';
                     fd.set('csrf_token', csrfToken);
                     fd.set('attempt_id', String(attemptId));
                     fd.set('course_id', String(courseId));
+                    if (examTypeId !== null) {
+                      fd.set('exam_type_id', String(examTypeId));
+                    }
                     return fd;
                   };
                   const signature = (fd) => {

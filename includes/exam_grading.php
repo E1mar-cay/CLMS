@@ -38,7 +38,7 @@ function clms_finalize_exam_attempt(
     ?array $rawResponses = null
 ): array {
     $attemptStmt = $pdo->prepare(
-        'SELECT ea.id, ea.status, c.passing_score_percentage
+        'SELECT ea.id, ea.status, ea.exam_type_id, c.passing_score_percentage
          FROM exam_attempts ea
          INNER JOIN courses c ON c.id = ea.course_id
          WHERE ea.id = :attempt_id
@@ -59,15 +59,22 @@ function clms_finalize_exam_attempt(
         return ['ok' => false, 'error' => 'attempt_not_active'];
     }
 
+    $attemptExamTypeId = $attempt['exam_type_id'] ?? null;
+    if ($attemptExamTypeId !== null && $attemptExamTypeId !== '') {
+        $attemptExamTypeId = (int) $attemptExamTypeId;
+    } else {
+        $attemptExamTypeId = null;
+    }
+
     $questionsStmt = $pdo->prepare(
         'SELECT q.id, q.question_type, q.points,
                 a.id AS answer_id, a.answer_text, a.is_correct, a.sequence_position
          FROM questions q
          LEFT JOIN answers a ON a.question_id = q.id
-         WHERE q.course_id = :course_id AND q.module_id IS NULL
+         WHERE q.course_id = :course_id AND q.module_id IS NULL AND q.exam_type_id <=> :exam_type_id
          ORDER BY q.id ASC, a.id ASC'
     );
-    $questionsStmt->execute(['course_id' => $courseId]);
+    $questionsStmt->execute(['course_id' => $courseId, 'exam_type_id' => $attemptExamTypeId]);
     $rows = $questionsStmt->fetchAll();
     if ($rows === []) {
         return ['ok' => false, 'error' => 'no_questions'];
@@ -287,9 +294,8 @@ function clms_finalize_exam_attempt(
     $achievedPercentage = $totalPossiblePoints > 0 ? ($totalAwardedPoints / $totalPossiblePoints) * 100 : 0;
     $isPassed = $achievedPercentage >= $passingPercentage ? 1 : 0;
     $finalStatus = 'completed';
-    // Certificate is issued whenever the student clears the passing
-    // threshold, independent of whether the exam contained essays.
-    $shouldIssueCertificate = (bool) $isPassed;
+    // Course certificate only for the official final (no custom exam_type).
+    $shouldIssueCertificate = (bool) $isPassed && $attemptExamTypeId === null;
     $certificateHash = null;
     $certificateJustIssued = false;
     $gradingCommitted = false;
@@ -461,6 +467,7 @@ function clms_load_exam_attempt_summary(
                 ea.status,
                 ea.total_score,
                 ea.is_passed,
+                ea.exam_type_id,
                 c.passing_score_percentage
          FROM exam_attempts ea
          INNER JOIN courses c ON c.id = ea.course_id
@@ -490,12 +497,19 @@ function clms_load_exam_attempt_summary(
     // so the "X / Y" stat is accurate even if points per question changed
     // since submission. (total_score is frozen at grading time, so the
     // ratio matches what the student saw on submit.)
+    $summaryExamTypeId = $attempt['exam_type_id'] ?? null;
+    if ($summaryExamTypeId !== null && $summaryExamTypeId !== '') {
+        $summaryExamTypeId = (int) $summaryExamTypeId;
+    } else {
+        $summaryExamTypeId = null;
+    }
+
     $possibleStmt = $pdo->prepare(
         'SELECT COALESCE(SUM(points), 0) AS total_possible
          FROM questions
-         WHERE course_id = :course_id AND module_id IS NULL'
+         WHERE course_id = :course_id AND module_id IS NULL AND exam_type_id <=> :exam_type_id'
     );
-    $possibleStmt->execute(['course_id' => $courseId]);
+    $possibleStmt->execute(['course_id' => $courseId, 'exam_type_id' => $summaryExamTypeId]);
     $totalPossiblePoints = (float) ($possibleStmt->fetchColumn() ?: 0);
 
     $totalAwardedPoints = (float) $attempt['total_score'];

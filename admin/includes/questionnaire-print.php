@@ -14,15 +14,18 @@ require_once dirname(__DIR__, 2) . '/includes/sneat-paths.php';
 $courseId = (int) $courseRow['id'];
 
 $questionsStmt = $pdo->prepare(
-    'SELECT q.id, q.module_id, q.question_text, q.question_type, q.points,
-            m.title AS module_title, m.sequence_order AS module_seq
+    'SELECT q.id, q.module_id, q.exam_type_id, q.question_text, q.question_type, q.points,
+            m.title AS module_title, m.sequence_order AS module_seq,
+            et.name AS exam_type_name
      FROM questions q
      LEFT JOIN modules m ON m.id = q.module_id
+     LEFT JOIN exam_types et ON et.id = q.exam_type_id
      WHERE q.course_id = :course_id
      ORDER BY
        CASE WHEN q.module_id IS NULL THEN 1 ELSE 0 END,
        COALESCE(m.sequence_order, 999999),
        m.id,
+       q.exam_type_id,
        q.id'
 );
 $questionsStmt->execute(['course_id' => $courseId]);
@@ -30,12 +33,19 @@ $questionRows = $questionsStmt->fetchAll();
 
 $sections = [];
 foreach ($questionRows as $qr) {
-    $mid = $qr['module_id'] !== null ? (string) (int) $qr['module_id'] : '_final';
+    if ($qr['module_id'] !== null) {
+        $mid = 'm' . (int) $qr['module_id'];
+        $label = trim((string) ($qr['module_title'] ?? 'Module'));
+    } elseif (!empty($qr['exam_type_id'])) {
+        $mid = 't' . (int) $qr['exam_type_id'];
+        $label = trim((string) ($qr['exam_type_name'] ?? 'Exam type'));
+    } else {
+        $mid = '_final';
+        $label = 'Final Exam (course-level)';
+    }
     if (!isset($sections[$mid])) {
         $sections[$mid] = [
-            'label' => $qr['module_id'] !== null
-                ? trim((string) ($qr['module_title'] ?? 'Module'))
-                : 'Final Exam (course-level)',
+            'label' => $label,
             'questions' => [],
         ];
     }

@@ -5,8 +5,10 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
 require_once dirname(__DIR__) . '/includes/student-batch-schema.php';
+require_once dirname(__DIR__) . '/includes/clms-exam-types-schema.php';
 
 clms_ensure_users_student_batch_column($pdo);
+clms_ensure_exam_types_schema($pdo);
 
 clms_require_roles(['admin', 'instructor']);
 
@@ -383,7 +385,7 @@ if ($isReportsAdmin) {
     $mcStmt = $pdo->prepare(
         "SELECT c.id, c.title, c.is_published,
                 COUNT(DISTINCT m.id) AS module_count,
-                (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id AND q.module_id IS NULL) AS final_exam_questions
+                (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id AND q.module_id IS NULL AND q.exam_type_id IS NULL) AS final_exam_questions
          FROM courses c
          LEFT JOIN modules m ON m.course_id = c.id
          GROUP BY c.id, c.title, c.is_published

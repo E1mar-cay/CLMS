@@ -7,8 +7,21 @@ require_once dirname(__DIR__) . '/includes/auth.php';
 $clmsWebBase = $clmsWebBase ?? '';
 require_once dirname(__DIR__) . '/includes/audit-log.php';
 require_once dirname(__DIR__) . '/database.php';
+require_once dirname(__DIR__) . '/includes/clms-exam-types-schema.php';
+
+clms_ensure_exam_types_schema($pdo);
 
 clms_require_roles(['instructor']);
+
+$instructorExamTypesForAttach = [];
+try {
+    // List all types so instructors see what exists; inactive rows are shown disabled below.
+    $instructorExamTypesForAttach = $pdo->query(
+        'SELECT id, name, is_active FROM exam_types ORDER BY is_active DESC, sort_order ASC, name ASC'
+    )->fetchAll();
+} catch (Throwable $e) {
+    error_log('instructor/add_question exam_types list: ' . $e->getMessage());
+}
 
 $pdo->exec(
   "CREATE TABLE IF NOT EXISTS course_instructors (
@@ -76,6 +89,8 @@ if ((string) ($_GET['download'] ?? '') === 'csv_sample') {
 $editQuestionId = filter_input(INPUT_GET, 'edit', FILTER_VALIDATE_INT);
 $deleteQuestionId = filter_input(INPUT_GET, 'delete', FILTER_VALIDATE_INT);
 $editQuestion = null;
+/** After successful save with “remember”, same request uses this for the attach dropdown. */
+$attachPrefillValueForForm = null;
 
 $assignedCoursesStmt = $pdo->prepare(
   "SELECT DISTINCT c.id, c.title, COALESCE(c.final_exam_duration_minutes, 45) AS final_exam_duration_minutes
@@ -327,8 +342,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $insQ = $pdo->prepare(
-              'INSERT INTO questions (course_id, module_id, question_text, question_type, points)
-                             VALUES (:course_id, :module_id, :question_text, :question_type, :points)'
+              'INSERT INTO questions (course_id, module_id, exam_type_id, question_text, question_type, points)
+                             VALUES (:course_id, :module_id, NULL, :question_text, :question_type, :points)'
             );
             $insQ->execute([
               'course_id' => (int) $importCourseId,
@@ -595,7 +610,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'UPDATE exam_attempts
                  SET deadline_at = DATE_ADD(attempted_at, INTERVAL :duration MINUTE)
                  WHERE course_id = :course_id
-                   AND status = :status'
+                   AND status = :status
+                   AND exam_type_id IS NULL'
       );
       $syncDeadlineStmt->execute([
         'duration' => (int) $durationMinutes,
@@ -625,13 +641,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $questionType = strtolower(trim((string) ($_POST['question_type'] ?? '')));
       $pointsRaw = trim((string) ($_POST['points'] ?? '1'));
       $questionId = filter_input(INPUT_POST, 'question_id', FILTER_VALIDATE_INT);
-      $rawModuleId = $_POST['module_id'] ?? '';
+      $rawAttach = trim((string) ($_POST['question_attach'] ?? ''));
+      if ($rawAttach === '') {
+        $rawAttach = 'final';
+      }
       $moduleIdForQuestion = null;
-      if ($rawModuleId !== '' && $rawModuleId !== null) {
-        $parsedModuleId = filter_var($rawModuleId, FILTER_VALIDATE_INT);
-        if ($parsedModuleId !== false && $parsedModuleId !== null && $parsedModuleId > 0) {
-          $moduleIdForQuestion = (int) $parsedModuleId;
-        }
+      $examTypeIdForQuestion = null;
+      if (preg_match('/^m:(\d+)$/', $rawAttach, $mAttach)) {
+        $moduleIdForQuestion = (int) $mAttach[1];
+      } elseif (preg_match('/^t:(\d+)$/', $rawAttach, $mAttach)) {
+        $examTypeIdForQuestion = (int) $mAttach[1];
+      } elseif ($rawAttach !== 'final') {
+        throw new RuntimeException('Invalid attach target.');
       }
       $allowedQuestionTypes = ['true_false', 'multiple_select', 'fill_blank', 'sequencing'];
 
@@ -639,7 +660,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         throw new RuntimeException('You can only add questions to your assigned courses.');
       }
 
+      if ($examTypeIdForQuestion !== null) {
+        $typeScopeStmt = $pdo->prepare('SELECT 1 FROM exam_types WHERE id = :id LIMIT 1');
+        $typeScopeStmt->execute(['id' => $examTypeIdForQuestion]);
+        if (!$typeScopeStmt->fetch()) {
+          throw new RuntimeException('Selected exam type is not valid.');
+        }
+        $moduleIdForQuestion = null;
+      }
+
       if ($moduleIdForQuestion !== null) {
+        $examTypeIdForQuestion = null;
         $moduleScopeStmt = $pdo->prepare(
           'SELECT 1 FROM modules WHERE id = :module_id AND course_id = :course_id LIMIT 1'
         );
@@ -809,6 +840,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'UPDATE questions
                      SET course_id = :course_id,
                          module_id = :module_id,
+                         exam_type_id = :exam_type_id,
                          question_text = :question_text,
                          question_type = :question_type,
                          points = :points
@@ -817,6 +849,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $updateStmt->execute([
           'course_id' => (int) $courseId,
           'module_id' => $moduleIdForQuestion,
+          'exam_type_id' => $examTypeIdForQuestion,
           'question_text' => $questionText,
           'question_type' => $questionType,
           'points' => number_format($points, 2, '.', ''),
@@ -828,12 +861,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $questionId = (int) $questionId;
       } else {
         $questionStmt = $pdo->prepare(
-          'INSERT INTO questions (course_id, module_id, question_text, question_type, points)
-                     VALUES (:course_id, :module_id, :question_text, :question_type, :points)'
+          'INSERT INTO questions (course_id, module_id, exam_type_id, question_text, question_type, points)
+                     VALUES (:course_id, :module_id, :exam_type_id, :question_text, :question_type, :points)'
         );
         $questionStmt->execute([
           'course_id' => (int) $courseId,
           'module_id' => $moduleIdForQuestion,
+          'exam_type_id' => $examTypeIdForQuestion,
           'question_text' => $questionText,
           'question_type' => $questionType,
           'points' => number_format($points, 2, '.', ''),
@@ -863,7 +897,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $selectedCourseId = (int) $courseId;
 
       if (!empty($_POST['remember_default_module'])) {
-        $cookieVal = $moduleIdForQuestion === null ? '' : (string) (int) $moduleIdForQuestion;
+        $cookieVal = 'final';
+        if ($moduleIdForQuestion !== null) {
+          $cookieVal = 'm:' . (int) $moduleIdForQuestion;
+        } elseif ($examTypeIdForQuestion !== null) {
+          $cookieVal = 't:' . (int) $examTypeIdForQuestion;
+        }
         $cookieName = 'clms_instr_def_mod_' . (int) $courseId;
         setcookie(
           $cookieName,
@@ -875,11 +914,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           false
         );
         $_COOKIE[$cookieName] = $cookieVal;
-        if ($moduleIdForQuestion === null) {
-          $attachModulePrefillId = 0;
-        } else {
-          $attachModulePrefillId = (int) $moduleIdForQuestion;
-        }
+        $attachPrefillValueForForm = $cookieVal;
       }
     } catch (Throwable $e) {
       if ($pdo->inTransaction()) {
@@ -896,7 +931,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourseId > 0 && $editQuestionId !== false && $editQuestionId !== null && $editQuestionId > 0) {
   if (isset($assignedSet[(int) $selectedCourseId])) {
     $editStmt = $pdo->prepare(
-      'SELECT q.id, q.course_id, q.module_id, q.question_text, q.question_type, q.points
+      'SELECT q.id, q.course_id, q.module_id, q.exam_type_id, q.question_text, q.question_type, q.points
              FROM questions q
              LEFT JOIN course_instructors ci
                ON ci.course_id = q.course_id
@@ -933,15 +968,17 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
 
 $courseQuestions = [];
 $courseModulesForPicker = [];
-$attachModulePrefillId = 0;
+$attachSelectValue = 'final';
 if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourseId > 0 && isset($assignedSet[(int) $selectedCourseId])) {
   $questionListStmt = $pdo->prepare(
-    'SELECT q.id, q.module_id, q.question_text, q.question_type, q.points, m.title AS module_title
+    'SELECT q.id, q.module_id, q.exam_type_id, q.question_text, q.question_type, q.points,
+                m.title AS module_title, et.name AS exam_type_name
          FROM questions q
          LEFT JOIN course_instructors ci
            ON ci.course_id = q.course_id
           AND ci.instructor_user_id = :instructor_id
          LEFT JOIN modules m ON m.id = q.module_id
+         LEFT JOIN exam_types et ON et.id = q.exam_type_id
          WHERE q.course_id = :course_id
            AND (
              ci.instructor_user_id IS NOT NULL
@@ -967,24 +1004,55 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
   $courseModulesForPicker = $courseModulesStmt->fetchAll();
 
   $defModCookieKey = 'clms_instr_def_mod_' . (int) $selectedCourseId;
-  if ($courseModulesForPicker !== []) {
-    if (isset($_COOKIE[$defModCookieKey])) {
-      $cv = trim((string) $_COOKIE[$defModCookieKey]);
-      if ($cv === '' || $cv === '0') {
-        $attachModulePrefillId = 0; // explicitly set to Final Exam
-      } else {
-        $tryId = (int) $cv;
-        $validMod = false;
-        foreach ($courseModulesForPicker as $mo) {
-          if ((int) $mo['id'] === $tryId) {
-            $validMod = true;
-            break;
-          }
-        }
-        $attachModulePrefillId = $validMod ? $tryId : 0; // default to Final Exam if cookie is stale
-      }
+  if ($attachPrefillValueForForm !== null) {
+    $attachSelectValue = $attachPrefillValueForForm;
+  } elseif (
+    $editQuestion
+    && !empty($editQuestion['id'])
+    && isset($editQuestion['course_id'])
+    && (int) $editQuestion['course_id'] === (int) $selectedCourseId
+  ) {
+    if (isset($editQuestion['module_id']) && $editQuestion['module_id'] !== null && (int) $editQuestion['module_id'] > 0) {
+      $attachSelectValue = 'm:' . (int) $editQuestion['module_id'];
+    } elseif (!empty($editQuestion['exam_type_id'])) {
+      $attachSelectValue = 't:' . (int) $editQuestion['exam_type_id'];
     } else {
-      $attachModulePrefillId = 0; // default to "Course-level (Final Exam)" — not the first module
+      $attachSelectValue = 'final';
+    }
+  } elseif (isset($_COOKIE[$defModCookieKey])) {
+    $cv = trim((string) $_COOKIE[$defModCookieKey]);
+    if ($cv === '' || $cv === '0' || strcasecmp($cv, 'final') === 0) {
+      $attachSelectValue = 'final';
+    } elseif (preg_match('/^m:(\d+)$/', $cv, $cm)) {
+      $mid = (int) $cm[1];
+      $validMod = false;
+      foreach ($courseModulesForPicker as $mo) {
+        if ((int) $mo['id'] === $mid) {
+          $validMod = true;
+          break;
+        }
+      }
+      $attachSelectValue = $validMod ? 'm:' . $mid : 'final';
+    } elseif (preg_match('/^t:(\d+)$/', $cv, $ct)) {
+      $tid = (int) $ct[1];
+      $validT = false;
+      foreach ($instructorExamTypesForAttach as $et) {
+        if ((int) $et['id'] === $tid) {
+          $validT = true;
+          break;
+        }
+      }
+      $attachSelectValue = $validT ? 't:' . $tid : 'final'; // includes inactive types for cookie match
+    } elseif (ctype_digit($cv)) {
+      $mid = (int) $cv;
+      $validMod = false;
+      foreach ($courseModulesForPicker as $mo) {
+        if ((int) $mo['id'] === $mid) {
+          $validMod = true;
+          break;
+        }
+      }
+      $attachSelectValue = $validMod ? 'm:' . $mid : 'final';
     }
   }
 }
@@ -1129,19 +1197,38 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label" for="instructor_attach_module">Attach to Module <small class="text-muted">(optional — leave blank for the course-level final exam)</small></label>
-            <select class="form-select" name="module_id" id="instructor_attach_module">
-              <option value="">Course-level (Final Exam)</option>
-              <?php
-              $selectedModuleIdForForm = ($editQuestion && isset($editQuestion['module_id']) && $editQuestion['module_id'] !== null)
-                ? (int) $editQuestion['module_id']
-                : (int) $attachModulePrefillId;
-              ?>
-              <?php foreach ($courseModulesForPicker as $modOption) : ?>
-                <option value="<?php echo (int) $modOption['id']; ?>" <?php echo $selectedModuleIdForForm === (int) $modOption['id'] ? 'selected' : ''; ?>>
-                  <?php echo htmlspecialchars((string) $modOption['title'], ENT_QUOTES, 'UTF-8'); ?>
-                </option>
-              <?php endforeach; ?>
+            <label class="form-label" for="instructor_attach_module">Attach to module or exam type <small class="text-muted">(optional — course-level = final exam pool; exam types are managed under Admin → Exam types)</small></label>
+            <select class="form-select" name="question_attach" id="instructor_attach_module">
+              <option value="final" <?php echo $attachSelectValue === 'final' ? 'selected' : ''; ?>>Course-level (Final Exam)</option>
+              <?php if ($courseModulesForPicker !== []) : ?>
+                <optgroup label="Modules">
+                  <?php foreach ($courseModulesForPicker as $modOption) : ?>
+                    <?php $modVal = 'm:' . (int) $modOption['id']; ?>
+                    <option value="<?php echo htmlspecialchars($modVal, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $attachSelectValue === $modVal ? 'selected' : ''; ?>>
+                      <?php echo htmlspecialchars((string) $modOption['title'], ENT_QUOTES, 'UTF-8'); ?>
+                    </option>
+                  <?php endforeach; ?>
+                </optgroup>
+              <?php endif; ?>
+              <?php if ($instructorExamTypesForAttach !== []) : ?>
+                <optgroup label="Exam types">
+                  <?php foreach ($instructorExamTypesForAttach as $typeOption) : ?>
+                    <?php
+                      $typeVal = 't:' . (int) $typeOption['id'];
+                      $isEditingThisType = $editQuestion
+                        && (int) ($editQuestion['exam_type_id'] ?? 0) === (int) $typeOption['id'];
+                      $typeInactive = (int) ($typeOption['is_active'] ?? 1) !== 1 && !$isEditingThisType;
+                      $typeLabel = (string) $typeOption['name'] . ($typeInactive ? ' (inactive — turn on in Admin → Exam types)' : '');
+                    ?>
+                    <option
+                      value="<?php echo htmlspecialchars($typeVal, ENT_QUOTES, 'UTF-8'); ?>"
+                      <?php echo $attachSelectValue === $typeVal ? 'selected' : ''; ?>
+                      <?php echo $typeInactive ? 'disabled' : ''; ?>>
+                      <?php echo htmlspecialchars($typeLabel, ENT_QUOTES, 'UTF-8'); ?>
+                    </option>
+                  <?php endforeach; ?>
+                </optgroup>
+              <?php endif; ?>
             </select>
             <?php if ($courseModulesForPicker !== []) : ?>
               <div class="form-check mt-2 mb-0">
@@ -1494,11 +1581,21 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                 <?php $typeLabel = clms_question_type_label((string) $q['question_type']); ?>
                 <tr
                   data-search-item
-                  data-search-text="<?php echo htmlspecialchars(((string) $q['question_text']) . ' ' . $typeLabel . ' ' . ($q['module_id'] !== null ? (string) $q['module_title'] : 'Final Exam'), ENT_QUOTES, 'UTF-8'); ?>">
+                  data-search-text="<?php
+                    $scopeLabel = 'Final Exam';
+                    if ($q['module_id'] !== null) {
+                      $scopeLabel = (string) $q['module_title'];
+                    } elseif (!empty($q['exam_type_name'])) {
+                      $scopeLabel = (string) $q['exam_type_name'];
+                    }
+                    echo htmlspecialchars(((string) $q['question_text']) . ' ' . $typeLabel . ' ' . $scopeLabel, ENT_QUOTES, 'UTF-8');
+                  ?>">
                   <td><?php echo (int) $q['id']; ?></td>
                   <td>
                     <?php if ($q['module_id'] !== null) : ?>
                       <span class="badge bg-label-info"><?php echo htmlspecialchars((string) $q['module_title'], ENT_QUOTES, 'UTF-8'); ?></span>
+                    <?php elseif (!empty($q['exam_type_name'])) : ?>
+                      <span class="badge bg-label-warning"><?php echo htmlspecialchars((string) $q['exam_type_name'], ENT_QUOTES, 'UTF-8'); ?></span>
                     <?php else : ?>
                       <span class="badge bg-label-secondary">Final Exam</span>
                     <?php endif; ?>

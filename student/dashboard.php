@@ -5,6 +5,9 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/sneat-paths.php';
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/database.php';
+require_once dirname(__DIR__) . '/includes/clms-exam-types-schema.php';
+
+clms_ensure_exam_types_schema($pdo);
 
 clms_require_roles(['student']);
 
@@ -117,6 +120,7 @@ $coursesStmt = $pdo->prepare(
               AND ea.user_id = :user_id_passed_attempt
               AND ea.status IN ('completed', 'pending_manual_grade')
               AND ea.is_passed = 1
+              AND ea.exam_type_id IS NULL
             ORDER BY ea.id DESC
             LIMIT 1) AS latest_passed_attempt_id,
         (SELECT ea.id
@@ -125,6 +129,7 @@ $coursesStmt = $pdo->prepare(
               AND ea.user_id = :user_id_failed_attempt
               AND ea.status IN ('completed', 'pending_manual_grade')
               AND ea.is_passed = 0
+              AND ea.exam_type_id IS NULL
             ORDER BY ea.id DESC
             LIMIT 1) AS latest_failed_attempt_id
      FROM courses c
@@ -208,6 +213,29 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
   return rtrim((string) $clmsWebBase, '/') . '/' . ltrim($path, '/');
 };
 
+$typedExamsByCourse = [];
+try {
+    $typedStmt = $pdo->query(
+        'SELECT DISTINCT q.course_id, q.exam_type_id, et.name
+         FROM questions q
+         INNER JOIN exam_types et ON et.id = q.exam_type_id AND et.is_active = 1
+         WHERE q.module_id IS NULL AND q.exam_type_id IS NOT NULL
+         ORDER BY q.course_id ASC, et.name ASC'
+    );
+    foreach (($typedStmt ? $typedStmt->fetchAll() : []) as $trow) {
+        $cid = (int) $trow['course_id'];
+        if (!isset($typedExamsByCourse[$cid])) {
+            $typedExamsByCourse[$cid] = [];
+        }
+        $typedExamsByCourse[$cid][] = [
+            'id' => (int) $trow['exam_type_id'],
+            'name' => (string) $trow['name'],
+        ];
+    }
+} catch (Throwable $e) {
+    error_log('student/dashboard typed exams: ' . $e->getMessage());
+}
+
 $courseCards = [];
 foreach ($allCourses as $course) {
   $courseId = (int) $course['id'];
@@ -253,6 +281,8 @@ foreach ($allCourses as $course) {
 
   // Pick the most relevant attempt to link the result button to.
   $course['latest_finished_attempt_id'] = $latestPassedId ?? $latestFailedId;
+
+  $course['typed_exam_types'] = $typedExamsByCourse[$courseId] ?? [];
 
   $courseCards[] = $course;
 }
@@ -359,6 +389,9 @@ require_once __DIR__ . '/includes/layout-top.php';
   <?php endif; ?>
   <?php if ($notice === 'no_mock_questions') : ?>
     <div class="alert alert-info" role="alert">This course has no mock exam questions yet. You can proceed directly to the final exam.</div>
+  <?php endif; ?>
+  <?php if ($notice === 'invalid_exam_type') : ?>
+    <div class="alert alert-warning" role="alert">That exam type is not available.</div>
   <?php endif; ?>
 
   <div class="row g-4 mb-4">
@@ -607,6 +640,24 @@ require_once __DIR__ . '/includes/layout-top.php';
                   </form>
                 <?php endif; ?>
               </div>
+              <?php
+              $typedList = $course['typed_exam_types'] ?? [];
+              $tmCard = (int) ($course['total_modules'] ?? 0);
+              $cmCard = (int) ($course['completed_modules'] ?? 0);
+              $allModulesDoneCard = $tmCard > 0 && $cmCard >= $tmCard;
+              ?>
+              <?php if ($isEnrolled && $typedList !== [] && $allModulesDoneCard) : ?>
+                <div class="border-top pt-2 mt-2">
+                  <small class="text-muted d-block mb-1">Additional timed exams</small>
+                  <?php foreach ($typedList as $tex) : ?>
+                    <a
+                      class="btn btn-sm btn-outline-primary w-100 mb-1"
+                      href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_exam.php?course_id=' . $courseId . '&exam_type_id=' . (int) $tex['id'], ENT_QUOTES, 'UTF-8'); ?>">
+                      <?php echo htmlspecialchars((string) $tex['name'], ENT_QUOTES, 'UTF-8'); ?>
+                    </a>
+                  <?php endforeach; ?>
+                </div>
+              <?php endif; ?>
             </div>
           </div>
         </div>

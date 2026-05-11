@@ -164,7 +164,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'summary') {
     $courseExportStmt = $pdo->query(
         "SELECT c.id, c.title, c.is_published,
                 COUNT(DISTINCT m.id) AS module_cnt,
-                (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id AND q.module_id IS NULL) AS final_q
+                (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id AND q.module_id IS NULL AND q.exam_type_id IS NULL) AS final_q
          FROM courses c
          LEFT JOIN modules m ON m.course_id = c.id
          GROUP BY c.id, c.title, c.is_published

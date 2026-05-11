@@ -74,6 +74,15 @@ $clmsThemeSettings = $clmsThemeSettings ?? ['site_title' => 'CLMS'];
       </a>
     </li>
 
+    <?php if ($clmsSidebarRole === 'admin') : ?>
+      <li class="menu-item <?php echo $activeAdminPage === 'exam_types' ? 'active' : ''; ?>">
+        <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/exam_types.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+          <i class="menu-icon tf-icons bx bx-list-ul"></i>
+          <div class="text-truncate">Exam types</div>
+        </a>
+      </li>
+    <?php endif; ?>
+
     <li class="menu-item <?php echo $activeAdminPage === 'announcements' ? 'active' : ''; ?>">
       <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/announcements.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
         <i class="menu-icon tf-icons bx bx-bell"></i>
