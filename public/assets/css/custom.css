@@ -526,3 +526,81 @@ a:hover {
 .clms-announcement-board .text-muted {
   color: #4a5a72 !important;
 }
+
+/* ---- 10. Exam stepper (one question + nav + review modal) ---- */
+.clms-exam-stepper {
+  border: 1px solid rgba(15, 32, 75, 0.08);
+  border-radius: 0.5rem;
+  padding: 1rem 1.1rem;
+  background: #fff;
+}
+.clms-exam-stepper__nav {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.clms-exam-nav-btn {
+  border: 1px solid rgba(15, 32, 75, 0.15);
+  border-radius: 0.35rem;
+  padding: 0.45rem 0.25rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.2;
+  background: #fff;
+  color: #233;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.clms-exam-nav-btn:hover {
+  border-color: rgba(128, 0, 0, 0.45);
+  color: var(--bs-primary, #800000);
+}
+.clms-exam-nav-btn--answered {
+  background: #d1f4e0;
+  border-color: #28c76f;
+  color: #0d5c2f;
+}
+.clms-exam-nav-btn--unanswered {
+  background: #ffe8cc;
+  border-color: #ff9f43;
+  color: #7a3d00;
+}
+.clms-exam-nav-btn--current {
+  box-shadow: 0 0 0 2px rgba(128, 0, 0, 0.45);
+}
+.clms-exam-q-pane {
+  display: none;
+}
+.clms-exam-q-pane.clms-exam-q-pane--active {
+  display: block;
+}
+
+/* Floating round button — question map (viewport bottom-right) */
+.clms-exam-nav-fab {
+  position: fixed;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  right: calc(1.25rem + env(safe-area-inset-right, 0px));
+  z-index: 1020;
+  width: 3.5rem;
+  height: 3.5rem;
+  min-width: 3.5rem;
+  min-height: 3.5rem;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0.35rem 1.1rem rgba(15, 32, 75, 0.22);
+  border-width: 0;
+}
+.clms-exam-nav-fab i {
+  line-height: 1;
+  font-size: 1.5rem;
+}
+.clms-exam-nav-fab:focus {
+  box-shadow: 0 0.35rem 1.1rem rgba(15, 32, 75, 0.22), 0 0 0 0.2rem rgba(128, 0, 0, 0.25);
+}
+
+.clms-exam-stepper-pager {
+  flex-wrap: wrap;
+}

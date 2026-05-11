@@ -344,13 +344,21 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
               </div>
 
-              <form id="examForm" action="<?php echo htmlspecialchars($clmsWebBase . '/student/grade_exam.php', ENT_QUOTES, 'UTF-8'); ?>" method="post">
+              <form id="examForm" class="pb-5" data-clms-exam-progress-key="<?php echo htmlspecialchars('clms-exam-pane-final-' . (int) $attemptId, ENT_QUOTES, 'UTF-8'); ?>" action="<?php echo htmlspecialchars($clmsWebBase . '/student/grade_exam.php', ENT_QUOTES, 'UTF-8'); ?>" method="post">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                 <input type="hidden" name="course_id" value="<?php echo (int) $courseId; ?>" />
                 <input type="hidden" name="attempt_id" value="<?php echo $attemptId; ?>" />
 
+                <div class="clms-exam-stepper mb-3">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <span class="fw-semibold mb-0">Progress</span>
+                    <span class="small text-muted clms-exam-stepper__summary" aria-live="polite"></span>
+                  </div>
+                  <p class="small text-muted mb-0 mt-2">Use the <strong>round button</strong> (bottom-right) to open the question map and submit. Green / orange show answered status.</p>
+                </div>
+
 <?php foreach ($questions as $index => $question) : ?>
-                <div class="card mb-4">
+                <div class="card mb-4 clms-exam-q-pane<?php echo $index === 0 ? ' clms-exam-q-pane--active' : ''; ?>">
                   <div class="card-header">
                     <strong>Question <?php echo $index + 1; ?></strong>
                     <span class="badge bg-label-primary ms-2"><?php echo number_format((float) $question['points'], 2); ?> pts</span>
@@ -440,9 +448,62 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
 <?php endforeach; ?>
 
-                <button type="submit" class="btn btn-primary">Submit Exam</button>
+                <div class="d-flex justify-content-between align-items-center gap-3 my-4 clms-exam-stepper-pager">
+                  <button type="button" class="btn btn-outline-primary clms-exam-stepper__prev">← Previous</button>
+                  <button type="button" class="btn btn-primary clms-exam-stepper__next">Next →</button>
+                </div>
+
+                <button
+                  type="button"
+                  class="clms-exam-nav-fab btn btn-primary"
+                  data-bs-toggle="modal"
+                  data-bs-target="#clmsFinalExamNavModal"
+                  title="Question map"
+                  aria-label="Open question map">
+                  <i class="bx bx-grid-alt" aria-hidden="true"></i>
+                </button>
               </form>
 
+              <div class="modal fade" id="clmsFinalExamNavModal" tabindex="-1" aria-labelledby="clmsFinalExamNavTitle" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="clmsFinalExamNavTitle">Jump to question</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                      <p class="small text-muted mb-3">Tap a number to open that question. <strong>Green</strong> = answered, <strong>orange</strong> = not answered (5 per row).</p>
+                      <div class="clms-exam-stepper__nav" data-clms-exam-nav-map role="navigation" aria-label="Question numbers"></div>
+                    </div>
+                    <div class="modal-footer d-flex flex-wrap gap-2 justify-content-between">
+                      <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Close</button>
+                      <button type="submit" form="examForm" class="btn btn-primary">Submit exam</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal fade" id="clmsFinalExamReviewModal" tabindex="-1" aria-labelledby="clmsFinalExamReviewTitle" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="clmsFinalExamReviewTitle">Review answers</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                      <div data-clms-exam-review-summary></div>
+                      <p class="small text-muted mb-2 mb-0">Green = answered · Orange = unanswered (5 per row).</p>
+                      <div class="mt-2 clms-exam-stepper__nav" data-clms-exam-review-nav></div>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Continue editing</button>
+                      <button type="button" class="btn btn-primary" data-clms-exam-review-submit>Submit final exam</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <script src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/js/clms-exam-stepper.js', ENT_QUOTES, 'UTF-8'); ?>"></script>
               <script>
                 (() => {
                   const form = document.getElementById('examForm');
@@ -629,6 +690,14 @@ require_once __DIR__ . '/includes/layout-top.php';
                   // fire an identical save immediately on mount.
                   lastPayload = signature(buildFormData());
                   setStatus('Saved', 'text-success');
+
+                  if (typeof window.clmsInitExamStepper === 'function') {
+                    window.clmsInitExamStepper({
+                      formSelector: '#examForm',
+                      navMapModalId: 'clmsFinalExamNavModal',
+                      reviewModalId: 'clmsFinalExamReviewModal',
+                    });
+                  }
                 })();
               </script>
 <?php

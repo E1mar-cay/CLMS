@@ -739,9 +739,16 @@ require_once __DIR__ . '/includes/layout-top.php';
                   </div>
 <?php endif; ?>
 
-                  <form method="post" id="moduleQuizForm" action="<?php echo htmlspecialchars($clmsWebBase . '/student/view_module.php?module_id=' . (int) $module['id'] . '#moduleQuizCard', ENT_QUOTES, 'UTF-8'); ?>">
+                  <form method="post" id="moduleQuizForm" class="pb-5" data-clms-exam-progress-key="<?php echo htmlspecialchars('clms-exam-pane-module-' . (int) $_SESSION['user_id'] . '-' . (int) $module['id'], ENT_QUOTES, 'UTF-8'); ?>" action="<?php echo htmlspecialchars($clmsWebBase . '/student/view_module.php?module_id=' . (int) $module['id'] . '#moduleQuizCard', ENT_QUOTES, 'UTF-8'); ?>">
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                     <input type="hidden" name="action" value="submit_module_quiz" />
+                    <div class="clms-exam-stepper mb-3">
+                      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <span class="fw-semibold mb-0">Progress</span>
+                        <span class="small text-muted clms-exam-stepper__summary" aria-live="polite"></span>
+                      </div>
+                      <p class="small text-muted mb-0 mt-2">Use the <strong>round button</strong> (bottom-right) to open the question map and submit. Green / orange show answered status.</p>
+                    </div>
 <?php $quizIndex = 0; ?>
 <?php foreach ($moduleQuestions as $mq) : ?>
 <?php
@@ -759,7 +766,7 @@ require_once __DIR__ . '/includes/layout-top.php';
   $submittedText = (string) ($respForQ['text'] ?? '');
   $submittedSeqMap = is_array($respForQ['sequence'] ?? null) ? $respForQ['sequence'] : [];
 ?>
-                    <div class="border rounded p-3 mb-3">
+                    <div class="border rounded p-3 mb-3 clms-exam-q-pane<?php echo $quizIndex === 1 ? ' clms-exam-q-pane--active' : ''; ?>">
                       <div class="d-flex justify-content-between align-items-start mb-2">
                         <strong>Question <?php echo $quizIndex; ?></strong>
                         <div>
@@ -835,11 +842,60 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php endif; ?>
                     </div>
 <?php endforeach; ?>
-                    <div class="d-flex gap-2">
-                      <button type="submit" class="btn btn-primary">Submit Answers</button>
-                      <small class="text-muted align-self-center"><i class="bx bx-save me-1"></i>Your answers auto-save as you type.</small>
+                    <div class="d-flex justify-content-between align-items-center gap-3 my-4 clms-exam-stepper-pager">
+                      <button type="button" class="btn btn-outline-primary clms-exam-stepper__prev">← Previous</button>
+                      <button type="button" class="btn btn-primary clms-exam-stepper__next">Next →</button>
                     </div>
+                    <p class="small text-muted mb-0"><i class="bx bx-save me-1"></i>Your answers auto-save as you type.</p>
+                    <button
+                      type="button"
+                      class="clms-exam-nav-fab btn btn-primary"
+                      data-bs-toggle="modal"
+                      data-bs-target="#clmsModuleQuizNavModal"
+                      title="Question map"
+                      aria-label="Open question map">
+                      <i class="bx bx-grid-alt" aria-hidden="true"></i>
+                    </button>
                   </form>
+
+                  <div class="modal fade" id="clmsModuleQuizNavModal" tabindex="-1" aria-labelledby="clmsModuleQuizNavTitle" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered modal-lg">
+                      <div class="modal-content">
+                        <div class="modal-header">
+                          <h5 class="modal-title" id="clmsModuleQuizNavTitle">Jump to question</h5>
+                          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                          <p class="small text-muted mb-3">Tap a number to open that question. <strong>Green</strong> = answered, <strong>orange</strong> = not answered (5 per row).</p>
+                          <div class="clms-exam-stepper__nav" data-clms-exam-nav-map role="navigation" aria-label="Question numbers"></div>
+                        </div>
+                        <div class="modal-footer d-flex flex-wrap gap-2 justify-content-between">
+                          <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Close</button>
+                          <button type="submit" form="moduleQuizForm" class="btn btn-primary">Submit answers</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="modal fade" id="clmsModuleQuizReviewModal" tabindex="-1" aria-labelledby="clmsModuleQuizReviewTitle" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered modal-lg">
+                      <div class="modal-content">
+                        <div class="modal-header">
+                          <h5 class="modal-title" id="clmsModuleQuizReviewTitle">Review answers</h5>
+                          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                          <div data-clms-exam-review-summary></div>
+                          <p class="small text-muted mb-2 mb-0">Green = answered · Orange = unanswered (5 per row).</p>
+                          <div class="mt-2 clms-exam-stepper__nav" data-clms-exam-review-nav></div>
+                        </div>
+                        <div class="modal-footer">
+                          <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Continue editing</button>
+                          <button type="button" class="btn btn-primary" data-clms-exam-review-submit>Submit assessment</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 <?php endif; ?>
@@ -1291,6 +1347,7 @@ require_once __DIR__ . '/includes/layout-top.php';
               </div>
 <?php endif; ?>
 
+              <script src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/js/clms-exam-stepper.js', ENT_QUOTES, 'UTF-8'); ?>"></script>
               <script>
                 (() => {
                   if ('scrollRestoration' in history) {
@@ -1381,6 +1438,14 @@ require_once __DIR__ . '/includes/layout-top.php';
                       clearAnswers();
                     } else {
                       restoreAnswers();
+                    }
+
+                    if (form && typeof window.clmsInitExamStepper === 'function') {
+                      window.clmsInitExamStepper({
+                        formSelector: '#moduleQuizForm',
+                        navMapModalId: 'clmsModuleQuizNavModal',
+                        reviewModalId: 'clmsModuleQuizReviewModal',
+                      });
                     }
 
                     const modalEl = document.getElementById('moduleQuizScoreModal');
