@@ -378,6 +378,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
                     $isCorrectFlag = true;
                 }
             } elseif ($type === 'multiple_select') {
+                $correctIds = array_map(
+                    static fn (array $a): int => (int) $a['id'],
+                    array_values(array_filter($answers, static fn (array $a): bool => (bool) $a['is_correct']))
+                );
+                sort($correctIds);
+                $correctSingle = count($correctIds) === 1 ? $correctIds[0] : null;
+
+                $selected = filter_var($submitted['single'] ?? null, FILTER_VALIDATE_INT);
+                if ($selected !== false && $selected !== null && $correctSingle !== null && (int) $selected === $correctSingle) {
+                    $awarded = $points;
+                    $isCorrectFlag = true;
+                    $totalAwarded += $awarded;
+                    $perQuestionFeedback[$qId] = [
+                        'awarded' => $awarded,
+                        'points' => $points,
+                        'correct' => $isCorrectFlag,
+                        'type' => $type,
+                    ];
+                    continue;
+                }
+
+                // Backward compatibility for older checkbox-based submissions.
                 $multi = $submitted['multiple'] ?? [];
                 if (!is_array($multi)) {
                     $multi = [];
@@ -391,12 +413,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
                 }
                 $submittedIds = array_values(array_unique($submittedIds));
                 sort($submittedIds);
-
-                $correctIds = array_map(
-                    static fn (array $a): int => (int) $a['id'],
-                    array_values(array_filter($answers, static fn (array $a): bool => (bool) $a['is_correct']))
-                );
-                sort($correctIds);
 
                 if ($submittedIds === $correctIds && $submittedIds !== []) {
                     $awarded = $points;
@@ -774,11 +790,11 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php elseif ($mq['question_type'] === 'multiple_select') : ?>
 <?php foreach ($mq['answers'] as $ans) : ?>
                       <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox"
-                          name="responses[<?php echo (int) $mq['id']; ?>][multiple][]"
+                        <input class="form-check-input" type="radio"
+                          name="responses[<?php echo (int) $mq['id']; ?>][single]"
                           id="mq<?php echo (int) $mq['id']; ?>_<?php echo (int) $ans['id']; ?>"
                           value="<?php echo (int) $ans['id']; ?>"
-                          <?php echo in_array((int) $ans['id'], $submittedMulti, true) ? 'checked' : ''; ?> />
+                          <?php echo (($submittedSingle !== false && $submittedSingle !== null && (int) $submittedSingle === (int) $ans['id']) || in_array((int) $ans['id'], $submittedMulti, true)) ? 'checked' : ''; ?> />
                         <label class="form-check-label" for="mq<?php echo (int) $mq['id']; ?>_<?php echo (int) $ans['id']; ?>">
                           <?php echo htmlspecialchars((string) $ans['answer_text'], ENT_QUOTES, 'UTF-8'); ?>
                         </label>

@@ -385,8 +385,8 @@ require_once __DIR__ . '/includes/layout-top.php';
                     <div class="form-check mb-2">
                       <input
                         class="form-check-input"
-                        type="checkbox"
-                        name="responses[<?php echo $qid; ?>][multiple][]"
+                        type="radio"
+                        name="responses[<?php echo $qid; ?>][single]"
                         id="q<?php echo $qid; ?>_a<?php echo (int) $answer['id']; ?>"
                         value="<?php echo (int) $answer['id']; ?>"
                         <?php echo in_array((int) $answer['id'], $qSelected, true) ? 'checked' : ''; ?> />

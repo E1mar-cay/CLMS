@@ -127,27 +127,38 @@ foreach ($questionTypes as $qid => $type) {
             ];
         }
     } elseif ($type === 'multiple_select') {
+        $selected = filter_var($submitted['single'] ?? null, FILTER_VALIDATE_INT);
+        if ($selected !== false && $selected !== null && isset($validAnswerIds[$qid][(int) $selected])) {
+            $responseRows[] = [
+                'question_id' => $qid,
+                'selected_answer_id' => (int) $selected,
+                'text_response' => null,
+                'submitted_sequence_position' => null,
+            ];
+            continue;
+        }
+
+        // Backward compatibility for older exam forms that posted checkbox arrays.
         $submittedMulti = $submitted['multiple'] ?? [];
         if (!is_array($submittedMulti)) {
             $submittedMulti = [];
         }
-        $seen = [];
         foreach ($submittedMulti as $value) {
             $id = filter_var($value, FILTER_VALIDATE_INT);
             if ($id === false || $id === null) {
                 continue;
             }
             $id = (int) $id;
-            if (!isset($validAnswerIds[$qid][$id]) || isset($seen[$id])) {
+            if (!isset($validAnswerIds[$qid][$id])) {
                 continue;
             }
-            $seen[$id] = true;
             $responseRows[] = [
                 'question_id' => $qid,
                 'selected_answer_id' => $id,
                 'text_response' => null,
                 'submitted_sequence_position' => null,
             ];
+            break;
         }
     } elseif ($type === 'sequencing') {
         $submittedSeq = $submitted['sequence'] ?? [];

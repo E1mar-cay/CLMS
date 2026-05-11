@@ -138,6 +138,32 @@ function clms_finalize_exam_attempt(
                 ];
             }
         } elseif ($type === 'multiple_select') {
+            $correctIds = array_map(
+                static fn (array $answer): int => (int) $answer['id'],
+                array_values(array_filter($answers, static fn (array $answer): bool => (bool) $answer['is_correct']))
+            );
+            sort($correctIds);
+            $correctSingle = count($correctIds) === 1 ? $correctIds[0] : null;
+
+            $selected = filter_var($submitted['single'] ?? null, FILTER_VALIDATE_INT);
+            if ($selected !== false && $selected !== null && $correctSingle !== null && (int) $selected === $correctSingle) {
+                $awarded = $points;
+            }
+
+            if ($selected !== false && $selected !== null) {
+                $responseRows[] = [
+                    'question_id' => $qId,
+                    'selected_answer_id' => (int) $selected,
+                    'text_response' => null,
+                    'submitted_sequence_position' => null,
+                    'is_graded' => 1,
+                    'points_awarded' => $awarded,
+                ];
+                $totalAwardedPoints += $awarded;
+                continue;
+            }
+
+            // Backward compatibility for older submissions/autosaves.
             $submittedMulti = $submitted['multiple'] ?? [];
             if (!is_array($submittedMulti)) {
                 $submittedMulti = [];
@@ -151,12 +177,6 @@ function clms_finalize_exam_attempt(
             }
             $submittedIds = array_values(array_unique($submittedIds));
             sort($submittedIds);
-
-            $correctIds = array_map(
-                static fn (array $answer): int => (int) $answer['id'],
-                array_values(array_filter($answers, static fn (array $answer): bool => (bool) $answer['is_correct']))
-            );
-            sort($correctIds);
 
             if ($submittedIds === $correctIds && $submittedIds !== []) {
                 $awarded = $points;
@@ -563,11 +583,8 @@ function clms_exam_rebuild_raw_from_autosave(PDO $pdo, int $attemptId, array $qu
                 $raw[$qid]['single'] = (int) $row['selected_answer_id'];
             }
         } elseif ($type === 'multiple_select') {
-            if ($row['selected_answer_id'] !== null) {
-                if (!isset($raw[$qid]['multiple']) || !is_array($raw[$qid]['multiple'])) {
-                    $raw[$qid]['multiple'] = [];
-                }
-                $raw[$qid]['multiple'][] = (int) $row['selected_answer_id'];
+            if ($row['selected_answer_id'] !== null && !isset($raw[$qid]['single'])) {
+                $raw[$qid]['single'] = (int) $row['selected_answer_id'];
             }
         } elseif ($type === 'sequencing') {
             if ($row['selected_answer_id'] !== null && $row['submitted_sequence_position'] !== null) {

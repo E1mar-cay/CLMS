@@ -33,11 +33,20 @@ function clms_avatar_resolve_url(?string $rawPath, string $clmsWebBase): string
     if (preg_match('/^(https?:)?\/\//i', $path) === 1 || str_starts_with($path, 'data:')) {
         return $path;
     }
-    if (str_starts_with($path, '/')) {
-        return rtrim($clmsWebBase, '/') . $path;
+    $normalizedPath = str_starts_with($path, '/') ? $path : '/' . ltrim($path, '/');
+    $resolvedUrl = rtrim($clmsWebBase, '/') . $normalizedPath;
+
+    // Cache-bust local avatar files so updated photos appear immediately.
+    $fsPath = dirname(__DIR__) . str_replace('/', DIRECTORY_SEPARATOR, $normalizedPath);
+    if (is_file($fsPath)) {
+        $mtime = @filemtime($fsPath);
+        if ($mtime !== false) {
+            $separator = str_contains($resolvedUrl, '?') ? '&' : '?';
+            $resolvedUrl .= $separator . 'v=' . (int) $mtime;
+        }
     }
 
-    return rtrim($clmsWebBase, '/') . '/' . ltrim($path, '/');
+    return $resolvedUrl;
 }
 
 /**
