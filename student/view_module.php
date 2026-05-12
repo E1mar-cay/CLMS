@@ -815,24 +815,72 @@ require_once __DIR__ . '/includes/layout-top.php';
                         value="<?php echo htmlspecialchars($submittedText, ENT_QUOTES, 'UTF-8'); ?>" />
 
 <?php elseif ($mq['question_type'] === 'sequencing') : ?>
-                      <p class="small text-muted mb-2">Set the correct order for each item.</p>
-<?php $orderMaxMq = count($mq['answers']); ?>
-<?php foreach ($mq['answers'] as $ans) : ?>
-<?php $submittedPosForAns = filter_var($submittedSeqMap[(string) $ans['id']] ?? $submittedSeqMap[(int) $ans['id']] ?? null, FILTER_VALIDATE_INT); ?>
-                      <div class="row align-items-center mb-2">
-                        <div class="col-md-8">
-                          <label class="form-label mb-0"><?php echo htmlspecialchars((string) $ans['answer_text'], ENT_QUOTES, 'UTF-8'); ?></label>
-                        </div>
-                        <div class="col-md-4">
-                          <select class="form-select" name="responses[<?php echo (int) $mq['id']; ?>][sequence][<?php echo (int) $ans['id']; ?>]">
-                            <option value="">Select order</option>
-<?php for ($i = 1; $i <= $orderMaxMq; $i++) : ?>
-                            <option value="<?php echo $i; ?>" <?php echo ($submittedPosForAns !== false && $submittedPosForAns !== null && (int) $submittedPosForAns === $i) ? 'selected' : ''; ?>><?php echo $i; ?></option>
-<?php endfor; ?>
-                          </select>
-                        </div>
-                      </div>
+                      <p class="small text-muted mb-2">Drag the items into the correct order. You can also use the <strong>↑ / ↓</strong> buttons (or arrow keys while focused).</p>
+<?php
+                      /*
+                       * Sequencing items are reorderable: each row carries a
+                       * hidden position input named responses[<qid>][sequence][<answer_id>]
+                       * so the existing server-side schema keeps working. Saved
+                       * positions (from autosave) sort the items; unsaved items
+                       * fall back to their natural DB order. The JS renumbers
+                       * positions on every drag / keyboard move.
+                       */
+                      $seqAnswersMq = $mq['answers'];
+                      $seqSavedMq = [];
+                      foreach ($seqAnswersMq as $__a) {
+                          $__aId = (int) $__a['id'];
+                          $__p = filter_var(
+                              $submittedSeqMap[(string) $__a['id']] ?? $submittedSeqMap[$__aId] ?? null,
+                              FILTER_VALIDATE_INT
+                          );
+                          if ($__p !== false && $__p !== null && (int) $__p > 0) {
+                              $seqSavedMq[$__aId] = (int) $__p;
+                          }
+                      }
+                      if ($seqSavedMq !== []) {
+                          usort($seqAnswersMq, static function ($a, $b) use ($seqSavedMq) {
+                              $pa = $seqSavedMq[(int) $a['id']] ?? PHP_INT_MAX;
+                              $pb = $seqSavedMq[(int) $b['id']] ?? PHP_INT_MAX;
+                              if ($pa === $pb) {
+                                  return ((int) $a['id']) <=> ((int) $b['id']);
+                              }
+                              return $pa <=> $pb;
+                          });
+                      }
+?>
+                      <ol class="clms-seq-list" data-clms-sequence-list data-clms-qid="<?php echo (int) $mq['id']; ?>" aria-label="Drag to reorder">
+<?php foreach ($seqAnswersMq as $seqIdx => $ans) :
+    $ansId = (int) $ans['id'];
+    $pos = $seqIdx + 1;
+?>
+                        <li
+                          class="clms-seq-item"
+                          data-answer-id="<?php echo $ansId; ?>"
+                          draggable="true"
+                          tabindex="0"
+                          role="listitem"
+                          aria-roledescription="Sortable item">
+                          <span class="clms-seq-handle" aria-hidden="true">
+                            <i class="bx bx-menu"></i>
+                          </span>
+                          <span class="clms-seq-pos" aria-label="Position"><?php echo $pos; ?></span>
+                          <span class="clms-seq-text"><?php echo htmlspecialchars((string) $ans['answer_text'], ENT_QUOTES, 'UTF-8'); ?></span>
+                          <span class="clms-seq-controls" role="group" aria-label="Reorder">
+                            <button type="button" class="btn btn-outline-secondary" data-clms-seq-up aria-label="Move up">
+                              <i class="bx bx-chevron-up" aria-hidden="true"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" data-clms-seq-down aria-label="Move down">
+                              <i class="bx bx-chevron-down" aria-hidden="true"></i>
+                            </button>
+                          </span>
+                          <input
+                            type="hidden"
+                            data-clms-seq-input
+                            name="responses[<?php echo (int) $mq['id']; ?>][sequence][<?php echo $ansId; ?>]"
+                            value="<?php echo $pos; ?>" />
+                        </li>
 <?php endforeach; ?>
+                      </ol>
 
 <?php elseif ($mq['question_type'] === 'essay') : ?>
                       <textarea class="form-control" rows="3"
@@ -1309,10 +1357,11 @@ require_once __DIR__ . '/includes/layout-top.php';
                     </div>
                     <div class="modal-footer">
 <?php if ($quizFeedback['passed']) : ?>
+                      <div class="d-grid gap-2 d-sm-flex justify-content-sm-end w-100">
 <?php if ($nextModuleRow !== null) : ?>
-                      <a class="btn btn-primary" href="<?php echo htmlspecialchars($clmsWebBase . '/student/view_module.php?module_id=' . (int) $nextModuleRow['id'], ENT_QUOTES, 'UTF-8'); ?>">
-                        Next Module <i class="bx bx-chevron-right ms-1"></i>
-                      </a>
+                        <a class="btn btn-primary" href="<?php echo htmlspecialchars($clmsWebBase . '/student/view_module.php?module_id=' . (int) $nextModuleRow['id'], ENT_QUOTES, 'UTF-8'); ?>">
+                          Next Module <i class="bx bx-chevron-right ms-1"></i>
+                        </a>
 <?php elseif ($hasFinalExam && $allModulesCompleted) :
     $mockPassedModal = false;
     $hasMockQModal = false;
@@ -1328,18 +1377,21 @@ require_once __DIR__ . '/includes/layout-top.php';
     } catch (Throwable $e) {}
 ?>
 <?php if (!$hasMockQModal || $mockPassedModal) : ?>
-                      <a class="btn btn-success" href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_exam.php?course_id=' . (int) $module['course_id'], ENT_QUOTES, 'UTF-8'); ?>">
-                        <i class="bx bx-certification me-1"></i> Take Final Exam
-                      </a>
+                        <a class="btn btn-success" href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_exam.php?course_id=' . (int) $module['course_id'], ENT_QUOTES, 'UTF-8'); ?>">
+                          <i class="bx bx-certification me-1"></i> Take Final Exam
+                        </a>
 <?php else : ?>
-                      <a class="btn btn-warning text-white" href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_mock_exam.php?course_id=' . (int) $module['course_id'], ENT_QUOTES, 'UTF-8'); ?>">
-                        <i class="bx bx-brain me-1"></i> Take Mock Exam First
-                      </a>
+                        <a class="btn btn-warning text-white" href="<?php echo htmlspecialchars($clmsWebBase . '/student/take_mock_exam.php?course_id=' . (int) $module['course_id'], ENT_QUOTES, 'UTF-8'); ?>">
+                          <i class="bx bx-brain me-1"></i> Take Mock Exam First
+                        </a>
 <?php endif; ?>
 <?php endif; ?>
-                      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Review Answers</button>
+                        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                          <i class="bx bx-list-check me-1"></i> Review Answers
+                        </button>
+                      </div>
 <?php else : ?>
-                      <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Review &amp; Retake</button>
+                      <button type="button" class="btn btn-primary w-100" data-bs-dismiss="modal">Review &amp; Retake</button>
 <?php endif; ?>
                     </div>
                   </div>
@@ -1347,6 +1399,7 @@ require_once __DIR__ . '/includes/layout-top.php';
               </div>
 <?php endif; ?>
 
+              <script src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/js/clms-exam-sequencing.js', ENT_QUOTES, 'UTF-8'); ?>"></script>
               <script src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/js/clms-exam-stepper.js', ENT_QUOTES, 'UTF-8'); ?>"></script>
               <script>
                 (() => {

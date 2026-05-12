@@ -604,3 +604,98 @@ a:hover {
 .clms-exam-stepper-pager {
   flex-wrap: wrap;
 }
+
+/* ---- 11. Sequencing (drag-and-drop) ---- */
+.clms-seq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  /* Touch users: drive ordering via the Up/Down buttons, not native drag. */
+  touch-action: pan-y;
+}
+.clms-seq-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(15, 32, 75, 0.12);
+  border-radius: 0.5rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 32, 75, 0.04);
+  cursor: grab;
+  user-select: none;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s, background 0.15s;
+}
+.clms-seq-item:hover {
+  border-color: rgba(128, 0, 0, 0.35);
+  box-shadow: 0 0.25rem 0.6rem rgba(15, 32, 75, 0.08);
+}
+.clms-seq-item:focus-within {
+  outline: 2px solid rgba(128, 0, 0, 0.35);
+  outline-offset: 2px;
+}
+.clms-seq-item.is-dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+  background: #fff7ed;
+  border-color: rgba(255, 159, 67, 0.7);
+}
+.clms-seq-item.is-drop-target {
+  border-color: var(--bs-primary, #800000);
+  box-shadow: 0 0 0 2px rgba(128, 0, 0, 0.18);
+}
+.clms-seq-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: rgba(15, 32, 75, 0.45);
+  font-size: 1.15rem;
+  cursor: grab;
+}
+.clms-seq-item.is-dragging .clms-seq-handle {
+  cursor: grabbing;
+}
+.clms-seq-pos {
+  flex: 0 0 auto;
+  min-width: 2.1rem;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(128, 0, 0, 0.08);
+  color: var(--bs-primary, #800000);
+}
+.clms-seq-text {
+  flex: 1 1 auto;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.clms-seq-controls {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.clms-seq-controls .btn {
+  --bs-btn-padding-y: 0.1rem;
+  --bs-btn-padding-x: 0.4rem;
+  line-height: 1;
+}
+.clms-seq-help {
+  font-size: 0.8125rem;
+  color: rgba(15, 32, 75, 0.65);
+}
+@media (max-width: 575.98px) {
+  .clms-seq-item {
+    padding: 0.55rem 0.65rem;
+    gap: 0.5rem;
+  }
+  .clms-seq-handle { display: none; }
+  .clms-seq-text   { font-size: 0.9rem; }
+}

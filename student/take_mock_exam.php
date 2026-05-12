@@ -318,25 +318,62 @@ require_once __DIR__ . '/includes/layout-top.php';
                       value="<?php echo htmlspecialchars($qText, ENT_QUOTES, 'UTF-8'); ?>" />
 
 <?php elseif ($question['question_type'] === 'sequencing') : ?>
-                    <p class="small text-muted mb-3">Set the correct order for each item.</p>
-<?php $orderMax = count($question['answers']); ?>
-<?php foreach ($question['answers'] as $answer) : ?>
-                    <div class="row align-items-center mb-3">
-                      <div class="col-md-8">
-                        <label class="form-label mb-0"><?php echo htmlspecialchars((string) $answer['answer_text'], ENT_QUOTES, 'UTF-8'); ?></label>
-                      </div>
-                      <div class="col-md-4">
-<?php $savedPos = $qSequence[(int) $answer['id']] ?? null; ?>
-                        <select class="form-select"
-                          name="responses[<?php echo $qid; ?>][sequence][<?php echo (int) $answer['id']; ?>]">
-                          <option value="">Select order</option>
-<?php for ($i = 1; $i <= $orderMax; $i++) : ?>
-                          <option value="<?php echo $i; ?>" <?php echo $savedPos === $i ? 'selected' : ''; ?>><?php echo $i; ?></option>
-<?php endfor; ?>
-                        </select>
-                      </div>
-                    </div>
+                    <p class="small text-muted mb-2">Drag the items into the correct order. You can also use the <strong>↑ / ↓</strong> buttons (or arrow keys while focused).</p>
+<?php
+                    /*
+                     * Sequencing items are reorderable: each row carries a hidden
+                     * position input named responses[<qid>][sequence][<answer_id>]
+                     * so the existing server-side schema keeps working. Saved
+                     * positions (from autosave) sort the items; unsaved items
+                     * fall back to their natural DB order. The JS renumbers
+                     * positions on every drag/keyboard move.
+                     */
+                    $seqAnswers = $question['answers'];
+                    $seqSaved = $qSequence;
+                    if ($seqSaved !== []) {
+                        usort($seqAnswers, static function ($a, $b) use ($seqSaved) {
+                            $pa = $seqSaved[(int) $a['id']] ?? PHP_INT_MAX;
+                            $pb = $seqSaved[(int) $b['id']] ?? PHP_INT_MAX;
+                            if ($pa === $pb) {
+                                return ((int) $a['id']) <=> ((int) $b['id']);
+                            }
+                            return $pa <=> $pb;
+                        });
+                    }
+?>
+                    <ol class="clms-seq-list" data-clms-sequence-list data-clms-qid="<?php echo $qid; ?>" aria-label="Drag to reorder">
+<?php foreach ($seqAnswers as $seqIdx => $answer) :
+    $ansId = (int) $answer['id'];
+    $pos = $seqIdx + 1;
+?>
+                      <li
+                        class="clms-seq-item"
+                        data-answer-id="<?php echo $ansId; ?>"
+                        draggable="true"
+                        tabindex="0"
+                        role="listitem"
+                        aria-roledescription="Sortable item">
+                        <span class="clms-seq-handle" aria-hidden="true">
+                          <i class="bx bx-menu"></i>
+                        </span>
+                        <span class="clms-seq-pos" aria-label="Position"><?php echo $pos; ?></span>
+                        <span class="clms-seq-text"><?php echo htmlspecialchars((string) $answer['answer_text'], ENT_QUOTES, 'UTF-8'); ?></span>
+                        <span class="clms-seq-controls" role="group" aria-label="Reorder">
+                          <button type="button" class="btn btn-outline-secondary" data-clms-seq-up aria-label="Move up">
+                            <i class="bx bx-chevron-up" aria-hidden="true"></i>
+                          </button>
+                          <button type="button" class="btn btn-outline-secondary" data-clms-seq-down aria-label="Move down">
+                            <i class="bx bx-chevron-down" aria-hidden="true"></i>
+                          </button>
+                        </span>
+                        <input
+                          type="hidden"
+                          data-clms-seq-input
+                          name="responses[<?php echo $qid; ?>][sequence][<?php echo $ansId; ?>]"
+                          value="<?php echo $pos; ?>" />
+                      </li>
 <?php endforeach; ?>
+                    </ol>
 <?php endif; ?>
                   </div>
                 </div>
@@ -397,6 +434,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
               </div>
 
+              <script src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/js/clms-exam-sequencing.js', ENT_QUOTES, 'UTF-8'); ?>"></script>
               <script src="<?php echo htmlspecialchars($clmsWebBase . '/public/assets/js/clms-exam-stepper.js', ENT_QUOTES, 'UTF-8'); ?>"></script>
               <script>
                 (() => {

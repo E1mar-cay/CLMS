@@ -30,6 +30,19 @@
       return true;
     }
 
+    // Drag-and-drop sequencing question: every list item has a hidden
+    // position input. The pane is "answered" as long as every input has
+    // a non-empty positive integer value (the JS renumber() pass
+    // guarantees this on every reorder).
+    const seqInputs = pane.querySelectorAll('input[type="hidden"][data-clms-seq-input]');
+    if (seqInputs.length > 0) {
+      for (let i = 0; i < seqInputs.length; i++) {
+        const v = String(seqInputs[i].value || '').trim();
+        if (v === '' || !(parseInt(v, 10) > 0)) return false;
+      }
+      return true;
+    }
+
     return false;
   }
 
