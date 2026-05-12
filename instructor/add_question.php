@@ -8,8 +8,10 @@ $clmsWebBase = $clmsWebBase ?? '';
 require_once dirname(__DIR__) . '/includes/audit-log.php';
 require_once dirname(__DIR__) . '/database.php';
 require_once dirname(__DIR__) . '/includes/clms-exam-types-schema.php';
+require_once dirname(__DIR__) . '/includes/course-publish-schema.php';
 
 clms_ensure_exam_types_schema($pdo);
+clms_ensure_course_publish_schema($pdo);
 
 clms_require_roles(['instructor']);
 
@@ -634,6 +636,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log($e->getMessage());
       }
     }
+  } elseif (($_POST['action'] ?? '') === 'submit_for_publish') {
+    try {
+      $submitCourseId = filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
+      if ($submitCourseId === false || $submitCourseId === null || $submitCourseId <= 0 || !isset($assignedSet[(int) $submitCourseId])) {
+        throw new RuntimeException('You can only submit courses in your scope.');
+      }
+
+      $statusStmt = $pdo->prepare(
+        "SELECT title, COALESCE(publish_status, 'draft') AS publish_status
+           FROM courses WHERE id = :id LIMIT 1"
+      );
+      $statusStmt->execute(['id' => (int) $submitCourseId]);
+      $statusRow = $statusStmt->fetch();
+      if (!$statusRow) {
+        throw new RuntimeException('Course not found.');
+      }
+      $currentPublishStatus = (string) $statusRow['publish_status'];
+      if (!in_array($currentPublishStatus, ['draft', 'changes_requested'], true)) {
+        throw new RuntimeException('This course is not in a state that can be submitted for review.');
+      }
+
+      $readiness = clms_course_publish_readiness($pdo, (int) $submitCourseId);
+      if (!$readiness['can_submit']) {
+        throw new RuntimeException((string) $readiness['reason']);
+      }
+
+      $submitStmt = $pdo->prepare(
+        "UPDATE courses
+            SET publish_status = 'pending_review',
+                is_published = 0,
+                publish_submitted_at = NOW(),
+                publish_submitted_by = :uid,
+                publish_reviewed_at = NULL,
+                publish_reviewed_by = NULL,
+                publish_review_notes = NULL
+          WHERE id = :id"
+      );
+      $submitStmt->execute(['uid' => $instructorId, 'id' => (int) $submitCourseId]);
+
+      clms_audit_ensure_schema($pdo);
+      clms_audit_log(
+        $pdo,
+        'course_submit_for_publish',
+        'course',
+        (int) $submitCourseId,
+        [
+          'title' => (string) ($statusRow['title'] ?? ''),
+          'previous_status' => $currentPublishStatus,
+        ],
+        $instructorId
+      );
+
+      $successMessage = 'Course submitted for publishing review. An admin will approve it before students can see it.';
+    } catch (Throwable $e) {
+      $errorMessage = $e instanceof RuntimeException ? $e->getMessage() : 'Unable to submit this course for review.';
+      if (!($e instanceof RuntimeException)) {
+        error_log($e->getMessage());
+      }
+    }
   } else {
     try {
       $courseId = filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
@@ -1102,6 +1163,24 @@ if ($hasSelectedCourse) {
   }
 }
 
+$selectedCoursePublish = null;
+if ($hasSelectedCourse) {
+  try {
+    $publishStmt = $pdo->prepare(
+      "SELECT COALESCE(publish_status, 'draft') AS publish_status,
+              publish_submitted_at,
+              publish_reviewed_at,
+              publish_review_notes,
+              is_published
+         FROM courses WHERE id = :id LIMIT 1"
+    );
+    $publishStmt->execute(['id' => (int) $selectedCourseId]);
+    $selectedCoursePublish = $publishStmt->fetch() ?: null;
+  } catch (Throwable $e) {
+    error_log('instructor publish-status fetch: ' . $e->getMessage());
+  }
+}
+
 require_once __DIR__ . '/includes/layout-top.php';
 ?>
 <?php
@@ -1162,6 +1241,71 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
     </div>
   </div>
 </div>
+
+<?php if ($hasSelectedCourse && $selectedCoursePublish) :
+  $instructorPublishStatus = (string) $selectedCoursePublish['publish_status'];
+  $instructorPublishMeta = clms_course_publish_status_meta($instructorPublishStatus);
+  $instructorReadiness = clms_course_publish_readiness($pdo, (int) $selectedCourseId);
+  $instructorCanSubmitNow = $instructorReadiness['can_submit'];
+  $instructorSubmitReason = (string) ($instructorReadiness['reason'] ?? '');
+  $instructorReviewNotes = trim((string) ($selectedCoursePublish['publish_review_notes'] ?? ''));
+  $instructorShowSubmit = in_array($instructorPublishStatus, ['draft', 'changes_requested'], true);
+
+  $bannerClass = match ($instructorPublishStatus) {
+    'pending_review' => 'alert-warning',
+    'published' => 'alert-success',
+    'changes_requested' => 'alert-danger',
+    default => 'alert-secondary',
+  };
+?>
+<div class="alert <?php echo $bannerClass; ?> d-flex flex-wrap align-items-start gap-3 mb-3" role="status">
+  <i class="bx <?php echo htmlspecialchars($instructorPublishMeta['icon'], ENT_QUOTES, 'UTF-8'); ?> fs-3"></i>
+  <div class="flex-grow-1" style="min-width: 0;">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <span class="badge <?php echo htmlspecialchars($instructorPublishMeta['badge'], ENT_QUOTES, 'UTF-8'); ?>">
+        <?php echo htmlspecialchars($instructorPublishMeta['label'], ENT_QUOTES, 'UTF-8'); ?>
+      </span>
+      <strong class="mb-0">Publishing status</strong>
+    </div>
+    <div class="small">
+<?php if ($instructorPublishStatus === 'draft') : ?>
+      This course is hidden from students. Finish setting up modules + questions, then click <em>Submit for publishing</em> so an admin can review and approve it.
+<?php elseif ($instructorPublishStatus === 'pending_review') : ?>
+      Submitted for admin approval. Students still can&rsquo;t see this course on their dashboard until it&rsquo;s approved.
+<?php elseif ($instructorPublishStatus === 'published') : ?>
+      Live on the student dashboard. You can keep editing modules + questions — your edits don&rsquo;t unpublish the course.
+<?php elseif ($instructorPublishStatus === 'changes_requested') : ?>
+      An admin sent this course back for changes. Address the notes below, then submit it again.
+<?php endif; ?>
+    </div>
+<?php if ($instructorPublishStatus === 'changes_requested' && $instructorReviewNotes !== '') : ?>
+    <div class="mt-2 p-2 rounded border bg-white text-body small">
+      <strong class="d-block mb-1"><i class="bx bx-message-detail me-1"></i>Admin notes</strong>
+      <?php echo nl2br(htmlspecialchars($instructorReviewNotes, ENT_QUOTES, 'UTF-8')); ?>
+    </div>
+<?php endif; ?>
+<?php if ($instructorShowSubmit && !$instructorCanSubmitNow) : ?>
+    <div class="mt-2 small text-muted">
+      <i class="bx bx-info-circle me-1"></i><?php echo htmlspecialchars($instructorSubmitReason, ENT_QUOTES, 'UTF-8'); ?>
+    </div>
+<?php endif; ?>
+  </div>
+<?php if ($instructorShowSubmit) : ?>
+  <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId, ENT_QUOTES, 'UTF-8'); ?>" class="ms-md-auto js-submit-publish-form">
+    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+    <input type="hidden" name="action" value="submit_for_publish" />
+    <input type="hidden" name="course_id" value="<?php echo (int) $selectedCourseId; ?>" />
+    <button
+      type="submit"
+      class="btn btn-warning"
+      <?php echo $instructorCanSubmitNow ? '' : 'disabled'; ?>
+      title="<?php echo $instructorCanSubmitNow ? 'Submit this course for admin review' : htmlspecialchars($instructorSubmitReason, ENT_QUOTES, 'UTF-8'); ?>">
+      <i class="bx bx-upload me-1"></i>Submit for publishing
+    </button>
+  </form>
+<?php endif; ?>
+</div>
+<?php endif; ?>
 
 <noscript>
   <?php if ($successMessage !== '') : ?>
@@ -1957,6 +2101,27 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
       <?php echo json_encode($successMessage, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>,
       <?php echo json_encode($errorMessage, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>
     );
+
+    document.querySelectorAll('.js-submit-publish-form').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        if (form.dataset.confirmed === '1') return;
+        event.preventDefault();
+        Swal.fire({
+          title: 'Submit for publishing?',
+          text: 'An admin will review your course before it appears on the student dashboard.',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Yes, submit',
+          cancelButtonText: 'Cancel',
+          confirmButtonColor: '#0f204b',
+        }).then((result) => {
+          if (result.isConfirmed) {
+            form.dataset.confirmed = '1';
+            form.submit();
+          }
+        });
+      });
+    });
 
     const moduleForm = document.getElementById('moduleVideoForm');
     const moduleModalEl = document.getElementById('moduleVideoModal');

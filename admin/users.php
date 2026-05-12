@@ -982,27 +982,23 @@ require_once __DIR__ . '/includes/layout-top.php';
                 <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                   <h5 class="mb-0">All users</h5>
                   <div class="clms-users-toolbar">
-                    <button type="button" class="btn btn-sm btn-outline-info" id="clms-bulk-batch-btn" disabled>
-                      Set batch…
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-success" id="clms-bulk-approve-btn" disabled>
-                      Approve Selected
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="clms-bulk-disable-btn" disabled>
-                      Disable Selected
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-success" id="clms-bulk-enable-btn" disabled>
-                      Enable Selected
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-danger" id="clms-bulk-delete-btn" disabled>
-                      Delete Selected
-                    </button>
-                    <a
-                      href="<?php echo htmlspecialchars($pendingToggleUrl, ENT_QUOTES, 'UTF-8'); ?>"
-                      class="btn btn-sm <?php echo $pendingOnly ? 'btn-warning' : 'btn-outline-warning'; ?>">
-                      <?php echo $pendingOnly ? 'Pending Only: ON' : 'Pending Only'; ?>
-                      <span class="badge bg-white text-warning ms-1"><?php echo $pendingApprovalCount; ?></span>
-                    </a>
+                    <div class="clms-users-bulk-actions d-none" id="clms-users-bulk-actions" aria-hidden="true">
+                      <button type="button" class="btn btn-sm btn-outline-info" id="clms-bulk-batch-btn" disabled>
+                        Set batch…
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-success" id="clms-bulk-approve-btn" disabled>
+                        Approve Selected
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="clms-bulk-disable-btn" disabled>
+                        Disable Selected
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-success" id="clms-bulk-enable-btn" disabled>
+                        Enable Selected
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-danger" id="clms-bulk-delete-btn" disabled>
+                        Delete Selected
+                      </button>
+                    </div>
                     <form
                       method="get"
                       action="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php', ENT_QUOTES, 'UTF-8'); ?>"
@@ -1010,6 +1006,12 @@ require_once __DIR__ . '/includes/layout-top.php';
                       id="clms-users-search-form"
                       role="search">
                     <div class="d-flex flex-wrap gap-2 align-items-center clms-users-filters">
+                      <a
+                        href="<?php echo htmlspecialchars($pendingToggleUrl, ENT_QUOTES, 'UTF-8'); ?>"
+                        class="btn btn-sm <?php echo $pendingOnly ? 'btn-warning' : 'btn-outline-warning'; ?>">
+                        <?php echo $pendingOnly ? 'Pending Only: ON' : 'Pending Only'; ?>
+                        <span class="badge bg-white text-warning ms-1"><?php echo $pendingApprovalCount; ?></span>
+                      </a>
                       <label class="visually-hidden" for="clms-users-filter-batch">Batch</label>
                       <select class="form-select form-select-sm clms-users-filter-select" name="batch" id="clms-users-filter-batch" title="Student batch / cohort">
                         <option value=""<?php echo $filterBatch === '' ? ' selected' : ''; ?>>All batches</option>
@@ -1050,33 +1052,78 @@ require_once __DIR__ . '/includes/layout-top.php';
                         aria-hidden="true"></span>
                     </div>
                     <style>
+                      /* ── Toolbar layout ────────────────────────────────────
+                         The card-header has the title on the left; the
+                         toolbar takes its own full-width row underneath so
+                         there's room for two stacked rows (bulk-actions on
+                         top, filters + search below). */
                       .clms-users-toolbar {
                         display: flex;
                         flex-wrap: wrap;
-                        gap: .5rem;
+                        gap: .75rem;
                         align-items: center;
-                        justify-content: flex-end;
+                        flex: 1 1 100%;
                       }
                       .clms-users-toolbar .btn {
                         white-space: nowrap;
                       }
+                      /* Bulk-actions row: shown only when a user is checked.
+                         Buttons are centered as a tight cluster (uniform min
+                         width keeps them visually balanced). */
+                      .clms-users-bulk-actions {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: .5rem;
+                        align-items: center;
+                        flex: 1 1 100%;
+                        justify-content: center;
+                      }
+                      .clms-users-bulk-actions.d-none {
+                        display: none !important;
+                      }
+                      .clms-users-bulk-actions > .btn {
+                        min-width: 10rem;
+                      }
+                      /* Filter row: filters cluster on the left, search input
+                         pinned to the right — classic admin-table header. */
                       .clms-users-search-form {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: .75rem;
+                        align-items: center;
+                        flex: 1 1 100%;
+                        justify-content: space-between;
+                      }
+                      .clms-users-filters {
                         display: flex;
                         flex-wrap: wrap;
                         gap: .5rem;
                         align-items: center;
                       }
-                      .clms-users-filters {
-                        flex: 0 1 auto;
-                      }
                       .clms-users-filter-select {
                         width: auto;
-                        min-width: 7.5rem;
-                        max-width: 12rem;
+                        min-width: 11rem;
+                        max-width: 14rem;
                       }
                       #clms-users-filter-batch {
-                        min-width: 9.5rem;
-                        max-width: 14rem;
+                        min-width: 12rem;
+                        max-width: 15rem;
+                      }
+                      @media (max-width: 991.98px) {
+                        .clms-users-bulk-actions > .btn {
+                          flex: 1 1 calc(50% - .5rem);
+                          min-width: 160px;
+                          text-align: center;
+                        }
+                        .clms-users-search-form {
+                          justify-content: flex-start;
+                        }
+                      }
+                      @media (max-width: 575.98px) {
+                        .clms-users-bulk-actions > .btn {
+                          flex: 1 1 100%;
+                          width: 100%;
+                        }
                       }
                       .clms-users-search-field {
                         position: relative;
@@ -1107,35 +1154,21 @@ require_once __DIR__ . '/includes/layout-top.php';
                         transform: translateY(-50%);
                       }
                       @media (max-width: 991.98px) {
-                        .clms-users-toolbar {
-                          width: 100%;
-                          justify-content: flex-start;
-                        }
-                        .clms-users-toolbar > .btn,
-                        .clms-users-toolbar > a {
-                          flex: 1 1 calc(50% - .5rem);
-                          min-width: 160px;
-                          text-align: center;
-                        }
-                        .clms-users-search-form {
-                          flex: 1 1 100%;
-                          width: 100%;
-                        }
                         .clms-users-search-field {
                           min-width: 0;
                           flex: 1 1 auto;
                         }
                       }
                       @media (max-width: 575.98px) {
-                        .clms-users-toolbar > .btn,
-                        .clms-users-toolbar > a,
-                        .clms-users-search-form .btn {
+                        .clms-users-filter-select,
+                        #clms-users-filter-batch,
+                        .clms-users-filters .btn {
                           flex: 1 1 100%;
                           width: 100%;
+                          max-width: none;
                         }
-                        .clms-users-search-form {
-                          flex-direction: column;
-                          align-items: stretch;
+                        .clms-users-filters {
+                          width: 100%;
                         }
                       }
                     </style>
@@ -1212,6 +1245,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                   const usersSpinner = document.getElementById('clms-users-search-spinner');
                   const usersClearBtn = document.getElementById('clms-users-search-clear');
                   const usersPartial = document.getElementById('clms-users-partial');
+                  const bulkActionsWrap = document.getElementById('clms-users-bulk-actions');
 
                   const confirmDeleteButton = (btn) => {
                     if (!btn || btn.disabled) return;
@@ -1294,6 +1328,17 @@ require_once __DIR__ . '/includes/layout-top.php';
                     const selectedIds = getSelectedIds();
                     const studentCbs = getStudentRowCheckboxes();
                     const studentSelected = getSelectedStudentIdsForBatch();
+                    /*
+                     * Hide the bulk-actions toolbar until at least one row is
+                     * checked. This keeps the default toolbar clean and only
+                     * surfaces destructive actions (delete / disable / etc.)
+                     * once the admin has explicitly picked targets.
+                     */
+                    if (bulkActionsWrap) {
+                      const hasSelection = selectedIds.length > 0;
+                      bulkActionsWrap.classList.toggle('d-none', !hasSelection);
+                      bulkActionsWrap.setAttribute('aria-hidden', hasSelection ? 'false' : 'true');
+                    }
                     const header = usersPartial.querySelector('.clms-user-select-all');
                     if (header) {
                       const allStudentsOnPage =

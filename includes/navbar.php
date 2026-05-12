@@ -84,6 +84,44 @@ if ($sessionRole === 'admin' && isset($pdo) && $pdo instanceof PDO) {
   }
 }
 
+/* Courses awaiting publish-review queue — surfaced as a dedicated bell next
+   to the pending-accounts one so admins notice when an instructor has
+   pushed a course for approval. Same look-and-feel + polling pattern. */
+$adminPendingCourseReviewsCount = 0;
+$adminPendingCourseReviews = [];
+if ($sessionRole === 'admin' && isset($pdo) && $pdo instanceof PDO) {
+  try {
+    require_once __DIR__ . '/course-publish-schema.php';
+    clms_ensure_course_publish_schema($pdo);
+
+    $courseReviewCountStmt = $pdo->query(
+      "SELECT COUNT(*) AS c
+             FROM courses
+             WHERE COALESCE(publish_status, 'draft') = 'pending_review'"
+    );
+    $adminPendingCourseReviewsCount = (int) ($courseReviewCountStmt->fetch()['c'] ?? 0);
+
+    $courseReviewListStmt = $pdo->query(
+      "SELECT
+              c.id,
+              c.title,
+              c.publish_submitted_at,
+              TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS submitter_name,
+              u.email AS submitter_email
+           FROM courses c
+           LEFT JOIN users u ON u.id = c.publish_submitted_by
+           WHERE COALESCE(c.publish_status, 'draft') = 'pending_review'
+           ORDER BY c.publish_submitted_at DESC, c.id DESC
+           LIMIT 10"
+    );
+    $adminPendingCourseReviews = $courseReviewListStmt->fetchAll();
+  } catch (Throwable $e) {
+    error_log('admin pending course-review notifications: ' . $e->getMessage());
+    $adminPendingCourseReviewsCount = 0;
+    $adminPendingCourseReviews = [];
+  }
+}
+
 $displayName = $sessionFirstName !== '' ? $sessionFirstName : ($sessionEmail !== '' ? explode('@', $sessionEmail)[0] : 'User');
 
 $initial = mb_strtoupper(mb_substr($displayName, 0, 1) ?: 'U');
@@ -379,6 +417,78 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                 href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php?pending=1', ENT_QUOTES, 'UTF-8'); ?>"
                 class="text-decoration-none small fw-semibold">
                 Review pending accounts
+              </a>
+            </div>
+          </div>
+        </li>
+        <li class="nav-item dropdown-notifications navbar-dropdown dropdown me-1" id="clmsAdminCourseReviewWrap">
+          <a
+            class="nav-link dropdown-toggle hide-arrow clms-bell-btn"
+            href="javascript:void(0);"
+            data-bs-toggle="dropdown"
+            data-bs-auto-close="outside"
+            aria-expanded="false"
+            aria-label="Pending course approvals">
+            <i class="bx bx-book-content icon-md"></i>
+            <span
+              class="clms-bell-badge<?php echo $adminPendingCourseReviewsCount === 0 ? ' d-none' : ''; ?>"
+              id="clmsAdminCourseReviewBadge"
+              aria-label="<?php echo (int) $adminPendingCourseReviewsCount; ?> pending course approvals">
+              <?php echo $adminPendingCourseReviewsCount > 99 ? '99+' : (int) $adminPendingCourseReviewsCount; ?>
+            </span>
+          </a>
+          <div class="dropdown-menu dropdown-menu-end clms-bell-menu p-0">
+            <div class="dropdown-header d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+              <h6 class="mb-0 fw-semibold">Courses awaiting review</h6>
+              <span class="badge bg-label-warning" id="clmsAdminCourseReviewCountLabel">
+                <?php echo (int) $adminPendingCourseReviewsCount; ?>
+              </span>
+            </div>
+            <ul class="list-unstyled mb-0 clms-bell-list" id="clmsAdminCourseReviewList" role="list">
+              <?php if ($adminPendingCourseReviews === []) : ?>
+                <li class="clms-bell-empty">
+                  <div class="text-center text-muted py-4 px-3">
+                    <i class="bx bx-check-circle d-block mb-2" style="font-size:1.75rem;"></i>
+                    <small>No courses awaiting review.</small>
+                  </div>
+                </li>
+              <?php else : ?>
+                <?php foreach ($adminPendingCourseReviews as $pendingCourse) :
+                  $pendingSubmitter = trim((string) ($pendingCourse['submitter_name'] ?? ''));
+                  if ($pendingSubmitter === '') {
+                    $pendingSubmitter = (string) ($pendingCourse['submitter_email'] ?? 'Instructor');
+                  }
+                  $pendingSubmittedAt = (string) ($pendingCourse['publish_submitted_at'] ?? '');
+                ?>
+                  <li class="clms-bell-item">
+                    <a class="d-flex align-items-start gap-2 px-3 py-2 text-decoration-none text-body"
+                      href="<?php echo htmlspecialchars($clmsWebBase . '/admin/preview_course.php?course_id=' . (int) $pendingCourse['id'], ENT_QUOTES, 'UTF-8'); ?>">
+                      <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-maroon, #800000); box-shadow: 0 0 0 3px rgba(128, 0, 0, .12);"></span>
+                      <div class="flex-grow-1 min-w-0">
+                        <div class="d-flex justify-content-between align-items-baseline gap-2">
+                          <span class="fw-semibold text-body text-truncate">
+                            <?php echo htmlspecialchars((string) $pendingCourse['title'], ENT_QUOTES, 'UTF-8'); ?>
+                          </span>
+                          <small class="text-muted flex-shrink-0">
+                            <?php echo $pendingSubmittedAt !== ''
+                              ? htmlspecialchars(date('M j', strtotime($pendingSubmittedAt) ?: time()), ENT_QUOTES, 'UTF-8')
+                              : ''; ?>
+                          </small>
+                        </div>
+                        <p class="mb-0 small text-muted clms-bell-body">
+                          Submitted by <?php echo htmlspecialchars($pendingSubmitter, ENT_QUOTES, 'UTF-8'); ?>
+                        </p>
+                      </div>
+                    </a>
+                  </li>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </ul>
+            <div class="dropdown-footer border-top px-3 py-2 text-center">
+              <a
+                href="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>"
+                class="text-decoration-none small fw-semibold">
+                Review pending courses
               </a>
             </div>
           </div>
@@ -1318,6 +1428,136 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
           renderItems(data.items || []);
         } catch (e) {
           /* ignore transient network failures */ }
+      };
+
+      bellEl.addEventListener('shown.bs.dropdown', refresh);
+
+      const POLL_MS = 60000;
+      let pollId = null;
+      const startPoll = () => {
+        if (pollId) clearInterval(pollId);
+        pollId = setInterval(refresh, POLL_MS);
+      };
+      const stopPoll = () => {
+        if (pollId) {
+          clearInterval(pollId);
+          pollId = null;
+        }
+      };
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stopPoll();
+        else {
+          refresh();
+          startPoll();
+        }
+      });
+      startPoll();
+    })();
+  </script>
+  <script>
+    /* Pending course-publish reviews bell — mirrors the pending-accounts
+       bell exactly: live count via polling, toast + chime when a new
+       course is submitted while the admin is on the page. */
+    (() => {
+      const endpoint = <?php echo json_encode($clmsWebBase . '/admin/course_review_notifications.php', JSON_UNESCAPED_SLASHES); ?>;
+      const badge = document.getElementById('clmsAdminCourseReviewBadge');
+      const list = document.getElementById('clmsAdminCourseReviewList');
+      const countLabel = document.getElementById('clmsAdminCourseReviewCountLabel');
+      const bellEl = document.getElementById('clmsAdminCourseReviewWrap');
+      if (!badge || !list || !countLabel || !bellEl) return;
+      const soundEnabled = <?php echo $adminPendingAlertSoundEnabled ? 'true' : 'false'; ?>;
+      let previousCount = <?php echo (int) $adminPendingCourseReviewsCount; ?>;
+      let hasPolledOnce = false;
+
+      const playPendingAlertSound = () => {
+        if (!soundEnabled) return;
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return;
+          const ctx = new AudioCtx();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(660, ctx.currentTime);
+          gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.24);
+          osc.onended = () => {
+            if (typeof ctx.close === 'function') ctx.close();
+          };
+        } catch (e) {
+          /* autoplay may be blocked */ }
+      };
+
+      const setCount = (count) => {
+        const n = Math.max(0, parseInt(count, 10) || 0);
+        countLabel.textContent = String(n);
+        if (n === 0) {
+          badge.classList.add('d-none');
+        } else {
+          badge.textContent = n > 99 ? '99+' : String(n);
+          badge.classList.remove('d-none');
+        }
+      };
+
+      const escapeHtml = (s) => String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+      const renderItems = (items) => {
+        if (!Array.isArray(items) || items.length === 0) {
+          list.innerHTML = `
+                    <li class="clms-bell-empty">
+                      <div class="text-center text-muted py-4 px-3">
+                        <i class="bx bx-check-circle d-block mb-2" style="font-size:1.75rem;"></i>
+                        <small>No courses awaiting review.</small>
+                      </div>
+                    </li>`;
+          return;
+        }
+        list.innerHTML = items.map((item) => `
+                  <li class="clms-bell-item">
+                    <a class="d-flex align-items-start gap-2 px-3 py-2 text-decoration-none text-body"
+                       href="${escapeHtml(item.url || '#')}">
+                      <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-maroon, #800000); box-shadow: 0 0 0 3px rgba(128, 0, 0, .12);"></span>
+                      <div class="flex-grow-1 min-w-0">
+                        <div class="d-flex justify-content-between align-items-baseline gap-2">
+                          <span class="fw-semibold text-body text-truncate">${escapeHtml(item.title || '')}</span>
+                          <small class="text-muted flex-shrink-0">${escapeHtml(item.submitted_at_human || '')}</small>
+                        </div>
+                        <p class="mb-0 small text-muted clms-bell-body">Submitted by ${escapeHtml(item.submitter || 'Instructor')}</p>
+                      </div>
+                    </a>
+                  </li>
+                `).join('');
+      };
+
+      const refresh = async () => {
+        try {
+          const res = await fetch(`${endpoint}?action=list`, {
+            credentials: 'same-origin'
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (!data || !data.ok) return;
+          const nextCount = Math.max(0, parseInt(data.pending_count || 0, 10) || 0);
+          if (hasPolledOnce && nextCount > previousCount) {
+            const delta = nextCount - previousCount;
+            if (typeof ClmsNotify !== 'undefined' && typeof ClmsNotify.info === 'function') {
+              ClmsNotify.info(`Course${delta > 1 ? 's' : ''} awaiting review: +${delta}`);
+            }
+            playPendingAlertSound();
+          }
+          previousCount = nextCount;
+          hasPolledOnce = true;
+          setCount(nextCount);
+          renderItems(data.items || []);
+        } catch (e) {
+          /* transient: next poll will retry */ }
       };
 
       bellEl.addEventListener('shown.bs.dropdown', refresh);

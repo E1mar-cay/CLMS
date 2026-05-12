@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/includes/audit-log.php';
+require_once dirname(__DIR__) . '/includes/course-publish-schema.php';
 require_once dirname(__DIR__) . '/database.php';
 
 clms_require_roles(['admin', 'instructor']);
@@ -27,6 +28,12 @@ foreach ([
         error_log('courses.' . $columnName . ' migration failed: ' . $e->getMessage());
     }
 }
+
+clms_ensure_course_publish_schema($pdo);
+
+$currentUserRole = (string) ($_SESSION['role'] ?? '');
+$currentUserId   = (int) ($_SESSION['user_id'] ?? 0);
+$isAdmin         = $currentUserRole === 'admin';
 
 $allowedLevels = ['', 'beginner', 'intermediate', 'advanced'];
 $thumbnailUploadWebDir = '/public/assets/uploads/course-thumbnails';
@@ -177,20 +184,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if ($action === 'create') {
+                    /*
+                     * Newly created courses are always created as DRAFT
+                     * (publish_status='draft', is_published=0), regardless
+                     * of what the form sent. A brand-new course has no
+                     * modules / questions yet, so it must not appear on the
+                     * student dashboard until the instructor builds it out
+                     * and submits it for review.
+                     */
                     $insertStmt = $pdo->prepare(
-                        'INSERT INTO courses (title, description, passing_score_percentage, is_published, level, thumbnail_url, final_exam_duration_minutes)
-                         VALUES (:title, :description, :passing_score, :is_published, :level, :thumbnail_url, :final_exam_duration_minutes)'
+                        "INSERT INTO courses
+                            (title, description, passing_score_percentage, is_published, publish_status,
+                             level, thumbnail_url, final_exam_duration_minutes)
+                         VALUES
+                            (:title, :description, :passing_score, 0, 'draft',
+                             :level, :thumbnail_url, :final_exam_duration_minutes)"
                     );
                     $insertStmt->execute([
                         'title' => $titleInput,
                         'description' => $descriptionInput,
                         'passing_score' => number_format($passingScore, 2, '.', ''),
-                        'is_published' => $isPublishedInput,
                         'level' => $levelValue,
                         'thumbnail_url' => $thumbnailValue,
                         'final_exam_duration_minutes' => $finalExamDurationValue,
                     ]);
-                    $successMessage = 'Course created successfully.';
+                    $successMessage = 'Course created as draft. Build out modules + questions, then submit it for publishing review.';
                 } else {
                     $courseIdRaw = $_POST['course_id'] ?? null;
                     $courseId = filter_var($courseIdRaw, FILTER_VALIDATE_INT);
@@ -199,12 +217,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException('Invalid course id.');
                     }
 
+                    /*
+                     * Course metadata edits never change publish status —
+                     * that's driven by the workflow buttons (submit /
+                     * approve / reject / unpublish). The admin can still
+                     * fix typos in a Published course without accidentally
+                     * unpublishing it from the student dashboard.
+                     */
                     $updateStmt = $pdo->prepare(
                         'UPDATE courses
                          SET title = :title,
                              description = :description,
                              passing_score_percentage = :passing_score,
-                             is_published = :is_published,
                              level = :level,
                              thumbnail_url = :thumbnail_url,
                              final_exam_duration_minutes = :final_exam_duration_minutes
@@ -214,7 +238,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'title' => $titleInput,
                         'description' => $descriptionInput,
                         'passing_score' => number_format($passingScore, 2, '.', ''),
-                        'is_published' => $isPublishedInput,
                         'level' => $levelValue,
                         'thumbnail_url' => $thumbnailValue,
                         'final_exam_duration_minutes' => $finalExamDurationValue,
@@ -330,18 +353,129 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ['title' => $deletedCourseTitle],
                     (int) ($_SESSION['user_id'] ?? 0)
                 );
-            } elseif ($action === 'toggle_publish') {
+            } elseif (
+                $action === 'submit_for_publish'
+                || $action === 'approve_publish'
+                || $action === 'reject_publish'
+                || $action === 'unpublish_course'
+            ) {
                 $courseIdRaw = $_POST['course_id'] ?? null;
                 $courseId = filter_var($courseIdRaw, FILTER_VALIDATE_INT);
                 $courseId = $courseId === false ? 0 : (int) $courseId;
                 if ($courseId <= 0) {
                     throw new RuntimeException('Invalid course id.');
                 }
-                $toggleStmt = $pdo->prepare(
-                    'UPDATE courses SET is_published = IF(is_published = 1, 0, 1) WHERE id = :id'
+
+                $statusStmt = $pdo->prepare(
+                    'SELECT title, is_published, publish_status FROM courses WHERE id = :id LIMIT 1'
                 );
-                $toggleStmt->execute(['id' => $courseId]);
-                $successMessage = 'Course publish status updated.';
+                $statusStmt->execute(['id' => $courseId]);
+                $statusRow = $statusStmt->fetch();
+                if (!$statusRow) {
+                    throw new RuntimeException('Course not found.');
+                }
+                $currentStatus = (string) ($statusRow['publish_status'] ?? 'draft');
+                $courseTitleForFlash = (string) ($statusRow['title'] ?? '');
+
+                if ($action === 'submit_for_publish') {
+                    if (!in_array($currentStatus, ['draft', 'changes_requested'], true)) {
+                        throw new RuntimeException('This course is not in a state that can be submitted for review.');
+                    }
+                    $readiness = clms_course_publish_readiness($pdo, $courseId);
+                    if (!$readiness['can_submit']) {
+                        throw new RuntimeException((string) $readiness['reason']);
+                    }
+                    $submitStmt = $pdo->prepare(
+                        "UPDATE courses
+                            SET publish_status = 'pending_review',
+                                is_published = 0,
+                                publish_submitted_at = NOW(),
+                                publish_submitted_by = :uid,
+                                publish_reviewed_at = NULL,
+                                publish_reviewed_by = NULL,
+                                publish_review_notes = NULL
+                          WHERE id = :id"
+                    );
+                    $submitStmt->execute(['uid' => $currentUserId ?: null, 'id' => $courseId]);
+                    $successMessage = 'Course submitted for publishing review. An admin will be notified to approve it.';
+                } elseif ($action === 'approve_publish') {
+                    if (!$isAdmin) {
+                        throw new RuntimeException('Only an admin can approve a course for publishing.');
+                    }
+                    if ($currentStatus !== 'pending_review') {
+                        throw new RuntimeException('Only courses waiting for review can be approved.');
+                    }
+                    $approveStmt = $pdo->prepare(
+                        "UPDATE courses
+                            SET publish_status = 'published',
+                                is_published = 1,
+                                publish_reviewed_at = NOW(),
+                                publish_reviewed_by = :uid,
+                                publish_review_notes = NULL
+                          WHERE id = :id"
+                    );
+                    $approveStmt->execute(['uid' => $currentUserId ?: null, 'id' => $courseId]);
+                    $successMessage = 'Course approved and published — it is now visible to students.';
+                } elseif ($action === 'reject_publish') {
+                    if (!$isAdmin) {
+                        throw new RuntimeException('Only an admin can request changes on a course.');
+                    }
+                    if ($currentStatus !== 'pending_review') {
+                        throw new RuntimeException('Only courses waiting for review can be sent back for changes.');
+                    }
+                    $notesInput = trim((string) ($_POST['publish_review_notes'] ?? ''));
+                    if ($notesInput === '') {
+                        throw new RuntimeException('Please include a short note explaining what needs to change.');
+                    }
+                    if (mb_strlen($notesInput) > 2000) {
+                        throw new RuntimeException('Review notes must be 2000 characters or fewer.');
+                    }
+                    $rejectStmt = $pdo->prepare(
+                        "UPDATE courses
+                            SET publish_status = 'changes_requested',
+                                is_published = 0,
+                                publish_reviewed_at = NOW(),
+                                publish_reviewed_by = :uid,
+                                publish_review_notes = :notes
+                          WHERE id = :id"
+                    );
+                    $rejectStmt->execute([
+                        'uid' => $currentUserId ?: null,
+                        'notes' => $notesInput,
+                        'id' => $courseId,
+                    ]);
+                    $successMessage = 'Course sent back to the instructor with your notes.';
+                } elseif ($action === 'unpublish_course') {
+                    if (!$isAdmin) {
+                        throw new RuntimeException('Only an admin can unpublish a course.');
+                    }
+                    if ($currentStatus !== 'published') {
+                        throw new RuntimeException('Only published courses can be unpublished.');
+                    }
+                    $unpublishStmt = $pdo->prepare(
+                        "UPDATE courses
+                            SET publish_status = 'draft',
+                                is_published = 0,
+                                publish_reviewed_at = NOW(),
+                                publish_reviewed_by = :uid
+                          WHERE id = :id"
+                    );
+                    $unpublishStmt->execute(['uid' => $currentUserId ?: null, 'id' => $courseId]);
+                    $successMessage = 'Course unpublished — it has been hidden from students and returned to draft.';
+                }
+
+                clms_audit_ensure_schema($pdo);
+                clms_audit_log(
+                    $pdo,
+                    'course_' . $action,
+                    'course',
+                    $courseId,
+                    [
+                        'title' => $courseTitleForFlash,
+                        'previous_status' => $currentStatus,
+                    ],
+                    $currentUserId
+                );
             } else {
                 throw new RuntimeException('Unknown action.');
             }
@@ -360,15 +494,21 @@ $flashCode = (string) ($_GET['flash'] ?? '');
 if ($successMessage === '' && $flashCode !== '') {
     $flashMap = [
         'updated' => 'Course updated successfully.',
+        'approved' => 'Course approved and published — it is now visible to students.',
+        'rejected' => 'Course sent back to the instructor with your notes.',
     ];
     if (isset($flashMap[$flashCode])) {
         $successMessage = $flashMap[$flashCode];
     }
 }
 
+$formPublishStatus = 'draft';
+$formPublishReviewNotes = '';
+
 if ($editId > 0) {
     $editStmt = $pdo->prepare(
-        'SELECT id, title, description, passing_score_percentage, is_published, level, thumbnail_url, final_exam_duration_minutes
+        'SELECT id, title, description, passing_score_percentage, is_published, publish_status,
+                publish_review_notes, level, thumbnail_url, final_exam_duration_minutes
          FROM courses WHERE id = :id LIMIT 1'
     );
     $editStmt->execute(['id' => $editId]);
@@ -378,6 +518,8 @@ if ($editId > 0) {
         $formDescription = (string) ($editRow['description'] ?? '');
         $formPassingScore = number_format((float) $editRow['passing_score_percentage'], 2, '.', '');
         $formIsPublished = (int) $editRow['is_published'];
+        $formPublishStatus = (string) ($editRow['publish_status'] ?? 'draft');
+        $formPublishReviewNotes = (string) ($editRow['publish_review_notes'] ?? '');
         $formLevel = (string) ($editRow['level'] ?? '');
         $formThumbnailUrl = (string) ($editRow['thumbnail_url'] ?? '');
         $formFinalExamDuration = (string) ((int) ($editRow['final_exam_duration_minutes'] ?? 45));
@@ -387,12 +529,18 @@ if ($editId > 0) {
 }
 
 $courseListStmt = $pdo->query(
-    'SELECT
+    "SELECT
         c.id,
         c.title,
         c.description,
         c.passing_score_percentage,
         c.is_published,
+        COALESCE(c.publish_status, 'draft') AS publish_status,
+        c.publish_submitted_at,
+        c.publish_reviewed_at,
+        c.publish_review_notes,
+        TRIM(CONCAT(COALESCE(sb.first_name, ''), ' ', COALESCE(sb.last_name, ''))) AS publish_submitted_by_name,
+        TRIM(CONCAT(COALESCE(rb.first_name, ''), ' ', COALESCE(rb.last_name, ''))) AS publish_reviewed_by_name,
         c.level,
         c.thumbnail_url,
         COALESCE(c.final_exam_duration_minutes, 45) AS final_exam_duration_minutes,
@@ -400,9 +548,20 @@ $courseListStmt = $pdo->query(
         (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id) AS question_count,
         (SELECT COUNT(*) FROM exam_attempts ea WHERE ea.course_id = c.id) AS attempt_count
      FROM courses c
-     ORDER BY c.title ASC'
+     LEFT JOIN users sb ON sb.id = c.publish_submitted_by
+     LEFT JOIN users rb ON rb.id = c.publish_reviewed_by
+     ORDER BY
+        FIELD(COALESCE(c.publish_status, 'draft'), 'pending_review', 'changes_requested', 'draft', 'published'),
+        c.title ASC"
 );
 $courses = $courseListStmt->fetchAll();
+
+$pendingReviewCount = 0;
+foreach ($courses as $courseRow) {
+    if ((string) ($courseRow['publish_status'] ?? '') === 'pending_review') {
+        $pendingReviewCount++;
+    }
+}
 
 require_once __DIR__ . '/includes/layout-top.php';
 ?>
@@ -413,17 +572,25 @@ $isEditMode = $editId > 0;
 // the user typed doesn't silently disappear).
 $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST_METHOD'] === 'POST');
 ?>
-              <div class="d-flex flex-wrap justify-content-between align-items-center py-3 mb-3 gap-2">
-                <div>
-                  <h4 class="fw-bold mb-1">Courses</h4>
-                  <small class="text-muted">Manage course catalog, passing thresholds, and publication status.</small>
+              <div class="d-flex flex-wrap align-items-center py-3 mb-3 gap-2">
+                <div class="flex-grow-1" style="min-width: 0;">
+                  <h4 class="fw-bold mb-1">
+                    Courses
+<?php if ($isAdmin && $pendingReviewCount > 0) : ?>
+                    <span class="badge bg-label-warning align-middle ms-2"><?php echo $pendingReviewCount; ?> awaiting review</span>
+<?php endif; ?>
+                  </h4>
+                  <small class="text-muted">
+                    New courses start as <strong>Draft</strong>. The instructor builds modules + questions, then submits the course for review. An admin approves it before students can see it on their dashboard.
+                  </small>
                 </div>
-                <div class="d-flex flex-wrap gap-2">
+                <div class="d-flex flex-wrap gap-2 ms-auto justify-content-end">
                   <a
                     href="<?php echo htmlspecialchars($clmsWebBase . '/admin/add_question.php', ENT_QUOTES, 'UTF-8'); ?>"
                     class="btn btn-outline-primary btn-sm">
                     <i class="bx bx-list-plus me-1"></i>Open Question Builder
                   </a>
+<?php if ($isAdmin) : ?>
                   <button
                     type="button"
                     class="btn btn-primary btn-sm"
@@ -431,6 +598,7 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                     data-bs-target="#courseFormModal">
                     <i class="bx bx-plus me-1"></i>Add New Course
                   </button>
+<?php endif; ?>
                 </div>
               </div>
 
@@ -456,10 +624,30 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                       </thead>
                       <tbody>
 <?php foreach ($courses as $course) : ?>
-<?php $isPublished = (int) $course['is_published'] === 1; ?>
+<?php
+                        $isPublished = (int) $course['is_published'] === 1;
+                        $publishStatus = (string) ($course['publish_status'] ?? 'draft');
+                        $publishMeta = clms_course_publish_status_meta($publishStatus);
+                        $courseModuleCount = (int) $course['module_count'];
+                        $courseQuestionCount = (int) $course['question_count'];
+                        $canSubmitNow = $courseModuleCount > 0 && $courseQuestionCount > 0;
+                        $submitBlockedReason = '';
+                        if (!$canSubmitNow) {
+                            if ($courseModuleCount === 0 && $courseQuestionCount === 0) {
+                                $submitBlockedReason = 'Add at least one module and one question first.';
+                            } elseif ($courseModuleCount === 0) {
+                                $submitBlockedReason = 'Add at least one module first.';
+                            } else {
+                                $submitBlockedReason = 'Add at least one question first.';
+                            }
+                        }
+                        $reviewNotes = trim((string) ($course['publish_review_notes'] ?? ''));
+                        $submittedByName = trim((string) ($course['publish_submitted_by_name'] ?? ''));
+                        $reviewedByName = trim((string) ($course['publish_reviewed_by_name'] ?? ''));
+?>
                         <tr
                           data-search-item
-                          data-search-text="<?php echo htmlspecialchars(((string) $course['title']) . ' ' . ((string) ($course['description'] ?? '')) . ' ' . ((string) ($course['level'] ?? '')) . ' ' . ($isPublished ? 'published' : 'draft'), ENT_QUOTES, 'UTF-8'); ?>">
+                          data-search-text="<?php echo htmlspecialchars(((string) $course['title']) . ' ' . ((string) ($course['description'] ?? '')) . ' ' . ((string) ($course['level'] ?? '')) . ' ' . $publishStatus . ' ' . $publishMeta['label'], ENT_QUOTES, 'UTF-8'); ?>">
                           <td>
                             <div class="d-flex align-items-center gap-2">
 <?php if (!empty($course['thumbnail_url'])) : ?>
@@ -484,12 +672,30 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                           <td><?php echo number_format((float) $course['passing_score_percentage'], 2); ?>%</td>
                           <td><?php echo (int) $course['final_exam_duration_minutes']; ?> min</td>
                           <td>
-                            <span class="badge <?php echo $isPublished ? 'bg-label-success' : 'bg-label-secondary'; ?>">
-                              <?php echo $isPublished ? 'Published' : 'Draft'; ?>
+                            <span class="badge <?php echo htmlspecialchars($publishMeta['badge'], ENT_QUOTES, 'UTF-8'); ?>">
+                              <i class="bx <?php echo htmlspecialchars($publishMeta['icon'], ENT_QUOTES, 'UTF-8'); ?> me-1"></i>
+                              <?php echo htmlspecialchars($publishMeta['label'], ENT_QUOTES, 'UTF-8'); ?>
                             </span>
+<?php if ($publishStatus === 'pending_review' && $submittedByName !== '') : ?>
+                            <small class="text-muted d-block mt-1">Submitted by <?php echo htmlspecialchars($submittedByName, ENT_QUOTES, 'UTF-8'); ?></small>
+<?php elseif ($publishStatus === 'published' && $reviewedByName !== '') : ?>
+                            <small class="text-muted d-block mt-1">Approved by <?php echo htmlspecialchars($reviewedByName, ENT_QUOTES, 'UTF-8'); ?></small>
+<?php elseif ($publishStatus === 'changes_requested' && $reviewNotes !== '') : ?>
+                            <small class="text-muted d-block mt-1 text-truncate" style="max-width: 220px;" title="<?php echo htmlspecialchars($reviewNotes, ENT_QUOTES, 'UTF-8'); ?>">
+                              <i class="bx bx-message-detail"></i> <?php echo htmlspecialchars($reviewNotes, ENT_QUOTES, 'UTF-8'); ?>
+                            </small>
+<?php endif; ?>
                           </td>
                           <td class="text-end">
                             <div class="d-flex gap-1 justify-content-end flex-wrap">
+<?php if ($isAdmin) : ?>
+                              <a
+                                href="<?php echo htmlspecialchars($clmsWebBase . '/admin/preview_course.php?course_id=' . (int) $course['id'], ENT_QUOTES, 'UTF-8'); ?>"
+                                class="btn btn-sm <?php echo $publishStatus === 'pending_review' ? 'btn-warning' : 'btn-outline-secondary'; ?>"
+                                title="<?php echo $publishStatus === 'pending_review' ? 'Preview &amp; review submission' : 'Preview course content'; ?>">
+                                <i class="bx bx-show"></i><?php echo $publishStatus === 'pending_review' ? '<span class="d-none d-md-inline ms-1">Review</span>' : ''; ?>
+                              </a>
+<?php endif; ?>
                               <a
                                 href="<?php echo htmlspecialchars($clmsWebBase . '/admin/add_question.php?course_id=' . (int) $course['id'], ENT_QUOTES, 'UTF-8'); ?>"
                                 class="btn btn-sm btn-outline-info"
@@ -502,14 +708,48 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                                 title="Edit course">
                                 <i class="bx bx-edit-alt"></i>
                               </a>
-                              <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>" class="d-inline">
+<?php if (in_array($publishStatus, ['draft', 'changes_requested'], true)) : ?>
+                              <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>" class="d-inline js-submit-publish-form">
                                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
-                                <input type="hidden" name="action" value="toggle_publish" />
+                                <input type="hidden" name="action" value="submit_for_publish" />
                                 <input type="hidden" name="course_id" value="<?php echo (int) $course['id']; ?>" />
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="<?php echo $isPublished ? 'Unpublish' : 'Publish'; ?>">
-                                  <i class="bx <?php echo $isPublished ? 'bx-hide' : 'bx-show'; ?>"></i>
+                                <button
+                                  type="submit"
+                                  class="btn btn-sm btn-warning"
+                                  title="<?php echo $canSubmitNow ? 'Submit for publishing review' : htmlspecialchars($submitBlockedReason, ENT_QUOTES, 'UTF-8'); ?>"
+                                  <?php echo $canSubmitNow ? '' : 'disabled'; ?>>
+                                  <i class="bx bx-upload"></i><span class="d-none d-md-inline ms-1">Submit</span>
                                 </button>
                               </form>
+<?php endif; ?>
+<?php if ($isAdmin && $publishStatus === 'pending_review') : ?>
+                              <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>" class="d-inline js-approve-publish-form">
+                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                                <input type="hidden" name="action" value="approve_publish" />
+                                <input type="hidden" name="course_id" value="<?php echo (int) $course['id']; ?>" />
+                                <button type="submit" class="btn btn-sm btn-success" title="Approve and publish">
+                                  <i class="bx bx-check"></i><span class="d-none d-md-inline ms-1">Approve</span>
+                                </button>
+                              </form>
+                              <button
+                                type="button"
+                                class="btn btn-sm btn-outline-danger js-reject-publish-trigger"
+                                data-course-id="<?php echo (int) $course['id']; ?>"
+                                data-course-title="<?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?>"
+                                title="Send back to instructor with notes">
+                                <i class="bx bx-x"></i><span class="d-none d-md-inline ms-1">Reject</span>
+                              </button>
+<?php endif; ?>
+<?php if ($isAdmin && $publishStatus === 'published') : ?>
+                              <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>" class="d-inline js-unpublish-course-form" data-course-title="<?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?>">
+                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                                <input type="hidden" name="action" value="unpublish_course" />
+                                <input type="hidden" name="course_id" value="<?php echo (int) $course['id']; ?>" />
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Unpublish (hide from students)">
+                                  <i class="bx bx-hide"></i>
+                                </button>
+                              </form>
+<?php endif; ?>
                               <form
                                 method="post"
                                 action="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>"
@@ -651,16 +891,45 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                             <small class="text-muted">Students get this much time to finish the combined final exam. Default: 45.</small>
                           </div>
                         </div>
-                        <div class="form-check form-switch">
-                          <input
-                            class="form-check-input"
-                            type="checkbox"
-                            id="is_published"
-                            name="is_published"
-                            value="1"
-                            <?php echo $formIsPublished === 1 ? 'checked' : ''; ?> />
-                          <label class="form-check-label" for="is_published">Published (visible to students)</label>
+<?php if ($isEditMode) : ?>
+<?php $editMeta = clms_course_publish_status_meta($formPublishStatus); ?>
+                        <div class="alert alert-light border d-flex align-items-start gap-2 mb-0" role="status">
+                          <i class="bx <?php echo htmlspecialchars($editMeta['icon'], ENT_QUOTES, 'UTF-8'); ?> fs-4 mt-1"></i>
+                          <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                              <span class="badge <?php echo htmlspecialchars($editMeta['badge'], ENT_QUOTES, 'UTF-8'); ?>">
+                                <?php echo htmlspecialchars($editMeta['label'], ENT_QUOTES, 'UTF-8'); ?>
+                              </span>
+                              <strong>Publishing status</strong>
+                            </div>
+                            <small class="text-muted d-block">
+<?php if ($formPublishStatus === 'draft') : ?>
+                              This course is hidden from students. Add modules + questions, then use <em>Submit</em> on the courses list to send it for review.
+<?php elseif ($formPublishStatus === 'pending_review') : ?>
+                              Waiting for admin approval. Students still can&rsquo;t see it.
+<?php elseif ($formPublishStatus === 'published') : ?>
+                              Visible on the student dashboard. Editing details here will <strong>not</strong> unpublish the course.
+<?php elseif ($formPublishStatus === 'changes_requested') : ?>
+                              An admin sent this back for changes. After fixing it, submit it again from the courses list.
+<?php endif; ?>
+                            </small>
+<?php if ($formPublishStatus === 'changes_requested' && trim($formPublishReviewNotes) !== '') : ?>
+                            <div class="mt-2 small">
+                              <strong>Admin notes:</strong>
+                              <span class="d-block text-body"><?php echo nl2br(htmlspecialchars($formPublishReviewNotes, ENT_QUOTES, 'UTF-8')); ?></span>
+                            </div>
+<?php endif; ?>
+                          </div>
                         </div>
+<?php else : ?>
+                        <div class="alert alert-info d-flex align-items-start gap-2 mb-0" role="status">
+                          <i class="bx bx-info-circle fs-4 mt-1"></i>
+                          <div>
+                            <strong>New courses start as Draft.</strong>
+                            <small class="d-block text-muted">After creating, add modules + questions, then submit the course for publishing review. An admin must approve it before students can see it on their dashboard.</small>
+                          </div>
+                        </div>
+<?php endif; ?>
                       </div>
                       <div class="modal-footer">
                         <a
@@ -675,6 +944,58 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                   </div>
                 </div>
               </div>
+
+<?php if ($isAdmin) : ?>
+              <!-- Reject / send-back modal (admin only) -->
+              <div
+                class="modal fade"
+                id="rejectPublishModal"
+                tabindex="-1"
+                aria-labelledby="rejectPublishModalLabel"
+                aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content">
+                    <form
+                      method="post"
+                      action="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>"
+                      id="rejectPublishForm">
+                      <div class="modal-header">
+                        <h5 class="modal-title" id="rejectPublishModalLabel">
+                          <i class="bx bx-message-detail me-1"></i>Send course back for changes
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                        <input type="hidden" name="action" value="reject_publish" />
+                        <input type="hidden" name="course_id" id="rejectPublishCourseId" value="" />
+                        <p class="mb-2">
+                          Rejecting <strong id="rejectPublishCourseTitle">this course</strong> sends it back to the instructor and hides it from students.
+                        </p>
+                        <div class="mb-2">
+                          <label for="publish_review_notes" class="form-label">What needs to change?</label>
+                          <textarea
+                            id="publish_review_notes"
+                            name="publish_review_notes"
+                            class="form-control"
+                            rows="4"
+                            maxlength="2000"
+                            placeholder="e.g., Module 2 is missing the quiz questions, and the passing score is too low."
+                            required></textarea>
+                          <small class="text-muted">The instructor will see this on their Manage Content page.</small>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger">
+                          <i class="bx bx-send me-1"></i>Send back
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+<?php endif; ?>
 
               <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
               <script>
@@ -746,6 +1067,86 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                       });
                     });
                   });
+
+                  document.querySelectorAll('.js-submit-publish-form').forEach((form) => {
+                    form.addEventListener('submit', (event) => {
+                      if (form.dataset.confirmed === '1') return;
+                      event.preventDefault();
+                      Swal.fire({
+                        title: 'Submit for publishing?',
+                        text: 'An admin will review the course before it appears on the student dashboard.',
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, submit',
+                        cancelButtonText: 'Cancel',
+                        confirmButtonColor: '#0f204b',
+                      }).then((result) => {
+                        if (result.isConfirmed) {
+                          form.dataset.confirmed = '1';
+                          form.submit();
+                        }
+                      });
+                    });
+                  });
+
+                  document.querySelectorAll('.js-approve-publish-form').forEach((form) => {
+                    form.addEventListener('submit', (event) => {
+                      if (form.dataset.confirmed === '1') return;
+                      event.preventDefault();
+                      Swal.fire({
+                        title: 'Approve and publish?',
+                        text: 'The course will become visible to students right away.',
+                        icon: 'success',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, publish',
+                        cancelButtonText: 'Cancel',
+                        confirmButtonColor: '#28a745',
+                      }).then((result) => {
+                        if (result.isConfirmed) {
+                          form.dataset.confirmed = '1';
+                          form.submit();
+                        }
+                      });
+                    });
+                  });
+
+                  document.querySelectorAll('.js-unpublish-course-form').forEach((form) => {
+                    form.addEventListener('submit', (event) => {
+                      if (form.dataset.confirmed === '1') return;
+                      event.preventDefault();
+                      const title = form.dataset.courseTitle || 'this course';
+                      Swal.fire({
+                        title: 'Unpublish "' + title + '"?',
+                        text: 'Students will no longer see it on their dashboard. The course will return to Draft.',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, unpublish',
+                        cancelButtonText: 'Cancel',
+                        confirmButtonColor: '#d33',
+                      }).then((result) => {
+                        if (result.isConfirmed) {
+                          form.dataset.confirmed = '1';
+                          form.submit();
+                        }
+                      });
+                    });
+                  });
+
+                  const rejectModalEl = document.getElementById('rejectPublishModal');
+                  if (rejectModalEl && window.bootstrap && bootstrap.Modal) {
+                    const rejectModal = bootstrap.Modal.getOrCreateInstance(rejectModalEl);
+                    const rejectCourseIdInput = document.getElementById('rejectPublishCourseId');
+                    const rejectCourseTitleEl = document.getElementById('rejectPublishCourseTitle');
+                    const rejectNotesInput = document.getElementById('publish_review_notes');
+                    document.querySelectorAll('.js-reject-publish-trigger').forEach((btn) => {
+                      btn.addEventListener('click', () => {
+                        if (rejectCourseIdInput) rejectCourseIdInput.value = btn.dataset.courseId || '';
+                        if (rejectCourseTitleEl) rejectCourseTitleEl.textContent = btn.dataset.courseTitle || 'this course';
+                        if (rejectNotesInput) rejectNotesInput.value = '';
+                        rejectModal.show();
+                      });
+                    });
+                  }
                 })();
               </script>
 

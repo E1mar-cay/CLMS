@@ -43,11 +43,12 @@
     }
   }
 
-  /* Success / info / warning share this centered auto-dismiss dialog
-     so they match the visual weight of the confirm dialogs (same big
-     icon on top, centered, good typography) — consistent UX across
-     the app. Errors keep their own method because they need a manual
-     dismiss button to demand the user's attention. */
+  /* Info / warning stay as centered auto-dismiss toasts (cheap, fast
+     status updates that don't deserve a click). Success was upgraded
+     to the "Good job!" celebratory dialog the user prefers — same
+     visual weight as the confirm dialogs and requires an explicit OK
+     to dismiss so the user sees the outcome of their action. Errors
+     keep their own dedicated method below. */
   function flash(icon, msg) {
     var Swal = getSwal();
     if (!Swal) { warnMissing(); return; }
@@ -66,7 +67,48 @@
     PRIMARY: BRAND_PRIMARY,
     DANGER:  BRAND_DANGER,
 
-    success: function (msg) { flash('success', msg); },
+    /* Success dialog — title reflects the action, not a generic
+       "Good job!". The PHP `$successMessage` for each action is
+       already worded like a headline (e.g. "Course approved and
+       published — it is now visible to students."), so we use the
+       message itself as the title.
+
+       Bonus: when the message follows the natural
+       "Action — explanation" pattern with an em-dash, we auto-split
+       it so the dialog reads:
+            ✅ Course approved and published
+               It is now visible to students.
+
+       Callers can still pass an explicit title:
+            ClmsNotify.success('Visible to students.', 'Published!'); */
+    success: function (msg, title) {
+      var Swal = getSwal();
+      if (!Swal) { warnMissing(); return; }
+      if (!msg && !title) return;
+
+      var finalTitle = title || '';
+      var finalText  = title ? msg : '';
+
+      if (!finalTitle && msg) {
+        /* Split on em-dash / en-dash that's flanked by whitespace.
+           Limit the title side to 80 chars so we never break long
+           single-sentence messages that happen to contain a dash. */
+        var parts = String(msg).match(/^([^—–]{1,80}?)\s*[—–]\s+(.+)$/);
+        if (parts) {
+          finalTitle = parts[1].replace(/[.!?]\s*$/, '').trim();
+          finalText  = parts[2].charAt(0).toUpperCase() + parts[2].slice(1);
+        } else {
+          finalTitle = msg;
+        }
+      }
+
+      Swal.fire({
+        title: finalTitle,
+        text:  finalText || undefined,
+        icon:  'success',
+        confirmButtonColor: BRAND_PRIMARY,
+      });
+    },
     info:    function (msg) { flash('info',    msg); },
     warning: function (msg) { flash('warning', msg); },
 
