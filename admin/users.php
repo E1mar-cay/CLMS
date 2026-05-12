@@ -63,7 +63,14 @@ function clms_users_build_list_where_clause(
     string $filterAccount,
     string $filterBatch
 ): array {
-    $whereSql = 'WHERE 1=1';
+    /*
+     * Hard scope: this page is now Staff Management. Students are
+     * managed elsewhere, so the list, count, and bulk queries all
+     * filter to admin + instructor roles only. Any caller-supplied
+     * filter that targets students (e.g. legacy bookmarks with
+     * ?role=student) just silently no-ops because of this clause.
+     */
+    $whereSql = "WHERE u.role IN ('admin', 'instructor')";
     $params = [];
     if ($searchQuery !== '') {
         $whereSql .= ' AND (u.first_name LIKE :s1 OR u.last_name LIKE :s2 OR u.email LIKE :s3 OR CONCAT(u.first_name, " ", u.last_name) LIKE :s4)';
@@ -101,7 +108,7 @@ function clms_users_build_list_where_clause(
     return [$whereSql, $params];
 }
 
-$pageTitle = 'User Management | Criminology LMS';
+$pageTitle = 'Staff Management | Criminology LMS';
 $activeAdminPage = 'users';
 $errorMessage = '';
 $isAjaxRequest = !empty($_GET['ajax']);
@@ -114,10 +121,21 @@ $offset = ($page - 1) * $perPage;
 $allowedRoles = ['student', 'instructor', 'admin'];
 $__listF = clms_users_normalize_filters_from_array($_GET, $allowedRoles);
 $searchQuery = $__listF['searchQuery'];
-$pendingOnly = $__listF['pendingOnly'];
+/*
+ * Staff-only page: ignore student-targeted filters from the URL.
+ * - pending approval flow is student-only,
+ * - batch / cohort is a student-only field,
+ * - role=student narrows the list to a population that's already
+ *   excluded by the WHERE clause.
+ * Coercing them here keeps the rest of the page logic untouched.
+ */
+$pendingOnly = false;
 $filterRole = $__listF['filterRole'];
+if (!in_array($filterRole, ['instructor', 'admin'], true)) {
+    $filterRole = '';
+}
 $filterAccount = $__listF['filterAccount'];
-$filterBatch = $__listF['filterBatch'];
+$filterBatch = '';
 
 /** @return array<string, string> */
 $clmsUsersListMergeRedirect = static function (array $flashParams) use ($searchQuery, $pendingOnly, $filterRole, $filterAccount, $filterBatch, $page): array {
@@ -820,8 +838,8 @@ require_once __DIR__ . '/includes/layout-top.php';
 ?>
               <div class="d-flex flex-wrap justify-content-between align-items-center py-3 mb-3 gap-2">
                 <div>
-                  <h4 class="fw-bold mb-1">User management</h4>
-                  <small class="text-muted">View accounts and update names, email, role, or password. Select multiple rows to set <strong>batch / cohort</strong> for students in one step.</small>
+                  <h4 class="fw-bold mb-1">Staff management</h4>
+                  <small class="text-muted">Manage <strong>admin</strong> and <strong>instructor</strong> accounts. Update names, email, role, or password. Student accounts are managed on the <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/students.php', ENT_QUOTES, 'UTF-8'); ?>">Students</a> page.</small>
                 </div>
               </div>
 
@@ -983,12 +1001,6 @@ require_once __DIR__ . '/includes/layout-top.php';
                   <h5 class="mb-0">All users</h5>
                   <div class="clms-users-toolbar">
                     <div class="clms-users-bulk-actions d-none" id="clms-users-bulk-actions" aria-hidden="true">
-                      <button type="button" class="btn btn-sm btn-outline-info" id="clms-bulk-batch-btn" disabled>
-                        Set batch…
-                      </button>
-                      <button type="button" class="btn btn-sm btn-outline-success" id="clms-bulk-approve-btn" disabled>
-                        Approve Selected
-                      </button>
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="clms-bulk-disable-btn" disabled>
                         Disable Selected
                       </button>
@@ -1006,24 +1018,9 @@ require_once __DIR__ . '/includes/layout-top.php';
                       id="clms-users-search-form"
                       role="search">
                     <div class="d-flex flex-wrap gap-2 align-items-center clms-users-filters">
-                      <a
-                        href="<?php echo htmlspecialchars($pendingToggleUrl, ENT_QUOTES, 'UTF-8'); ?>"
-                        class="btn btn-sm <?php echo $pendingOnly ? 'btn-warning' : 'btn-outline-warning'; ?>">
-                        <?php echo $pendingOnly ? 'Pending Only: ON' : 'Pending Only'; ?>
-                        <span class="badge bg-white text-warning ms-1"><?php echo $pendingApprovalCount; ?></span>
-                      </a>
-                      <label class="visually-hidden" for="clms-users-filter-batch">Batch</label>
-                      <select class="form-select form-select-sm clms-users-filter-select" name="batch" id="clms-users-filter-batch" title="Student batch / cohort">
-                        <option value=""<?php echo $filterBatch === '' ? ' selected' : ''; ?>>All batches</option>
-                        <option value="__none__"<?php echo $filterBatch === '__none__' ? ' selected' : ''; ?>>Unspecified batch</option>
-<?php foreach ($studentBatchFilterOptions as $batchOpt) : ?>
-                        <option value="<?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $filterBatch === $batchOpt ? ' selected' : ''; ?>><?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?></option>
-<?php endforeach; ?>
-                      </select>
                       <label class="visually-hidden" for="clms-users-filter-role">Role</label>
                       <select class="form-select form-select-sm clms-users-filter-select" name="role" id="clms-users-filter-role" title="Account role">
-                        <option value=""<?php echo $filterRole === '' ? ' selected' : ''; ?>>All roles</option>
-                        <option value="student"<?php echo $filterRole === 'student' ? ' selected' : ''; ?>>Students</option>
+                        <option value=""<?php echo $filterRole === '' ? ' selected' : ''; ?>>All staff roles</option>
                         <option value="instructor"<?php echo $filterRole === 'instructor' ? ' selected' : ''; ?>>Instructors</option>
                         <option value="admin"<?php echo $filterRole === 'admin' ? ' selected' : ''; ?>>Admins</option>
                       </select>
