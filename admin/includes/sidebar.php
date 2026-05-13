@@ -83,6 +83,15 @@ $clmsThemeSettings = $clmsThemeSettings ?? ['site_title' => 'CLMS'];
       </li>
     <?php endif; ?>
 
+    <?php if ($clmsSidebarRole === 'admin') : ?>
+      <li class="menu-item <?php echo $activeAdminPage === 'landing_carousel' ? 'active' : ''; ?>">
+        <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/landing_carousel.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+          <i class="menu-icon tf-icons bx bx-carousel"></i>
+          <div class="text-truncate">Landing carousel</div>
+        </a>
+      </li>
+    <?php endif; ?>
+
     <li class="menu-item <?php echo $activeAdminPage === 'announcements' ? 'active' : ''; ?>">
       <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/announcements.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
         <i class="menu-icon tf-icons bx bx-bell"></i>

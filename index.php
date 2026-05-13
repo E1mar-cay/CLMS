@@ -6,6 +6,7 @@ require_once __DIR__ . '/includes/sneat-paths.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/theme-settings.php';
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/includes/landing-carousel-schema.php';
 
 clms_session_start();
 clms_try_remember_autologin();
@@ -14,6 +15,8 @@ $isLoggedIn = clms_logged_in();
 $userRole = clms_current_role();
 
 $clmsThemeSettings = clms_get_theme_settings($pdo);
+/** @var list<array<string,mixed>> $carouselSlides */
+$carouselSlides = clms_landing_carousel_active_slides($pdo);
 
 $dashboardTarget = 'login.php';
 if ($userRole === 'admin') {
@@ -79,6 +82,24 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     return rtrim((string) $clmsWebBase, '/') . $path;
   }
   return rtrim((string) $clmsWebBase, '/') . '/' . ltrim($path, '/');
+};
+
+$resolveLandingHref = static function (string $rawUrl) use ($clmsWebBase): string {
+  $u = trim($rawUrl);
+  if ($u === '') {
+    return 'register.php';
+  }
+  if (preg_match('/^(https?:)?\/\//i', $u) === 1) {
+    return $u;
+  }
+  if (str_starts_with($u, '/')) {
+    return rtrim((string) $clmsWebBase, '/') . $u;
+  }
+  if (str_starts_with($u, '#')) {
+    return $u;
+  }
+
+  return $u;
 };
 ?>
 <!doctype html>
@@ -232,6 +253,175 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       background: linear-gradient(180deg, var(--clms-cream) 0%, #f4f1df 50%, rgba(128, 0, 0, 0.05) 100%);
       padding: 6rem 0 5rem;
       position: relative;
+    }
+
+    .clms-hero-carousel .carousel-inner {
+      overflow: visible;
+    }
+
+    .clms-hero-carousel .carousel-item .hero-section {
+      min-height: clamp(32rem, 55vh, 44rem);
+      padding: 6rem 0 5.5rem;
+    }
+
+    /* Full-bleed slide: the photo fills the entire hero, edge to edge.
+       A horizontal gradient keeps the left side readable while letting
+       the photo show on the right. On mobile we fall back to a vertical
+       gradient so text never collides with the subject of the photo. */
+    .hero-slide-frame {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .hero-slide-bg {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      opacity: 1;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Photo-only slides (no headline/description/button): the image is the
+       whole message — show it in full (no cropping), centred, with no text
+       overlay or dark scrim covering it. The background uses `contain` so
+       portrait passer photos remain entirely visible. */
+    .hero-slide-photo-only {
+      background:
+        radial-gradient(circle at center, rgba(128, 0, 0, 0.04) 0%, rgba(128, 0, 0, 0.10) 100%),
+        var(--clms-cream);
+    }
+
+    .hero-slide-bg-contain {
+      background-size: contain;
+      background-position: center;
+    }
+
+    /* Soft left-to-bottom darkening keeps text readable without hiding
+       the photo. The right side stays bright so the image is visible. */
+    .hero-slide-scrim {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(
+          100deg,
+          rgba(0, 0, 0, 0.55) 0%,
+          rgba(0, 0, 0, 0.30) 45%,
+          rgba(0, 0, 0, 0.10) 80%,
+          rgba(0, 0, 0, 0.00) 100%
+        );
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .hero-slide-content {
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Text rendered directly on the image; rely on the scrim + shadows
+       for legibility instead of a card / panel. */
+    .clms-hero-carousel .carousel-item .hero-section .hero-title {
+      color: #fff;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.45);
+    }
+
+    .clms-hero-carousel .carousel-item .hero-section .lead {
+      color: rgba(255, 255, 255, 0.95);
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+    }
+
+    .clms-hero-carousel .carousel-item .hero-section .hero-kpi {
+      background: rgba(0, 0, 0, 0.32);
+      border-color: rgba(255, 255, 255, 0.18);
+      -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(4px);
+    }
+
+    .clms-hero-carousel .carousel-item .hero-section .hero-kpi-value {
+      color: #fff;
+    }
+
+    .clms-hero-carousel .carousel-item .hero-section .hero-kpi-label {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    @media (max-width: 767.98px) {
+      .clms-hero-carousel .carousel-item .hero-section {
+        min-height: clamp(26rem, 70vh, 36rem);
+        padding: 4rem 0 4rem;
+      }
+
+      .hero-slide-scrim {
+        background:
+          linear-gradient(
+            180deg,
+            rgba(0, 0, 0, 0.30) 0%,
+            rgba(0, 0, 0, 0.45) 55%,
+            rgba(0, 0, 0, 0.55) 100%
+          );
+      }
+    }
+
+    .clms-hero-carousel .carousel-indicators {
+      margin-bottom: 0.35rem;
+    }
+
+    .clms-hero-carousel .carousel-indicators [type="button"] {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background-color: var(--clms-maroon);
+      opacity: 0.35;
+    }
+
+    .clms-hero-carousel .carousel-indicators .active {
+      opacity: 1;
+    }
+
+    .clms-hero-carousel .carousel-control-prev-icon,
+    .clms-hero-carousel .carousel-control-next-icon {
+      display: none;
+    }
+
+    .clms-hero-carousel .carousel-control-prev,
+    .clms-hero-carousel .carousel-control-next {
+      width: 3rem;
+      opacity: 1;
+      color: var(--clms-maroon);
+      font-size: 1.75rem;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .clms-hero-carousel .carousel-control-prev > .bx,
+    .clms-hero-carousel .carousel-control-next > .bx {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.4rem;
+      height: 2.4rem;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(128, 0, 0, 0.18);
+      box-shadow: 0 4px 8px rgba(128, 0, 0, 0.12);
+      transition: var(--clms-transition);
+    }
+
+    .clms-hero-carousel .carousel-control-prev:hover > .bx,
+    .clms-hero-carousel .carousel-control-next:hover > .bx {
+      background: #fff;
+      color: var(--clms-maroon-dark);
+      transform: scale(1.05);
+    }
+
+    .clms-hero-carousel .carousel-indicators {
+      margin-bottom: 0.75rem;
     }
 
     .hero-section::before {
@@ -806,6 +996,90 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
     </div>
   </nav>
 
+  <?php if ($carouselSlides !== []) : ?>
+    <div id="clmsLandingHeroCarousel" class="carousel slide clms-hero-carousel" data-bs-ride="carousel" data-bs-interval="8000" data-bs-pause="hover">
+      <div class="carousel-indicators">
+        <?php foreach ($carouselSlides as $ci => $_slide) : ?>
+          <button type="button" data-bs-target="#clmsLandingHeroCarousel" data-bs-slide-to="<?php echo (int) $ci; ?>"<?php echo $ci === 0 ? ' class="active" aria-current="true"' : ''; ?> aria-label="Slide <?php echo (int) ($ci + 1); ?>"></button>
+        <?php endforeach; ?>
+      </div>
+      <div class="carousel-inner">
+        <?php foreach ($carouselSlides as $ci => $slide) : ?>
+          <?php
+          $slideBg = $resolveThumbnailUrl((string) ($slide['image_url'] ?? ''));
+          $btnLabelRaw = trim((string) ($slide['button_label'] ?? ''));
+          $btnLabel = $btnLabelRaw !== ''
+            ? $btnLabelRaw
+            : ('Start Your ' . ($clmsThemeSettings['site_title'] ?? 'CLMS') . ' Account');
+          $btnHref = $resolveLandingHref((string) ($slide['button_url'] ?? ''));
+          $kpis = [];
+          foreach (
+            [
+              [trim((string) ($slide['kpi1_value'] ?? '')), trim((string) ($slide['kpi1_label'] ?? ''))],
+              [trim((string) ($slide['kpi2_value'] ?? '')), trim((string) ($slide['kpi2_label'] ?? ''))],
+              [trim((string) ($slide['kpi3_value'] ?? '')), trim((string) ($slide['kpi3_label'] ?? ''))],
+            ] as $pair
+          ) {
+            if ($pair[0] !== '' || $pair[1] !== '') {
+              $kpis[] = $pair;
+            }
+          }
+          ?>
+          <?php
+          $slideTitle = trim((string) ($slide['title'] ?? ''));
+          $slideSubtitle = trim((string) ($slide['subtitle'] ?? ''));
+          $slideHasButton = $btnLabelRaw !== '' || trim((string) ($slide['button_url'] ?? '')) !== '';
+          $slideHasText = $slideTitle !== '' || $slideSubtitle !== '' || $slideHasButton || $kpis !== [];
+          ?>
+          <div class="carousel-item<?php echo $ci === 0 ? ' active' : ''; ?>">
+            <header class="hero-section hero-slide-frame<?php echo $slideHasText ? '' : ' hero-slide-photo-only'; ?>">
+              <?php if ($slideBg !== '') : ?>
+                <div class="hero-slide-bg<?php echo $slideHasText ? '' : ' hero-slide-bg-contain'; ?>" style="background-image:url('<?php echo htmlspecialchars($slideBg, ENT_QUOTES, 'UTF-8'); ?>');"></div>
+                <?php if ($slideHasText) : ?>
+                  <div class="hero-slide-scrim" aria-hidden="true"></div>
+                <?php endif; ?>
+              <?php endif; ?>
+              <?php if ($slideHasText) : ?>
+              <div class="container hero-slide-content">
+                <div class="row align-items-center g-4">
+                  <div class="col-lg-7 col-xl-6">
+                    <?php if ($slideTitle !== '') : ?>
+                      <h1 class="display-4 hero-title mb-3"><?php echo htmlspecialchars($slideTitle, ENT_QUOTES, 'UTF-8'); ?></h1>
+                    <?php endif; ?>
+                    <?php if ($slideSubtitle !== '') : ?>
+                      <p class="lead mb-4" style="white-space: pre-wrap;"><?php echo htmlspecialchars($slideSubtitle, ENT_QUOTES, 'UTF-8'); ?></p>
+                    <?php endif; ?>
+                    <?php if ($slideHasButton) : ?>
+                      <a href="<?php echo htmlspecialchars($btnHref, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-clms btn-clms-primary btn-lg px-4"><?php echo htmlspecialchars($btnLabel, ENT_QUOTES, 'UTF-8'); ?></a>
+                    <?php endif; ?>
+                    <?php if ($kpis !== []) : ?>
+                      <div class="hero-kpis">
+                        <?php foreach ($kpis as $kpi) : ?>
+                          <div class="hero-kpi">
+                            <div class="hero-kpi-value"><?php echo htmlspecialchars($kpi[0] !== '' ? $kpi[0] : '—', ENT_QUOTES, 'UTF-8'); ?></div>
+                            <div class="hero-kpi-label"><?php echo htmlspecialchars($kpi[1] !== '' ? $kpi[1] : ' ', ENT_QUOTES, 'UTF-8'); ?></div>
+                          </div>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php endif; ?>
+                  </div>
+                </div>
+              </div>
+              <?php endif; ?>
+            </header>
+          </div>
+        <?php endforeach; ?>
+      </div>
+      <button class="carousel-control-prev" type="button" data-bs-target="#clmsLandingHeroCarousel" data-bs-slide="prev">
+        <span class="visually-hidden">Previous slide</span>
+        <i class="bx bx-chevron-left" aria-hidden="true"></i>
+      </button>
+      <button class="carousel-control-next" type="button" data-bs-target="#clmsLandingHeroCarousel" data-bs-slide="next">
+        <span class="visually-hidden">Next slide</span>
+        <i class="bx bx-chevron-right" aria-hidden="true"></i>
+      </button>
+    </div>
+  <?php else : ?>
   <header class="hero-section">
     <div class="container">
       <div class="row align-items-center g-4">
@@ -831,6 +1105,7 @@ $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): st
       </div>
     </div>
   </header>
+  <?php endif; ?>
 
   <main>
     <section class="py-5">
