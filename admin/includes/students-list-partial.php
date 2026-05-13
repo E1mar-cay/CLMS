@@ -50,15 +50,23 @@ $filterApproval = $filterApproval ?? '';
     <?php if ($filterApproval !== '') : ?>
       <span class="ms-1">· Approval: <strong><?php echo htmlspecialchars(ucfirst($filterApproval), ENT_QUOTES, 'UTF-8'); ?></strong></span>
     <?php endif; ?>
+    <?php if (($filterArchive ?? '') === 'archived') : ?>
+      <span class="ms-1">· <strong>Archived only</strong></span>
+    <?php elseif (($filterArchive ?? '') === 'all') : ?>
+      <span class="ms-1">· All (incl. archived)</span>
+    <?php endif; ?>
   </small>
 </div>
 
 <?php if ($students === []) : ?>
   <p class="mb-0 text-muted">
     <?php
-    $hasOtherFilters = $filterBatch !== '' || $filterAccount !== '' || $filterApproval !== '';
+    $filterArchive = $filterArchive ?? '';
+    $hasOtherFilters = $filterBatch !== '' || $filterAccount !== '' || $filterApproval !== '' || $filterArchive !== '';
     if ($searchQuery !== '') {
         echo 'No students match your search.';
+    } elseif ($filterArchive === 'archived' && !$hasOtherFilters) {
+        echo 'No archived students.';
     } elseif ($hasOtherFilters) {
         echo 'No students match the current filters.';
     } else {
@@ -67,10 +75,33 @@ $filterApproval = $filterApproval ?? '';
     ?>
   </p>
 <?php else : ?>
+  <div class="mb-2">
+    <small class="text-muted" id="clms-students-selection-meta">0 selected</small>
+  </div>
+  <style>
+    .clms-actions-group .clms-action-btn {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .clms-actions-group .clms-action-btn i {
+      font-size: 1rem;
+      line-height: 1;
+    }
+  </style>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
       <thead>
         <tr>
+          <th style="width: 36px;">
+            <input
+              type="checkbox"
+              class="form-check-input clms-student-select-all"
+              aria-label="Select all students on this page" />
+          </th>
           <th>#</th>
           <th>Name</th>
           <th>Email</th>
@@ -89,26 +120,122 @@ $filterApproval = $filterApproval ?? '';
     $avgScore = (float) $student['avg_score'];
     $fullName = trim((string) $student['first_name'] . ' ' . (string) $student['last_name']);
     $studentEmail = (string) $student['email'];
+    $studentRowId = (int) $student['id'];
+    $rowAccountDisabled = (int) ($student['account_is_disabled'] ?? 0) === 1;
+    $rowIsArchived = (int) ($student['account_is_archived'] ?? 0) === 1;
+    $rowApprovalStatus = strtolower((string) ($student['account_approval_status'] ?? 'approved'));
+    if (!in_array($rowApprovalStatus, ['pending', 'approved', 'rejected'], true)) {
+        $rowApprovalStatus = 'approved';
+    }
 ?>
         <tr
           data-search-item
-          data-search-text="<?php echo htmlspecialchars($fullName . ' ' . $studentEmail, ENT_QUOTES, 'UTF-8'); ?>">
+          data-search-text="<?php echo htmlspecialchars($fullName . ' ' . $studentEmail, ENT_QUOTES, 'UTF-8'); ?>"
+          data-clms-student-id="<?php echo $studentRowId; ?>"
+          data-clms-account-disabled="<?php echo $rowAccountDisabled ? '1' : '0'; ?>"
+          data-clms-account-archived="<?php echo $rowIsArchived ? '1' : '0'; ?>"
+          data-clms-approval-status="<?php echo htmlspecialchars($rowApprovalStatus, ENT_QUOTES, 'UTF-8'); ?>">
+          <td>
+            <input
+              type="checkbox"
+              class="form-check-input clms-student-select"
+              value="<?php echo $studentRowId; ?>"
+              aria-label="Select <?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?>" />
+          </td>
           <td><?php echo $rowNumber; ?></td>
-          <td><?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?></td>
+          <td>
+            <?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?>
+<?php if ($rowIsArchived) : ?>
+            <span class="badge bg-label-secondary ms-1" title="This student is archived — hidden from the default list."><i class="bx bx-archive"></i> Archived</span>
+<?php endif; ?>
+          </td>
           <td><?php echo htmlspecialchars((string) $student['email'], ENT_QUOTES, 'UTF-8'); ?></td>
           <td><?php echo $modulesDone; ?>/<?php echo $totalModulesOverall; ?></td>
           <td><?php echo number_format($avgScore, 2); ?>%</td>
           <td><?php echo (int) $student['attempts_total']; ?></td>
           <td><?php echo (int) $student['certificates_count']; ?></td>
           <td class="text-end">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary clms-student-progress-btn"
-              data-student-id="<?php echo (int) $student['id']; ?>"
-              data-student-name="<?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?>"
-              data-student-email="<?php echo htmlspecialchars($studentEmail, ENT_QUOTES, 'UTF-8'); ?>">
-              <i class="bx bx-show"></i> View Progress
-            </button>
+<?php if ($rowIsArchived) : ?>
+            <div class="btn-group clms-actions-group" role="group" aria-label="Actions">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-success clms-action-btn clms-student-restore-btn"
+                data-user-id="<?php echo $studentRowId; ?>"
+                data-display-name="<?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?>"
+                title="Restore (un-archive)"
+                aria-label="Restore">
+                <i class="bx bx-archive-out"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger clms-action-btn clms-student-delete-btn"
+                data-user-id="<?php echo $studentRowId; ?>"
+                data-display-name="<?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?>"
+                data-user-email="<?php echo htmlspecialchars($studentEmail, ENT_QUOTES, 'UTF-8'); ?>"
+                title="Delete permanently"
+                aria-label="Delete">
+                <i class="bx bx-trash"></i>
+              </button>
+            </div>
+<?php else : ?>
+            <div class="btn-group clms-actions-group" role="group" aria-label="Actions">
+<?php if ($rowApprovalStatus !== 'approved') : ?>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-success clms-action-btn clms-student-approval-btn"
+                data-user-id="<?php echo $studentRowId; ?>"
+                data-approval-status="approved"
+                title="Approve"
+                aria-label="Approve">
+                <i class="bx bx-check"></i>
+              </button>
+<?php endif; ?>
+<?php if ($rowApprovalStatus !== 'rejected') : ?>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-warning clms-action-btn clms-student-approval-btn"
+                data-user-id="<?php echo $studentRowId; ?>"
+                data-approval-status="rejected"
+                title="Reject"
+                aria-label="Reject">
+                <i class="bx bx-x"></i>
+              </button>
+<?php endif; ?>
+              <button
+                type="button"
+                class="btn btn-sm <?php echo $rowAccountDisabled ? 'btn-outline-success' : 'btn-outline-secondary'; ?> clms-action-btn clms-student-disable-btn"
+                data-user-id="<?php echo $studentRowId; ?>"
+                data-disable-account="<?php echo $rowAccountDisabled ? '0' : '1'; ?>"
+                title="<?php echo $rowAccountDisabled ? 'Enable account' : 'Disable account'; ?>"
+                aria-label="<?php echo $rowAccountDisabled ? 'Enable account' : 'Disable account'; ?>">
+                <i class="bx <?php echo $rowAccountDisabled ? 'bx-check-circle' : 'bx-block'; ?>"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary clms-action-btn clms-student-edit-btn"
+                data-bs-toggle="modal"
+                data-bs-target="#editStudentModal"
+                data-edit-id="<?php echo $studentRowId; ?>"
+                data-edit-fn="<?php echo htmlspecialchars((string) $student['first_name'], ENT_QUOTES, 'UTF-8'); ?>"
+                data-edit-ln="<?php echo htmlspecialchars((string) $student['last_name'], ENT_QUOTES, 'UTF-8'); ?>"
+                data-edit-em="<?php echo htmlspecialchars($studentEmail, ENT_QUOTES, 'UTF-8'); ?>"
+                data-edit-batch="<?php echo htmlspecialchars((string) ($student['student_batch'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                title="Edit"
+                aria-label="Edit">
+                <i class="bx bx-pencil"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger clms-action-btn clms-student-delete-btn"
+                data-user-id="<?php echo $studentRowId; ?>"
+                data-display-name="<?php echo htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8'); ?>"
+                data-user-email="<?php echo htmlspecialchars($studentEmail, ENT_QUOTES, 'UTF-8'); ?>"
+                title="Delete"
+                aria-label="Delete">
+                <i class="bx bx-trash"></i>
+              </button>
+            </div>
+<?php endif; ?>
           </td>
         </tr>
 <?php endforeach; ?>

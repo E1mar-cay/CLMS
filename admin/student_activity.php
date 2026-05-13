@@ -227,6 +227,7 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
         $batchDisplay = trim((string) ($row['student_batch'] ?? ''));
 
         $activityRows[] = [
+            'student_id' => (int) ($row['id'] ?? 0),
             'student_name' => trim((string) $row['first_name'] . ' ' . (string) $row['last_name']) ?: 'Student',
             'student_batch' => $batchDisplay,
             'quiz_passed_count' => $quizPassed,
@@ -507,6 +508,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                             <th class="text-center">Final Exam</th>
                             <th class="text-center">Overall</th>
                             <th class="text-center">Last Activity</th>
+                            <th class="text-end">Actions</th>
                           </tr>
                         </thead>
                         <tbody id="activityTableBody">
@@ -534,6 +536,15 @@ require_once __DIR__ . '/includes/layout-top.php';
 <?php else : ?>
                               <small class="text-muted">-</small>
 <?php endif; ?>
+                            </td>
+                            <td class="text-end">
+                              <button
+                                type="button"
+                                class="btn btn-sm btn-outline-primary clms-student-progress-btn"
+                                data-student-id="<?php echo (int) ($row['student_id'] ?? 0); ?>"
+                                data-student-name="<?php echo htmlspecialchars((string) $row['student_name'], ENT_QUOTES, 'UTF-8'); ?>">
+                                <i class="bx bx-show"></i> View Progress
+                              </button>
                             </td>
                           </tr>
 <?php endforeach; ?>
@@ -581,6 +592,31 @@ require_once __DIR__ . '/includes/layout-top.php';
                 </div>
               </div>
 
+              <!-- View Progress modal — body filled in via AJAX from
+                   admin/students.php?ajax=1&progress=1&student_id=N. The
+                   endpoint already returns ready-to-paste HTML for the
+                   shared students-progress-modal-body partial, so no
+                   client-side templating is needed here. -->
+              <div class="modal fade" id="clmsStudentProgressModal" tabindex="-1" aria-labelledby="clmsStudentProgressModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <div class="pe-3">
+                        <h5 class="modal-title" id="clmsStudentProgressModalLabel">Student progress</h5>
+                        <small class="text-muted d-block d-none" id="clmsStudentProgressModalEmail"></small>
+                      </div>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="clmsStudentProgressModalBody">
+                      <div class="text-center py-4 text-muted" id="clmsStudentProgressModalPlaceholder">
+                        <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                        <span class="visually-hidden">Loading…</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <script>
                 (() => {
                   const bodyEl = document.getElementById('activityTableBody');
@@ -602,6 +638,10 @@ require_once __DIR__ . '/includes/layout-top.php';
                       ? new Date(Number(row.last_activity_unix) * 1000).toLocaleString()
                       : '-';
                     const batchCell = row.student_batch ? escapeHtml(row.student_batch) : '—';
+                    const studentIdNum = Number(row.student_id) || 0;
+                    const progressBtn = studentIdNum > 0
+                      ? `<button type="button" class="btn btn-sm btn-outline-primary clms-student-progress-btn" data-student-id="${studentIdNum}" data-student-name="${escapeHtml(row.student_name)}"><i class="bx bx-show"></i> View Progress</button>`
+                      : '';
                     return `
                       <tr>
                         <td class="fw-semibold">${escapeHtml(row.student_name)}</td>
@@ -621,9 +661,86 @@ require_once __DIR__ . '/includes/layout-top.php';
                           <span class="badge ${escapeHtml(row.overall_badge)}">${escapeHtml(row.overall_label)}</span>
                         </td>
                         <td class="text-center"><small>${escapeHtml(lastActivity)}</small></td>
+                        <td class="text-end">${progressBtn}</td>
                       </tr>
                     `;
                   };
+
+                  /* ----- View Progress modal wiring (delegated to bodyEl
+                     so AJAX-replaced rows keep working without rebinding) */
+                  const progressModalEl = document.getElementById('clmsStudentProgressModal');
+                  const progressModalBody = document.getElementById('clmsStudentProgressModalBody');
+                  const progressModalTitle = document.getElementById('clmsStudentProgressModalLabel');
+                  const progressModalEmail = document.getElementById('clmsStudentProgressModalEmail');
+                  const progressEndpoint = <?php echo json_encode($clmsWebBase . '/admin/students.php', JSON_UNESCAPED_SLASHES); ?>;
+                  const loadingProgressHtml =
+                    '<div class="text-center py-4 text-muted">' +
+                    '<div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>' +
+                    '<span class="visually-hidden">Loading…</span></div>';
+                  let progressAbort = null;
+
+                  const applyProgressHeaderFromMeta = (bodyHostEl) => {
+                    if (!progressModalTitle || !progressModalEmail) return;
+                    const meta = bodyHostEl.querySelector('[data-clms-progress-name]');
+                    if (!meta) return;
+                    const n = meta.getAttribute('data-clms-progress-name') || '';
+                    const e = meta.getAttribute('data-clms-progress-email') || '';
+                    progressModalTitle.textContent = n || 'Student progress';
+                    if (e) {
+                      progressModalEmail.textContent = e;
+                      progressModalEmail.classList.remove('d-none');
+                    } else {
+                      progressModalEmail.textContent = '';
+                      progressModalEmail.classList.add('d-none');
+                    }
+                  };
+
+                  const openProgress = async (studentId, nameHint) => {
+                    if (!progressModalEl || !progressModalBody || studentId < 1) return;
+                    if (progressModalTitle) progressModalTitle.textContent = nameHint || 'Student progress';
+                    if (progressModalEmail) {
+                      progressModalEmail.textContent = '';
+                      progressModalEmail.classList.add('d-none');
+                    }
+                    progressModalBody.innerHTML = loadingProgressHtml;
+                    if (window.bootstrap && bootstrap.Modal) {
+                      bootstrap.Modal.getOrCreateInstance(progressModalEl).show();
+                    }
+                    if (progressAbort) progressAbort.abort();
+                    const controller = new AbortController();
+                    progressAbort = controller;
+                    try {
+                      const url = `${progressEndpoint}?ajax=1&progress=1&student_id=${encodeURIComponent(String(studentId))}`;
+                      const res = await fetch(url, { signal: controller.signal, credentials: 'same-origin' });
+                      if (!res.ok) throw new Error('HTTP ' + res.status);
+                      const html = await res.text();
+                      progressModalBody.innerHTML = html;
+                      applyProgressHeaderFromMeta(progressModalBody);
+                    } catch (err) {
+                      if (err.name !== 'AbortError') {
+                        progressModalBody.innerHTML =
+                          '<p class="text-danger mb-0"><i class="bx bx-error-circle me-1"></i>Could not load progress. Please try again.</p>';
+                      }
+                    } finally {
+                      if (progressAbort === controller) progressAbort = null;
+                    }
+                  };
+
+                  if (progressModalEl) {
+                    progressModalEl.addEventListener('hidden.bs.modal', () => {
+                      if (progressAbort) progressAbort.abort();
+                      if (progressModalBody) progressModalBody.innerHTML = loadingProgressHtml;
+                    });
+                  }
+
+                  bodyEl.addEventListener('click', (event) => {
+                    const btn = event.target.closest('.clms-student-progress-btn');
+                    if (!btn) return;
+                    event.preventDefault();
+                    const sid = parseInt(btn.getAttribute('data-student-id'), 10) || 0;
+                    const nm = btn.getAttribute('data-student-name') || '';
+                    if (sid > 0) openProgress(sid, nm);
+                  });
 
                   const poll = async () => {
                     try {
