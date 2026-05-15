@@ -98,8 +98,11 @@ $assignedCoursesStmt = $pdo->prepare(
   "SELECT DISTINCT c.id, c.title, COALESCE(c.final_exam_duration_minutes, 45) AS final_exam_duration_minutes
      FROM courses c
      LEFT JOIN course_instructors ci ON ci.course_id = c.id
-     WHERE ci.instructor_user_id = :instructor_id
-        OR ci.course_id IS NULL
+     WHERE COALESCE(c.request_status, 'approved') IN ('none', 'approved')
+       AND (
+         ci.instructor_user_id = :instructor_id
+         OR ci.course_id IS NULL
+       )
      ORDER BY c.title ASC"
 );
 $assignedCoursesStmt->execute(['instructor_id' => $instructorId]);

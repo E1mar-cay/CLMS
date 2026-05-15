@@ -70,6 +70,26 @@ if (!function_exists('clms_ensure_course_publish_schema')) {
                 error_log('courses.' . $col . ' migration failed: ' . $e->getMessage());
             }
         }
+
+        // 3. Instructor course-request approval, separate from publishing.
+        $requestColumns = [
+            'request_status' => "ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'approved'",
+            'request_submitted_at' => 'DATETIME NULL',
+            'request_submitted_by' => 'INT NULL',
+            'request_reviewed_at' => 'DATETIME NULL',
+            'request_reviewed_by' => 'INT NULL',
+            'request_review_notes' => 'TEXT NULL',
+        ];
+        foreach ($requestColumns as $col => $spec) {
+            try {
+                $check = $pdo->query("SHOW COLUMNS FROM courses LIKE '" . $col . "'")->fetch();
+                if (!$check) {
+                    $pdo->exec('ALTER TABLE courses ADD COLUMN ' . $col . ' ' . $spec);
+                }
+            } catch (Throwable $e) {
+                error_log('courses.' . $col . ' migration failed: ' . $e->getMessage());
+            }
+        }
     }
 }
 
