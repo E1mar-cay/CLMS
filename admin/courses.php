@@ -11,6 +11,7 @@ clms_require_roles(['admin', 'instructor']);
 
 $pageTitle = 'Courses | Criminology LMS';
 $activeAdminPage = 'courses';
+$activeInstructorPage = 'courses';
 $errorMessage = '';
 $successMessage = '';
 
@@ -797,7 +798,9 @@ foreach ($courses as $courseRow) {
 }
 $courseBuilderPath = $isAdmin ? '/admin/add_question.php' : '/instructor/add_question.php';
 
-require_once __DIR__ . '/includes/layout-top.php';
+require_once $isAdmin
+    ? __DIR__ . '/includes/layout-top.php'
+    : dirname(__DIR__) . '/instructor/includes/layout-top.php';
 ?>
 <?php
 $isEditMode = $editId > 0;
@@ -1069,13 +1072,14 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                 aria-hidden="true"
                 data-bs-backdrop="static"
                 data-bs-keyboard="false">
-                <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-                  <div class="modal-content" style="max-height: calc(100vh - 2rem);">
+                <div class="modal-dialog modal-lg modal-dialog-centered" style="height: calc(100vh - 2rem);">
+                  <div class="modal-content h-100">
                     <form
                       method="post"
                       action="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>"
                       id="courseForm"
                       enctype="multipart/form-data"
+                      class="d-flex flex-column h-100"
                       <?php if ($isEditMode) : ?>data-confirm-update="1"<?php endif; ?>>
                       <div class="modal-header">
                         <h5 class="modal-title" id="courseFormModalLabel">
@@ -1087,7 +1091,7 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                           class="btn-close"
                           aria-label="Close"></a>
                       </div>
-                      <div class="modal-body" style="overflow-y: auto;">
+                      <div class="modal-body flex-grow-1" style="overflow-y: auto; min-height: 0;">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                         <input type="hidden" name="action" value="<?php echo $isEditMode ? 'update' : 'create'; ?>" />
                         <input type="hidden" name="existing_thumbnail_url" value="<?php echo htmlspecialchars($formThumbnailUrl, ENT_QUOTES, 'UTF-8'); ?>" />
@@ -1552,4 +1556,6 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
               </script>
 
 <?php
-require_once __DIR__ . '/includes/layout-bottom.php';
+require_once $isAdmin
+    ? __DIR__ . '/includes/layout-bottom.php'
+    : dirname(__DIR__) . '/instructor/includes/layout-bottom.php';
