@@ -170,6 +170,8 @@ $clmsUsersListMergeRedirect = static function (array $flashParams) use ($searchQ
 };
 $repopulateEdit = null;
 $shouldOpenEditModal = false;
+$repopulateCreate = null;
+$shouldOpenCreateModal = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!clms_csrf_validate($_POST['csrf_token'] ?? null)) {
@@ -555,6 +557,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect(['approval_saved' => '1'])));
             }
 
+            if ($action === 'create_user') {
+                $firstName = trim((string) ($_POST['first_name'] ?? ''));
+                $lastName = trim((string) ($_POST['last_name'] ?? ''));
+                $email = trim((string) ($_POST['email'] ?? ''));
+                $role = trim((string) ($_POST['role'] ?? ''));
+                $password = (string) ($_POST['password'] ?? '');
+                $studentBatch = trim((string) ($_POST['student_batch'] ?? ''));
+
+                if ($firstName === '' || $lastName === '') {
+                    throw new RuntimeException('First and last name are required.');
+                }
+                if (strlen($firstName) > 50 || strlen($lastName) > 50) {
+                    throw new RuntimeException('Name fields must be 50 characters or fewer.');
+                }
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    throw new RuntimeException('Please enter a valid email address.');
+                }
+                if (strlen($email) > 100) {
+                    throw new RuntimeException('Email must be 100 characters or fewer.');
+                }
+                if ($password === '' || strlen($password) < 8) {
+                    throw new RuntimeException('Password must be at least 8 characters.');
+                }
+                if (!in_array($role, $allowedRoles, true)) {
+                    throw new RuntimeException('Invalid role.');
+                }
+                if (strlen($studentBatch) > 80) {
+                    throw new RuntimeException('Batch / cohort must be 80 characters or fewer.');
+                }
+
+                $dupStmt = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+                $dupStmt->execute(['email' => $email]);
+                if ($dupStmt->fetch()) {
+                    throw new RuntimeException('An account with this email already exists.');
+                }
+
+                $hash = password_hash($password, PASSWORD_DEFAULT);
+                if ($hash === false) {
+                    throw new RuntimeException('Could not create password hash.');
+                }
+
+                $batchParam = $role === 'student'
+                    ? ($studentBatch === '' ? null : $studentBatch)
+                    : null;
+
+                if (clms_users_has_approval_column($pdo)) {
+                    $ins = $pdo->prepare(
+                        'INSERT INTO users (
+                            first_name, last_name, email, password_hash, role, student_batch,
+                            account_approval_status, account_approved_at, account_is_disabled
+                         ) VALUES (
+                            :fn, :ln, :em, :ph, :role, :sb,
+                            :ap, :ap_at, 0
+                         )'
+                    );
+                    $ins->execute([
+                        'fn' => $firstName,
+                        'ln' => $lastName,
+                        'em' => $email,
+                        'ph' => $hash,
+                        'role' => $role,
+                        'sb' => $batchParam,
+                        'ap' => 'approved',
+                        'ap_at' => date('Y-m-d H:i:s'),
+                    ]);
+                } else {
+                    $ins = $pdo->prepare(
+                        'INSERT INTO users (first_name, last_name, email, password_hash, role, student_batch)
+                         VALUES (:fn, :ln, :em, :ph, :role, :sb)'
+                    );
+                    $ins->execute([
+                        'fn' => $firstName,
+                        'ln' => $lastName,
+                        'em' => $email,
+                        'ph' => $hash,
+                        'role' => $role,
+                        'sb' => $batchParam,
+                    ]);
+                }
+
+                clms_redirect('admin/users.php?' . http_build_query($clmsUsersListMergeRedirect([
+                    'created' => '1',
+                    'created_role' => $role,
+                ])));
+            }
+
             if ($action !== 'update_user') {
                 throw new RuntimeException('Unknown action.');
             }
@@ -688,9 +776,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') === 'create_user' && $errorMessage !== '') {
+    $shouldOpenCreateModal = true;
+    $repopulateCreate = [
+        'first_name' => trim((string) ($_POST['first_name'] ?? '')),
+        'last_name' => trim((string) ($_POST['last_name'] ?? '')),
+        'email' => trim((string) ($_POST['email'] ?? '')),
+        'role' => trim((string) ($_POST['role'] ?? 'student')),
+        'student_batch' => trim((string) ($_POST['student_batch'] ?? '')),
+    ];
+    if (!in_array($repopulateCreate['role'], $allowedRoles, true)) {
+        $repopulateCreate['role'] = 'student';
+    }
+}
+
 $flashSuccess = '';
 if (!empty($_GET['saved'])) {
     $flashSuccess = 'User updated successfully.';
+} elseif (!empty($_GET['created'])) {
+    $createdRole = strtolower(trim((string) ($_GET['created_role'] ?? '')));
+    $flashSuccess = 'Account created. The user is approved and can sign in immediately.';
+    if ($createdRole === 'student') {
+        $flashSuccess .= ' Find them on the Students page.';
+    }
 } elseif (!empty($_GET['approval_saved'])) {
     $flashSuccess = 'Student approval status updated.';
 } elseif (!empty($_GET['approved'])) {
@@ -845,10 +953,18 @@ if ($isAjaxRequest) {
 require_once __DIR__ . '/includes/layout-top.php';
 ?>
               <div class="d-flex flex-wrap justify-content-between align-items-center py-3 mb-3 gap-2">
-                <div>
+                <div class="flex-grow-1">
                   <h4 class="fw-bold mb-1">Staff management</h4>
-                  <small class="text-muted">Manage <strong>admin</strong> and <strong>instructor</strong> accounts. Update names, email, role, or password. Student accounts are managed on the <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/students.php', ENT_QUOTES, 'UTF-8'); ?>">Students</a> page.</small>
+                  <small class="text-muted">Manage <strong>admin</strong> and <strong>instructor</strong> accounts below. Use <strong>Add user</strong> to create any role with an active password — students are created <strong>approved</strong> (no registration queue). Ongoing student lists live on <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/students.php', ENT_QUOTES, 'UTF-8'); ?>">Students</a>.</small>
                 </div>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  id="clms-add-user-btn"
+                  data-bs-toggle="modal"
+                  data-bs-target="#createUserModal">
+                  <i class="bx bx-user-plus me-1"></i>Add user
+                </button>
               </div>
 
               <div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
@@ -910,6 +1026,71 @@ require_once __DIR__ . '/includes/layout-top.php';
                       <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-primary">Save changes</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal fade" id="createUserModal" tabindex="-1" aria-labelledby="createUserModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="createUserModalLabel">Add user</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="createUserForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" novalidate>
+                      <div class="modal-body">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+                        <input type="hidden" name="action" value="create_user" />
+                        <p class="small text-muted mb-3">New accounts can sign in right away. Students are saved with approval status <strong>approved</strong> (not pending).</p>
+                        <div class="row g-3">
+                          <div class="col-md-6">
+                            <label class="form-label" for="modal_create_fn">First name</label>
+                            <input class="form-control" id="modal_create_fn" name="first_name" maxlength="50" required autocomplete="given-name" />
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label" for="modal_create_ln">Last name</label>
+                            <input class="form-control" id="modal_create_ln" name="last_name" maxlength="50" required autocomplete="family-name" />
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label" for="modal_create_em">Email</label>
+                            <input class="form-control" id="modal_create_em" name="email" type="email" maxlength="100" required autocomplete="email" />
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label" for="modal_create_role">Role</label>
+                            <select class="form-select" id="modal_create_role" name="role" required>
+<?php foreach ($allowedRoles as $r) : ?>
+                              <option value="<?php echo htmlspecialchars($r, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars(ucfirst($r), ENT_QUOTES, 'UTF-8'); ?></option>
+<?php endforeach; ?>
+                            </select>
+                          </div>
+                          <div class="col-12 col-md-6" id="modal_create_batch_wrap">
+                            <label class="form-label" for="modal_create_batch_select">Batch / cohort</label>
+                            <select class="form-select" id="modal_create_batch_select" autocomplete="off">
+                              <option value="">(None)</option>
+<?php foreach ($studentBatchFilterOptions as $batchOpt) : ?>
+                              <option value="<?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($batchOpt, ENT_QUOTES, 'UTF-8'); ?></option>
+<?php endforeach; ?>
+                              <option value="__other__">Other…</option>
+                            </select>
+                            <div id="modal_create_batch_other_wrap" class="d-none mt-2">
+                              <label class="form-label" for="modal_create_batch_other">New batch name</label>
+                              <input type="text" class="form-control" id="modal_create_batch_other" maxlength="80" autocomplete="off" placeholder="e.g. 2026-A" />
+                            </div>
+                            <input type="hidden" name="student_batch" id="modal_create_batch" value="" />
+                            <small class="text-muted">Shown for students only.</small>
+                          </div>
+                          <div class="col-12">
+                            <label class="form-label" for="modal_create_pw">Password</label>
+                            <input class="form-control" id="modal_create_pw" name="password" type="password" minlength="8" required autocomplete="new-password" />
+                            <small class="text-muted">Minimum 8 characters. Share it securely with the user.</small>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create account</button>
                       </div>
                     </form>
                   </div>
@@ -1493,6 +1674,107 @@ require_once __DIR__ . '/includes/layout-top.php';
                         syncBatchVisibility();
                         if (window.bootstrap && bootstrap.Modal) {
                           bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                        }
+                      }
+                    }
+                  }
+
+                  const createModalEl = document.getElementById('createUserModal');
+                  const createForm = document.getElementById('createUserForm');
+                  if (createModalEl && createForm) {
+                    const cFn = document.getElementById('modal_create_fn');
+                    const cLn = document.getElementById('modal_create_ln');
+                    const cEm = document.getElementById('modal_create_em');
+                    const cRole = document.getElementById('modal_create_role');
+                    const cBatchSelect = document.getElementById('modal_create_batch_select');
+                    const cBatchOtherWrap = document.getElementById('modal_create_batch_other_wrap');
+                    const cBatchOther = document.getElementById('modal_create_batch_other');
+                    const cBatchHidden = document.getElementById('modal_create_batch');
+                    const cBatchWrap = document.getElementById('modal_create_batch_wrap');
+                    const cPw = document.getElementById('modal_create_pw');
+                    if (cFn && cLn && cEm && cRole && cPw) {
+                      const applyCreateBatchValue = (raw) => {
+                        const v = (raw || '').trim();
+                        if (!cBatchSelect || !cBatchHidden) return;
+                        let matched = false;
+                        for (let i = 0; i < cBatchSelect.options.length; i++) {
+                          const opt = cBatchSelect.options[i];
+                          if (opt.value !== '__other__' && opt.value === v) {
+                            cBatchSelect.selectedIndex = i;
+                            matched = true;
+                            break;
+                          }
+                        }
+                        if (!matched) {
+                          cBatchSelect.value = '__other__';
+                          if (cBatchOther) cBatchOther.value = v;
+                        } else if (cBatchOther) cBatchOther.value = '';
+                        if (cBatchOtherWrap) {
+                          cBatchOtherWrap.classList.toggle('d-none', cBatchSelect.value !== '__other__');
+                        }
+                        cBatchHidden.value = cBatchSelect.value === '__other__' ? (cBatchOther ? cBatchOther.value.trim() : '') : cBatchSelect.value;
+                      };
+
+                      const syncCreateBatchHidden = () => {
+                        if (!cBatchSelect || !cBatchHidden) return;
+                        cBatchHidden.value =
+                          cBatchSelect.value === '__other__' ? (cBatchOther ? cBatchOther.value.trim() : '') : cBatchSelect.value;
+                      };
+
+                      const syncCreateBatchVisibility = () => {
+                        if (!cBatchWrap) return;
+                        cBatchWrap.classList.toggle('d-none', cRole.value !== 'student');
+                      };
+
+                      const resetCreateForm = () => {
+                        cFn.value = '';
+                        cLn.value = '';
+                        cEm.value = '';
+                        cRole.value = 'student';
+                        if (cBatchSelect) cBatchSelect.value = '';
+                        if (cBatchOther) cBatchOther.value = '';
+                        if (cBatchOtherWrap) cBatchOtherWrap.classList.add('d-none');
+                        if (cBatchHidden) cBatchHidden.value = '';
+                        cPw.value = '';
+                        syncCreateBatchVisibility();
+                      };
+
+                      cRole.addEventListener('change', syncCreateBatchVisibility);
+                      if (cBatchSelect) {
+                        cBatchSelect.addEventListener('change', () => {
+                          if (cBatchOtherWrap) {
+                            cBatchOtherWrap.classList.toggle('d-none', cBatchSelect.value !== '__other__');
+                          }
+                          if (cBatchSelect.value !== '__other__' && cBatchOther) cBatchOther.value = '';
+                          syncCreateBatchHidden();
+                        });
+                      }
+                      if (cBatchOther) {
+                        cBatchOther.addEventListener('input', syncCreateBatchHidden);
+                      }
+                      createForm.addEventListener('submit', () => {
+                        syncCreateBatchHidden();
+                      });
+
+                      createModalEl.addEventListener('show.bs.modal', (ev) => {
+                        const btn = ev.relatedTarget;
+                        if (btn && btn.id === 'clms-add-user-btn') {
+                          resetCreateForm();
+                        }
+                      });
+
+                      const repopC = <?php echo json_encode($repopulateCreate, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+                      const shouldOpenC = <?php echo $shouldOpenCreateModal ? 'true' : 'false'; ?>;
+                      if (shouldOpenC && repopC) {
+                        cFn.value = repopC.first_name || '';
+                        cLn.value = repopC.last_name || '';
+                        cEm.value = repopC.email || '';
+                        cRole.value = repopC.role || 'student';
+                        applyCreateBatchValue(repopC.student_batch || '');
+                        cPw.value = '';
+                        syncCreateBatchVisibility();
+                        if (window.bootstrap && bootstrap.Modal) {
+                          bootstrap.Modal.getOrCreateInstance(createModalEl).show();
                         }
                       }
                     }
