@@ -114,10 +114,10 @@ $showUpgradeToPro = false;
   }
 
   .clms-auth-panel {
-    background: linear-gradient(160deg, 
-      var(--clms-primary-dark, #5c0000) 0%, 
-      var(--clms-primary-color, #800000) 40%, 
-      var(--clms-primary-light, #a52a2a) 92%);
+    background: linear-gradient(160deg,
+        var(--clms-primary-dark, #5c0000) 0%,
+        var(--clms-primary-color, #800000) 40%,
+        var(--clms-primary-light, #a52a2a) 92%);
     color: #fff;
     height: 100%;
     padding: 2rem;
@@ -391,7 +391,7 @@ $showUpgradeToPro = false;
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-              <script src="/public/assets/js/form-validation.js"></script>
+<script src="/public/assets/js/form-validation.js"></script>
 <?php if ($formError !== '') : ?>
   <script>
     Swal.fire({
