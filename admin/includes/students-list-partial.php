@@ -65,6 +65,9 @@ $filterApproval = $filterApproval ?? '';
     $hasOtherFilters = $filterBatch !== '' || $filterAccount !== '' || $filterApproval !== '' || $filterArchive !== '';
     if ($searchQuery !== '') {
         echo 'No students match your search.';
+        if ($filterArchive !== 'all') {
+            echo ' If someone was removed from the default list, set Archive to <strong>All (incl. archived)</strong> and search again.';
+        }
     } elseif ($filterArchive === 'archived' && !$hasOtherFilters) {
         echo 'No archived students.';
     } elseif ($hasOtherFilters) {

@@ -59,7 +59,7 @@ try {
             'submitted_at_human' => $submittedAt !== ''
                 ? date('M j', strtotime($submittedAt) ?: time())
                 : '',
-            'url' => $clmsWebBase . '/admin/preview_course.php?course_id=' . (int) ($row['id'] ?? 0),
+            'url' => 'preview_course.php?course_id=' . (int) ($row['id'] ?? 0),
         ];
     }
 

@@ -120,6 +120,14 @@ $offset = ($page - 1) * $perPage;
 
 $allowedRoles = ['student', 'instructor', 'admin'];
 $__listF = clms_users_normalize_filters_from_array($_GET, $allowedRoles);
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && $__listF['pendingOnly'] && !$isAjaxRequest) {
+    $pq = trim((string) ($__listF['searchQuery'] ?? ''));
+    $target = 'admin/students.php?approval=pending';
+    if ($pq !== '') {
+        $target .= '&q=' . rawurlencode($pq);
+    }
+    clms_redirect($target);
+}
 $searchQuery = $__listF['searchQuery'];
 /*
  * Staff-only page: ignore student-targeted filters from the URL.
@@ -831,7 +839,7 @@ if ($isAjaxRequest) {
     header('Content-Type: text/html; charset=UTF-8');
     header('Cache-Control: no-store');
     require __DIR__ . '/includes/users-list-partial.php';
-    return;
+    exit;
 }
 
 require_once __DIR__ . '/includes/layout-top.php';

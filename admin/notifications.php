@@ -43,12 +43,17 @@ try {
     foreach ($rows as $row) {
         $email = (string) ($row['email'] ?? '');
         $createdAt = (string) ($row['created_at'] ?? '');
+        /*
+         * Same-directory relative URL so links work from any /admin/*.php
+         * page even when $clmsWebBase is empty or mis-detected (absolute
+         * /admin/... would leave a /CLMS subfolder install and load blank).
+         */
         $items[] = [
             'id' => (int) ($row['id'] ?? 0),
             'name' => trim((string) ($row['first_name'] ?? '') . ' ' . (string) ($row['last_name'] ?? '')),
             'email' => $email,
             'created_at_human' => date('M j', strtotime($createdAt) ?: time()),
-            'url' => $clmsWebBase . '/admin/users.php?pending=1&q=' . rawurlencode($email),
+            'url' => 'students.php?approval=pending&q=' . rawurlencode($email),
         ];
     }
 

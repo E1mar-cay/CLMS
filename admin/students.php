@@ -66,7 +66,7 @@ if ($filterApproval !== '' && !in_array($filterApproval, ['pending', 'approved',
 }
 /*
  * Archive filter:
- *   ''         → only ACTIVE (non-archived) students (default)
+ *   ''         → only non-archived students (default)
  *   'archived' → only archived students
  *   'all'      → both
  */
@@ -90,15 +90,32 @@ if ($filterBatchRaw === '__none__') {
     }
 }
 
+/*
+ * "Active only" (account) excludes disabled rows. Pending / rejected
+ * registrations are often disabled until an admin acts — combining
+ * both filters hid everyone. Drop the account filter in that case.
+ */
+if ($filterAccount === 'active' && in_array($filterApproval, ['pending', 'rejected'], true)) {
+    $filterAccount = '';
+}
+
 $whereSql = "WHERE u.role = 'student'";
 $params = [];
 if ($searchQuery !== '') {
-    $whereSql .= ' AND (u.first_name LIKE :search_first OR u.last_name LIKE :search_last OR u.email LIKE :search_email OR CONCAT(u.first_name, " ", u.last_name) LIKE :search_full)';
-    $likeValue = '%' . $searchQuery . '%';
-    $params['search_first'] = $likeValue;
-    $params['search_last'] = $likeValue;
-    $params['search_email'] = $likeValue;
-    $params['search_full'] = $likeValue;
+    $normQ = function_exists('mb_strtolower')
+        ? mb_strtolower($searchQuery, 'UTF-8')
+        : strtolower($searchQuery);
+    $likeLower = '%' . $normQ . '%';
+    $whereSql .= ' AND (
+        LOWER(u.first_name) LIKE :search_first
+        OR LOWER(u.last_name) LIKE :search_last
+        OR LOWER(u.email) LIKE :search_email
+        OR LOWER(CONCAT(u.first_name, " ", u.last_name)) LIKE :search_full
+    )';
+    $params['search_first'] = $likeLower;
+    $params['search_last'] = $likeLower;
+    $params['search_email'] = $likeLower;
+    $params['search_full'] = $likeLower;
 }
 if ($filterAccount === 'active') {
     $whereSql .= ' AND (COALESCE(u.account_is_disabled, 0) = 0)';
@@ -856,14 +873,14 @@ if ($isProgressAjax) {
         $recentAttempts = $attemptsStmt->fetchAll();
     }
     require __DIR__ . '/includes/students-progress-modal-body.php';
-    return;
+    exit;
 }
 
 if ($isListAjax) {
     header('Content-Type: text/html; charset=UTF-8');
     header('Cache-Control: no-store');
     require __DIR__ . '/includes/students-list-partial.php';
-    return;
+    exit;
 }
 
 require_once __DIR__ . '/includes/layout-top.php';
@@ -1115,7 +1132,7 @@ if ($studentsFormFilterParams !== []) {
                       </select>
                       <label class="visually-hidden" for="clms-students-filter-archive">Archive</label>
                       <select class="form-select form-select-sm clms-students-filter-select" name="archive" id="clms-students-filter-archive" title="Archive state">
-                        <option value=""<?php echo $filterArchive === '' ? ' selected' : ''; ?>>Active only</option>
+                        <option value=""<?php echo $filterArchive === '' ? ' selected' : ''; ?>>Not archived</option>
                         <option value="archived"<?php echo $filterArchive === 'archived' ? ' selected' : ''; ?>>Archived only</option>
                         <option value="all"<?php echo $filterArchive === 'all' ? ' selected' : ''; ?>>All (incl. archived)</option>
                       </select>
@@ -1754,6 +1771,10 @@ $canArchiveBatch = ($filterBatch !== '' && $filterArchive !== 'archived');
                     accountSel.addEventListener('change', () => {
                       clearTimeout(debounceId);
                       clearSelection();
+                      if (accountSel.value === 'active' && approvalSel
+                          && (approvalSel.value === 'pending' || approvalSel.value === 'rejected')) {
+                        accountSel.value = '';
+                      }
                       fetchAndSwap({ page: 1 });
                     });
                   }
@@ -1761,6 +1782,10 @@ $canArchiveBatch = ($filterBatch !== '' && $filterArchive !== 'archived');
                     approvalSel.addEventListener('change', () => {
                       clearTimeout(debounceId);
                       clearSelection();
+                      if ((approvalSel.value === 'pending' || approvalSel.value === 'rejected')
+                          && accountSel && accountSel.value === 'active') {
+                        accountSel.value = '';
+                      }
                       fetchAndSwap({ page: 1 });
                     });
                   }

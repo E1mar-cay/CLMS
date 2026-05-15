@@ -392,7 +392,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                 <?php foreach ($adminPendingApprovals as $pendingAccount) : ?>
                   <li class="clms-bell-item">
                     <a class="d-flex align-items-start gap-2 px-3 py-2 text-decoration-none text-body"
-                      href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php?pending=1&q=' . rawurlencode((string) $pendingAccount['email']), ENT_QUOTES, 'UTF-8'); ?>">
+                      href="<?php echo htmlspecialchars('students.php?approval=pending&q=' . rawurlencode((string) $pendingAccount['email']), ENT_QUOTES, 'UTF-8'); ?>">
                       <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-maroon, #800000); box-shadow: 0 0 0 3px rgba(128, 0, 0, .12);"></span>
                       <div class="flex-grow-1 min-w-0">
                         <div class="d-flex justify-content-between align-items-baseline gap-2">
@@ -414,7 +414,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
             </ul>
             <div class="dropdown-footer border-top px-3 py-2 text-center">
               <a
-                href="<?php echo htmlspecialchars($clmsWebBase . '/admin/users.php?pending=1', ENT_QUOTES, 'UTF-8'); ?>"
+                href="<?php echo htmlspecialchars('students.php?approval=pending', ENT_QUOTES, 'UTF-8'); ?>"
                 class="text-decoration-none small fw-semibold">
                 Review pending accounts
               </a>
@@ -462,7 +462,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
                 ?>
                   <li class="clms-bell-item">
                     <a class="d-flex align-items-start gap-2 px-3 py-2 text-decoration-none text-body"
-                      href="<?php echo htmlspecialchars($clmsWebBase . '/admin/preview_course.php?course_id=' . (int) $pendingCourse['id'], ENT_QUOTES, 'UTF-8'); ?>">
+                      href="<?php echo htmlspecialchars('preview_course.php?course_id=' . (int) $pendingCourse['id'], ENT_QUOTES, 'UTF-8'); ?>">
                       <span class="clms-bell-dot" aria-hidden="true" style="background: var(--clms-maroon, #800000); box-shadow: 0 0 0 3px rgba(128, 0, 0, .12);"></span>
                       <div class="flex-grow-1 min-w-0">
                         <div class="d-flex justify-content-between align-items-baseline gap-2">
@@ -486,7 +486,7 @@ $profileHref = $clmsWebBase . ($profileHrefMap[$sessionRole] ?? '/student/profil
             </ul>
             <div class="dropdown-footer border-top px-3 py-2 text-center">
               <a
-                href="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>"
+                href="<?php echo htmlspecialchars('courses.php', ENT_QUOTES, 'UTF-8'); ?>"
                 class="text-decoration-none small fw-semibold">
                 Review pending courses
               </a>
