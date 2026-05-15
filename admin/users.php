@@ -7,6 +7,10 @@ require_once dirname(__DIR__) . '/includes/user-approval.php';
 require_once dirname(__DIR__) . '/database.php';
 require_once dirname(__DIR__) . '/includes/student-batch-schema.php';
 
+if (!isset($clmsWebBase)) {
+    require dirname(__DIR__) . '/includes/sneat-paths.php';
+}
+
 clms_require_roles(['admin']);
 clms_user_approval_ensure_schema($pdo);
 clms_ensure_users_student_batch_column($pdo);
@@ -974,7 +978,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                       <h5 class="modal-title" id="editUserModalLabel">Edit user</h5>
                       <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
-                    <form id="editUserForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" novalidate>
+                    <form id="editUserForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" novalidate data-validate="true">
                       <div class="modal-body">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                         <input type="hidden" name="action" value="update_user" />
@@ -1039,7 +1043,7 @@ require_once __DIR__ . '/includes/layout-top.php';
                       <h5 class="modal-title" id="createUserModalLabel">Add user</h5>
                       <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
-                    <form id="createUserForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" novalidate>
+                    <form id="createUserForm" method="post" action="<?php echo htmlspecialchars($usersFormAction, ENT_QUOTES, 'UTF-8'); ?>" novalidate data-validate="true">
                       <div class="modal-body">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                         <input type="hidden" name="action" value="create_user" />
@@ -2165,6 +2169,29 @@ require_once __DIR__ . '/includes/layout-top.php';
                   }
                 })();
               </script>
+
+              <style>
+                /* Form validation error styling */
+                .form-control.is-invalid,
+                .form-select.is-invalid {
+                  border-color: #dc3545;
+                }
+
+                .form-control.is-invalid:focus,
+                .form-select.is-invalid:focus {
+                  border-color: #dc3545;
+                  box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+                }
+
+                .invalid-feedback {
+                  display: block;
+                  color: #dc3545;
+                  font-size: 0.875rem;
+                  margin-top: 0.25rem;
+                }
+              </style>
+
+              <script src="/public/assets/js/form-validation.js"></script>
 
 <?php
 require_once __DIR__ . '/includes/layout-bottom.php';

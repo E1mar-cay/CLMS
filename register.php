@@ -242,6 +242,28 @@ $showUpgradeToPro = false;
     text-decoration: underline;
   }
 
+  /* Form validation error styling */
+  .form-control.is-invalid {
+    border-color: #dc3545;
+    background-image: none;
+  }
+
+  .form-control.is-invalid:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+  }
+
+  .invalid-feedback {
+    display: block;
+    color: #dc3545;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+  }
+
+  .input-group-merge .form-control.is-invalid {
+    border-color: #dc3545;
+  }
+
   @media (max-width: 991.98px) {
     .clms-auth-panel {
       border-bottom: 1px solid rgba(255, 255, 255, 0.2);
@@ -293,7 +315,7 @@ $showUpgradeToPro = false;
                 <div class="clms-auth-form">
                   <h1 class="mb-2">Create Student Account</h1>
                   <p class="text-muted mb-4">Use your active email address. Password must be at least 8 characters.</p>
-                  <form id="formAuthentication" class="mb-4" action="<?php echo htmlspecialchars($clmsWebBase . '/register.php', ENT_QUOTES, 'UTF-8'); ?>" method="post" novalidate>
+                  <form id="formAuthentication" class="mb-4" action="<?php echo htmlspecialchars($clmsWebBase . '/register.php', ENT_QUOTES, 'UTF-8'); ?>" method="post" novalidate data-validate="true">
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
                     <div class="row g-3">
                       <div class="col-sm-6">
@@ -369,6 +391,7 @@ $showUpgradeToPro = false;
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+              <script src="/public/assets/js/form-validation.js"></script>
 <?php if ($formError !== '') : ?>
   <script>
     Swal.fire({
