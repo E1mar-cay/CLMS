@@ -60,3 +60,5 @@ gulpfile.tmp.*
 
 # Package Lock files
 /package-lock.json
+
+settings.json
