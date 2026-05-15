@@ -85,12 +85,7 @@ $canManageCourse = static function (PDO $pdo, int $courseId, bool $isAdmin, int 
              ON ci.course_id = c.id
             AND ci.instructor_user_id = :uid
           WHERE c.id = :course_id
-            AND (
-                ci.instructor_user_id IS NOT NULL
-                OR NOT EXISTS (
-                    SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
-                )
-            )
+            AND ci.instructor_user_id IS NOT NULL
           LIMIT 1'
     );
     $scopeStmt->execute([
@@ -131,6 +126,19 @@ $formIsPublished = 1;
 $formLevel = '';
 $formThumbnailUrl = '';
 $formFinalExamDuration = '45';
+$formInstructorId = 0;
+
+$instructorOptions = [];
+try {
+    $instructorOptions = $pdo->query(
+        "SELECT id, first_name, last_name, email
+           FROM users
+          WHERE role = 'instructor'
+          ORDER BY last_name ASC, first_name ASC, email ASC"
+    )->fetchAll();
+} catch (Throwable $e) {
+    error_log('courses instructor list failed: ' . $e->getMessage());
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!clms_csrf_validate($_POST['csrf_token'] ?? null)) {
@@ -148,9 +156,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $existingThumbnailInput = trim((string) ($_POST['existing_thumbnail_url'] ?? ''));
                 $removeThumbnailInput = isset($_POST['remove_thumbnail']) && $_POST['remove_thumbnail'] !== '';
                 $finalExamDurationInput = trim((string) ($_POST['final_exam_duration_minutes'] ?? '45'));
+                $assignedInstructorId = $isAdmin
+                    ? (int) filter_input(INPUT_POST, 'instructor_user_id', FILTER_VALIDATE_INT, ['options' => ['default' => 0, 'min_range' => 1]])
+                    : $currentUserId;
 
                 if ($titleInput === '' || mb_strlen($titleInput) > 255) {
                     throw new RuntimeException('Title is required and must be 255 characters or fewer.');
+                }
+                if ($assignedInstructorId <= 0) {
+                    throw new RuntimeException('Please choose an instructor for this course.');
+                }
+                $instructorCheckStmt = $pdo->prepare("SELECT id FROM users WHERE id = :id AND role = 'instructor' LIMIT 1");
+                $instructorCheckStmt->execute(['id' => $assignedInstructorId]);
+                if (!$instructorCheckStmt->fetchColumn()) {
+                    throw new RuntimeException('Please choose a valid instructor.');
                 }
                 if (!is_numeric($passingInput)) {
                     throw new RuntimeException('Passing score must be a number.');
@@ -280,14 +299,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'final_exam_duration_minutes' => $finalExamDurationValue,
                     ]);
                     $createdCourseId = (int) $pdo->lastInsertId();
-                    if ($isInstructor && $createdCourseId > 0) {
+                    if ($createdCourseId > 0) {
                         $assignStmt = $pdo->prepare(
                             'INSERT IGNORE INTO course_instructors (course_id, instructor_user_id)
                              VALUES (:course_id, :instructor_id)'
                         );
                         $assignStmt->execute([
                             'course_id' => $createdCourseId,
-                            'instructor_id' => $currentUserId,
+                            'instructor_id' => $assignedInstructorId,
                         ]);
                     }
                     $successMessage = $isInstructor
@@ -345,6 +364,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'course_id' => $courseId,
                         'status' => 'in_progress',
                     ]);
+
+                    if ($isAdmin) {
+                        $pdo->prepare('DELETE FROM course_instructors WHERE course_id = :course_id')
+                            ->execute(['course_id' => $courseId]);
+                        $pdo->prepare(
+                            'INSERT INTO course_instructors (course_id, instructor_user_id)
+                             VALUES (:course_id, :instructor_id)'
+                        )->execute([
+                            'course_id' => $courseId,
+                            'instructor_id' => $assignedInstructorId,
+                        ]);
+                    }
 
                     $successMessage = 'Course updated successfully.';
                     clms_redirect('admin/courses.php?flash=updated');
