@@ -59,10 +59,7 @@ $courseScopeCountStmt = $pdo->prepare(
      LEFT JOIN course_instructors ci
        ON ci.course_id = c.id
       AND ci.instructor_user_id = :instructor_id
-     WHERE ci.instructor_user_id IS NOT NULL
-        OR NOT EXISTS (
-            SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
-        )"
+     WHERE ci.instructor_user_id IS NOT NULL"
 );
 $courseScopeCountStmt->execute(['instructor_id' => $instructorId]);
 $courseScopeTotalRows = (int) ($courseScopeCountStmt->fetch()['total'] ?? 0);
@@ -90,9 +87,6 @@ $courseSummaryStmt = $pdo->prepare(
      LEFT JOIN questions q ON q.course_id = c.id
      LEFT JOIN exam_attempts ea ON ea.course_id = c.id
      WHERE ci.instructor_user_id IS NOT NULL
-        OR NOT EXISTS (
-            SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
-        )
      GROUP BY c.id, c.title, c.level
      ORDER BY c.title ASC
      LIMIT :limit OFFSET :offset"
@@ -117,9 +111,6 @@ $recentActivityStmt = $pdo->prepare(
       AND ci.instructor_user_id = :instructor_id
      INNER JOIN users u ON u.id = ea.user_id
      WHERE ci.instructor_user_id IS NOT NULL
-        OR NOT EXISTS (
-            SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
-        )
      ORDER BY ea.attempted_at DESC
      LIMIT 6"
 );
@@ -142,12 +133,7 @@ $upcomingExamStmt = $pdo->prepare(
        ON ci.course_id = c.id
       AND ci.instructor_user_id = :instructor_id
      WHERE ea.status = 'in_progress'
-       AND (
-         ci.instructor_user_id IS NOT NULL
-         OR NOT EXISTS (
-           SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
-         )
-       )
+       AND ci.instructor_user_id IS NOT NULL
      ORDER BY ea.attempted_at DESC
      LIMIT 5"
 );
@@ -169,12 +155,7 @@ $topStudentsStmt = $pdo->prepare(
       AND ci.instructor_user_id = :instructor_id
      INNER JOIN users u ON u.id = ea.user_id
      WHERE u.role = 'student'
-       AND (
-         ci.instructor_user_id IS NOT NULL
-         OR NOT EXISTS (
-           SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
-         )
-       )
+       AND ci.instructor_user_id IS NOT NULL
      GROUP BY u.id, u.first_name, u.last_name
      HAVING attempts_completed > 0
      ORDER BY avg_score DESC, attempts_completed DESC

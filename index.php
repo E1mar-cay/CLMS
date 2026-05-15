@@ -70,6 +70,15 @@ $formatDuration = static function (int $totalMinutes): string {
   return $hours . ' hr ' . $minutes . ' min';
 };
 
+$coursePlaceholderGradients = [
+  'linear-gradient(135deg, #5c0a0a 0%, #800000 45%, #a52a2a 100%)',
+  'linear-gradient(135deg, #5c0a0a 0%, #800000 50%, #a52a2a 100%)',
+  'linear-gradient(135deg, #3d050f 0%, #5c0a0a 40%, #800000 100%)',
+  'linear-gradient(135deg, #5c0a0a 0%, #800000 55%, #a52a2a 100%)',
+  'linear-gradient(135deg, #5c0a0a 0%, #800000 35%, #a52a2a 100%)',
+  'linear-gradient(135deg, #5c0a0a 0%, #a52a2a 60%, #800000 100%)',
+];
+
 $resolveThumbnailUrl = static function (?string $rawPath) use ($clmsWebBase): string {
   $path = trim((string) $rawPath);
   if ($path === '') {
@@ -608,7 +617,7 @@ $resolveLandingHref = static function (string $rawUrl) use ($clmsWebBase): strin
     .landing-catalog-media {
       position: relative;
       aspect-ratio: 16 / 9;
-      background: linear-gradient(135deg, var(--clms-maroon) 0%, var(--clms-maroon-light) 45%, var(--clms-maroon-dark) 100%);
+      background: linear-gradient(135deg, #5c0a0a 0%, #800000 45%, #a52a2a 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -631,6 +640,8 @@ $resolveLandingHref = static function (string $rawUrl) use ($clmsWebBase): strin
       font-size: 2rem;
       font-weight: 700;
       letter-spacing: .04em;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, .25);
+      text-transform: uppercase;
     }
 
     .landing-catalog-level {
@@ -1128,6 +1139,8 @@ $resolveLandingHref = static function (string $rawUrl) use ($clmsWebBase): strin
                 : mb_strimwidth($description, 0, 120, '...');
               $levelText = $level !== '' ? $level : 'All Levels';
               $initials = mb_strtoupper(mb_substr($title, 0, 2));
+              $courseId = (int) ($course['id'] ?? 0);
+              $placeholderGradient = $coursePlaceholderGradients[$courseId % count($coursePlaceholderGradients)];
               $modalId = 'landingCourseInfoModal-' . (int) ($course['id'] ?? 0);
               $totalModules = (int) ($course['total_modules'] ?? 0);
               $learnerCount = (int) ($course['learner_count'] ?? 0);
@@ -1136,7 +1149,7 @@ $resolveLandingHref = static function (string $rawUrl) use ($clmsWebBase): strin
               ?>
               <div class="col-sm-6 col-lg-4 col-xl-3">
                 <article class="landing-catalog-card">
-                  <div class="landing-catalog-media">
+                  <div class="landing-catalog-media" style="<?php echo $thumb === '' ? 'background: ' . htmlspecialchars($placeholderGradient, ENT_QUOTES, 'UTF-8') . ';' : ''; ?>">
                     <?php if ($thumb !== '') : ?>
                       <img src="<?php echo htmlspecialchars($thumb, ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?> thumbnail" loading="lazy" onerror="this.style.display='none'; this.parentElement.querySelector('.landing-catalog-placeholder').style.display='block';">
                     <?php endif; ?>

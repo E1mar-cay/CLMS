@@ -81,10 +81,7 @@ if ($role === 'admin' || $role === 'instructor') {
                    ON ci.course_id = c.id
                   AND ci.instructor_user_id = :instructor_id
                  WHERE (c.title LIKE :q OR c.description LIKE :q)
-                   AND (
-                     ci.instructor_user_id IS NOT NULL
-                     OR NOT EXISTS (SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id)
-                   )
+                   AND ci.instructor_user_id IS NOT NULL
                  ORDER BY c.title ASC
                  LIMIT 6"
             );
@@ -157,10 +154,7 @@ if ($role === 'instructor') {
                ON ci.course_id = c.id
               AND ci.instructor_user_id = :instructor_id
              WHERE u.role = 'student'
-               AND (
-                 ci.instructor_user_id IS NOT NULL
-                 OR NOT EXISTS (SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id)
-               )
+               AND ci.instructor_user_id IS NOT NULL
                AND (u.first_name LIKE :q OR u.last_name LIKE :q OR u.email LIKE :q)
              ORDER BY u.first_name ASC, u.last_name ASC
              LIMIT 5"

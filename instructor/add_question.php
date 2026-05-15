@@ -99,10 +99,7 @@ $assignedCoursesStmt = $pdo->prepare(
      FROM courses c
      LEFT JOIN course_instructors ci ON ci.course_id = c.id
      WHERE COALESCE(c.request_status, 'approved') IN ('none', 'approved')
-       AND (
-         ci.instructor_user_id = :instructor_id
-         OR ci.course_id IS NULL
-       )
+       AND ci.instructor_user_id = :instructor_id
      ORDER BY c.title ASC"
 );
 $assignedCoursesStmt->execute(['instructor_id' => $instructorId]);
@@ -118,12 +115,7 @@ if ($deleteQuestionId !== false && $deleteQuestionId !== null && $deleteQuestion
                ON ci.course_id = q.course_id
               AND ci.instructor_user_id = :instructor_id
              WHERE q.id = :question_id
-               AND (
-                 ci.instructor_user_id IS NOT NULL
-                 OR NOT EXISTS (
-                   SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = q.course_id
-                 )
-               )
+               AND ci.instructor_user_id IS NOT NULL
              LIMIT 1"
     );
     $verifyStmt->execute([
@@ -884,12 +876,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                        ON ci.course_id = q.course_id
                       AND ci.instructor_user_id = :instructor_id
                      WHERE q.id = :question_id
-                       AND (
-                         ci.instructor_user_id IS NOT NULL
-                         OR NOT EXISTS (
-                           SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = q.course_id
-                         )
-                       )
+                       AND ci.instructor_user_id IS NOT NULL
                      LIMIT 1"
         );
         $verifyStmt->execute([
@@ -1000,14 +987,9 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
              LEFT JOIN course_instructors ci
                ON ci.course_id = q.course_id
               AND ci.instructor_user_id = :instructor_id
-             WHERE q.id = :question_id
-               AND q.course_id = :course_id
-               AND (
-                 ci.instructor_user_id IS NOT NULL
-                 OR NOT EXISTS (
-                   SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = q.course_id
-                 )
-               )
+               WHERE q.id = :question_id
+                 AND q.course_id = :course_id
+                 AND ci.instructor_user_id IS NOT NULL
              LIMIT 1'
     );
     $editStmt->execute([
@@ -1044,12 +1026,7 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
          LEFT JOIN modules m ON m.id = q.module_id
          LEFT JOIN exam_types et ON et.id = q.exam_type_id
          WHERE q.course_id = :course_id
-           AND (
-             ci.instructor_user_id IS NOT NULL
-             OR NOT EXISTS (
-               SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = q.course_id
-             )
-           )
+           AND ci.instructor_user_id IS NOT NULL
          ORDER BY q.id DESC'
   );
   $questionListStmt->execute([
@@ -1144,12 +1121,7 @@ if ($hasSelectedCourse) {
            ON ci.course_id = c.id
           AND ci.instructor_user_id = :instructor_id
          WHERE m.course_id = :course_id
-           AND (
-             ci.instructor_user_id IS NOT NULL
-             OR NOT EXISTS (
-               SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
-             )
-           )
+           AND ci.instructor_user_id IS NOT NULL
          ORDER BY m.sequence_order ASC, m.id ASC"
   );
   $modulesStmt->execute([

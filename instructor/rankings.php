@@ -67,14 +67,7 @@ $courseStmt = $pdo->prepare(
      LEFT JOIN course_instructors ci
        ON ci.course_id = c.id
       AND ci.instructor_user_id = :instructor_id
-     WHERE (
-         ci.instructor_user_id IS NOT NULL
-         OR NOT EXISTS (
-           SELECT 1
-           FROM course_instructors ci2
-           WHERE ci2.course_id = c.id
-         )
-       )
+     WHERE ci.instructor_user_id IS NOT NULL
      ORDER BY c.title ASC"
 );
 $courseStmt->execute(['instructor_id' => $instructorId]);

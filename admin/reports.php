@@ -34,10 +34,7 @@ $clms_reports_course_allowed = static function (PDO $pdo, string $role, int $use
          LEFT JOIN course_instructors ci
            ON ci.course_id = c.id AND ci.instructor_user_id = :uid
          WHERE c.id = :cid
-           AND (
-             ci.instructor_user_id IS NOT NULL
-             OR NOT EXISTS (SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id)
-           )
+           AND ci.instructor_user_id IS NOT NULL
          LIMIT 1"
     );
     $st->execute(['uid' => $userId, 'cid' => $courseId]);
@@ -131,7 +128,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
                  FROM courses c
                  LEFT JOIN course_instructors ci ON ci.course_id = c.id AND ci.instructor_user_id = :uid
                  WHERE ci.instructor_user_id IS NOT NULL
-                    OR NOT EXISTS (SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id)
                  ORDER BY c.id ASC"
             );
             $icStmt->execute(['uid' => $reportsUserId]);
@@ -324,7 +320,6 @@ if ($sessionRole === 'instructor') {
          FROM courses c
          LEFT JOIN course_instructors ci ON ci.course_id = c.id AND ci.instructor_user_id = :uid
          WHERE ci.instructor_user_id IS NOT NULL
-            OR NOT EXISTS (SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id)
          ORDER BY c.title ASC"
     );
     $coursesStmt->execute(['uid' => $reportsUserId]);

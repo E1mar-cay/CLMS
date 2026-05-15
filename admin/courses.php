@@ -686,7 +686,12 @@ $formPublishReviewNotes = '';
 if ($editId > 0) {
     $editStmt = $pdo->prepare(
         'SELECT id, title, description, passing_score_percentage, is_published, publish_status,
-                publish_review_notes, level, thumbnail_url, final_exam_duration_minutes
+                publish_review_notes, level, thumbnail_url, final_exam_duration_minutes,
+                (SELECT ci.instructor_user_id
+                   FROM course_instructors ci
+                  WHERE ci.course_id = courses.id
+                  ORDER BY ci.id ASC
+                  LIMIT 1) AS assigned_instructor_id
          FROM courses WHERE id = :id LIMIT 1'
     );
     $editStmt->execute(['id' => $editId]);
@@ -701,6 +706,7 @@ if ($editId > 0) {
         $formLevel = (string) ($editRow['level'] ?? '');
         $formThumbnailUrl = (string) ($editRow['thumbnail_url'] ?? '');
         $formFinalExamDuration = (string) ((int) ($editRow['final_exam_duration_minutes'] ?? 45));
+        $formInstructorId = (int) ($editRow['assigned_instructor_id'] ?? 0);
     } else {
         if ($editRow) {
             $errorMessage = 'You can only edit courses in your scope.';
@@ -711,12 +717,7 @@ if ($editId > 0) {
 
 $courseScopeWhere = '';
 if (!$isAdmin) {
-    $courseScopeWhere = "WHERE (
-        ci_scope.instructor_user_id IS NOT NULL
-        OR NOT EXISTS (
-            SELECT 1 FROM course_instructors ci2 WHERE ci2.course_id = c.id
-        )
-    )";
+    $courseScopeWhere = 'WHERE ci_scope.instructor_user_id IS NOT NULL';
 }
 
 $courseListStmt = $pdo->prepare(
@@ -1114,6 +1115,30 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                             class="form-control"
                             placeholder="Short summary of the course..."><?php echo htmlspecialchars($formDescription, ENT_QUOTES, 'UTF-8'); ?></textarea>
                         </div>
+<?php if ($isAdmin) : ?>
+                        <div class="mb-3">
+                          <label for="instructor_user_id" class="form-label">Assigned Instructor</label>
+                          <select id="instructor_user_id" name="instructor_user_id" class="form-select" required>
+                            <option value="">Choose instructor</option>
+<?php foreach ($instructorOptions as $instructorOption) : ?>
+<?php
+                            $instructorOptionId = (int) $instructorOption['id'];
+                            $instructorName = trim((string) ($instructorOption['first_name'] ?? '') . ' ' . (string) ($instructorOption['last_name'] ?? ''));
+                            if ($instructorName === '') {
+                                $instructorName = (string) ($instructorOption['email'] ?? ('Instructor #' . $instructorOptionId));
+                            }
+?>
+                            <option value="<?php echo $instructorOptionId; ?>" <?php echo $formInstructorId === $instructorOptionId ? 'selected' : ''; ?>>
+                              <?php echo htmlspecialchars($instructorName, ENT_QUOTES, 'UTF-8'); ?>
+                            </option>
+<?php endforeach; ?>
+                          </select>
+                          <small class="text-muted">Only this instructor can see and build this course.</small>
+<?php if ($instructorOptions === []) : ?>
+                          <div class="alert alert-warning mt-2 mb-0">Create an instructor account before adding courses.</div>
+<?php endif; ?>
+                        </div>
+<?php endif; ?>
                         <div class="row g-3 mb-3">
                           <div class="col-md-6">
                             <label for="level" class="form-label">Level</label>
@@ -1221,7 +1246,7 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                         <a
                           href="<?php echo htmlspecialchars($clmsWebBase . '/admin/courses.php', ENT_QUOTES, 'UTF-8'); ?>"
                           class="btn btn-outline-secondary">Cancel</a>
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" <?php echo $isAdmin && $instructorOptions === [] ? 'disabled' : ''; ?>>
                           <i class="bx <?php echo $isEditMode ? 'bx-save' : 'bx-plus'; ?> me-1"></i>
                           <?php echo $isEditMode ? 'Update Course' : ($isAdmin ? 'Create Course' : 'Create Request'); ?>
                         </button>
