@@ -87,12 +87,10 @@ try {
             $successMessage = 'Enrollment approved and activated successfully.';
             $userDisplayName = trim((string) $user['first_name'] . ' ' . (string) $user['last_name']) ?: (string) $user['email'];
             error_log("Enrollment approved for user {$userId} ({$userDisplayName}) with track: {$reviewTrack}");
-
         } catch (Throwable $e) {
             $pdo->rollBack();
             throw $e;
         }
-
     } elseif ($action === 'reject') {
         /* Reject the enrollment - set status to 'rejected' */
         $rejectStmt = $pdo->prepare(
@@ -115,7 +113,6 @@ try {
     $_SESSION['enrollment_success_message'] = $successMessage;
     header('Location: ' . htmlspecialchars($redirectTo, ENT_QUOTES, 'UTF-8'));
     exit;
-
 } catch (Throwable $e) {
     $errorMessage = $e instanceof RuntimeException
         ? $e->getMessage()

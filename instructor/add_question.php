@@ -17,12 +17,12 @@ clms_require_roles(['instructor']);
 
 $instructorExamTypesForAttach = [];
 try {
-    // List all types so instructors see what exists; inactive rows are shown disabled below.
-    $instructorExamTypesForAttach = $pdo->query(
-        'SELECT id, name, is_active FROM exam_types ORDER BY is_active DESC, sort_order ASC, name ASC'
-    )->fetchAll();
+  // List all types so instructors see what exists; inactive rows are shown disabled below.
+  $instructorExamTypesForAttach = $pdo->query(
+    'SELECT id, name, is_active FROM exam_types ORDER BY is_active DESC, sort_order ASC, name ASC'
+  )->fetchAll();
 } catch (Throwable $e) {
-    error_log('instructor/add_question exam_types list: ' . $e->getMessage());
+  error_log('instructor/add_question exam_types list: ' . $e->getMessage());
 }
 
 $pdo->exec(
@@ -1271,53 +1271,53 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
     default => 'alert-secondary',
   };
 ?>
-<div class="alert <?php echo $bannerClass; ?> d-flex flex-wrap align-items-start gap-3 mb-3" role="status">
-  <i class="bx <?php echo htmlspecialchars($instructorPublishMeta['icon'], ENT_QUOTES, 'UTF-8'); ?> fs-3"></i>
-  <div class="flex-grow-1" style="min-width: 0;">
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-      <span class="badge <?php echo htmlspecialchars($instructorPublishMeta['badge'], ENT_QUOTES, 'UTF-8'); ?>">
-        <?php echo htmlspecialchars($instructorPublishMeta['label'], ENT_QUOTES, 'UTF-8'); ?>
-      </span>
-      <strong class="mb-0">Publishing status</strong>
+  <div class="alert <?php echo $bannerClass; ?> d-flex flex-wrap align-items-start gap-3 mb-3" role="status">
+    <i class="bx <?php echo htmlspecialchars($instructorPublishMeta['icon'], ENT_QUOTES, 'UTF-8'); ?> fs-3"></i>
+    <div class="flex-grow-1" style="min-width: 0;">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <span class="badge <?php echo htmlspecialchars($instructorPublishMeta['badge'], ENT_QUOTES, 'UTF-8'); ?>">
+          <?php echo htmlspecialchars($instructorPublishMeta['label'], ENT_QUOTES, 'UTF-8'); ?>
+        </span>
+        <strong class="mb-0">Publishing status</strong>
+      </div>
+      <div class="small">
+        <?php if ($instructorPublishStatus === 'draft') : ?>
+          This course is hidden from students. Finish setting up modules + questions, then click <em>Submit for publishing</em> so an admin can review and approve it.
+        <?php elseif ($instructorPublishStatus === 'pending_review') : ?>
+          Submitted for admin approval. Students still can&rsquo;t see this course on their dashboard until it&rsquo;s approved.
+        <?php elseif ($instructorPublishStatus === 'published') : ?>
+          Live on the student dashboard. You can keep editing modules + questions — your edits don&rsquo;t unpublish the course.
+        <?php elseif ($instructorPublishStatus === 'changes_requested') : ?>
+          An admin sent this course back for changes. Address the notes below, then submit it again.
+        <?php endif; ?>
+      </div>
+      <?php if ($instructorPublishStatus === 'changes_requested' && $instructorReviewNotes !== '') : ?>
+        <div class="mt-2 p-2 rounded border bg-white text-body small">
+          <strong class="d-block mb-1"><i class="bx bx-message-detail me-1"></i>Admin notes</strong>
+          <?php echo nl2br(htmlspecialchars($instructorReviewNotes, ENT_QUOTES, 'UTF-8')); ?>
+        </div>
+      <?php endif; ?>
+      <?php if ($instructorShowSubmit && !$instructorCanSubmitNow) : ?>
+        <div class="mt-2 small text-muted">
+          <i class="bx bx-info-circle me-1"></i><?php echo htmlspecialchars($instructorSubmitReason, ENT_QUOTES, 'UTF-8'); ?>
+        </div>
+      <?php endif; ?>
     </div>
-    <div class="small">
-<?php if ($instructorPublishStatus === 'draft') : ?>
-      This course is hidden from students. Finish setting up modules + questions, then click <em>Submit for publishing</em> so an admin can review and approve it.
-<?php elseif ($instructorPublishStatus === 'pending_review') : ?>
-      Submitted for admin approval. Students still can&rsquo;t see this course on their dashboard until it&rsquo;s approved.
-<?php elseif ($instructorPublishStatus === 'published') : ?>
-      Live on the student dashboard. You can keep editing modules + questions — your edits don&rsquo;t unpublish the course.
-<?php elseif ($instructorPublishStatus === 'changes_requested') : ?>
-      An admin sent this course back for changes. Address the notes below, then submit it again.
-<?php endif; ?>
-    </div>
-<?php if ($instructorPublishStatus === 'changes_requested' && $instructorReviewNotes !== '') : ?>
-    <div class="mt-2 p-2 rounded border bg-white text-body small">
-      <strong class="d-block mb-1"><i class="bx bx-message-detail me-1"></i>Admin notes</strong>
-      <?php echo nl2br(htmlspecialchars($instructorReviewNotes, ENT_QUOTES, 'UTF-8')); ?>
-    </div>
-<?php endif; ?>
-<?php if ($instructorShowSubmit && !$instructorCanSubmitNow) : ?>
-    <div class="mt-2 small text-muted">
-      <i class="bx bx-info-circle me-1"></i><?php echo htmlspecialchars($instructorSubmitReason, ENT_QUOTES, 'UTF-8'); ?>
-    </div>
-<?php endif; ?>
+    <?php if ($instructorShowSubmit) : ?>
+      <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId, ENT_QUOTES, 'UTF-8'); ?>" class="ms-md-auto js-submit-publish-form">
+        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
+        <input type="hidden" name="action" value="submit_for_publish" />
+        <input type="hidden" name="course_id" value="<?php echo (int) $selectedCourseId; ?>" />
+        <button
+          type="submit"
+          class="btn btn-warning"
+          <?php echo $instructorCanSubmitNow ? '' : 'disabled'; ?>
+          title="<?php echo $instructorCanSubmitNow ? 'Submit this course for admin review' : htmlspecialchars($instructorSubmitReason, ENT_QUOTES, 'UTF-8'); ?>">
+          <i class="bx bx-upload me-1"></i>Submit for publishing
+        </button>
+      </form>
+    <?php endif; ?>
   </div>
-<?php if ($instructorShowSubmit) : ?>
-  <form method="post" action="<?php echo htmlspecialchars($clmsWebBase . '/instructor/add_question.php?course_id=' . (int) $selectedCourseId, ENT_QUOTES, 'UTF-8'); ?>" class="ms-md-auto js-submit-publish-form">
-    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(clms_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" />
-    <input type="hidden" name="action" value="submit_for_publish" />
-    <input type="hidden" name="course_id" value="<?php echo (int) $selectedCourseId; ?>" />
-    <button
-      type="submit"
-      class="btn btn-warning"
-      <?php echo $instructorCanSubmitNow ? '' : 'disabled'; ?>
-      title="<?php echo $instructorCanSubmitNow ? 'Submit this course for admin review' : htmlspecialchars($instructorSubmitReason, ENT_QUOTES, 'UTF-8'); ?>">
-      <i class="bx bx-upload me-1"></i>Submit for publishing
-    </button>
-  </form>
-<?php endif; ?>
-</div>
 <?php endif; ?>
 
 <noscript>
@@ -1372,11 +1372,11 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                 <optgroup label="Exam types">
                   <?php foreach ($instructorExamTypesForAttach as $typeOption) : ?>
                     <?php
-                      $typeVal = 't:' . (int) $typeOption['id'];
-                      $isEditingThisType = $editQuestion
-                        && (int) ($editQuestion['exam_type_id'] ?? 0) === (int) $typeOption['id'];
-                      $typeInactive = (int) ($typeOption['is_active'] ?? 1) !== 1 && !$isEditingThisType;
-                      $typeLabel = (string) $typeOption['name'] . ($typeInactive ? ' (inactive — turn on in Admin → Exam types)' : '');
+                    $typeVal = 't:' . (int) $typeOption['id'];
+                    $isEditingThisType = $editQuestion
+                      && (int) ($editQuestion['exam_type_id'] ?? 0) === (int) $typeOption['id'];
+                    $typeInactive = (int) ($typeOption['is_active'] ?? 1) !== 1 && !$isEditingThisType;
+                    $typeLabel = (string) $typeOption['name'] . ($typeInactive ? ' (inactive — turn on in Admin → Exam types)' : '');
                     ?>
                     <option
                       value="<?php echo htmlspecialchars($typeVal, ENT_QUOTES, 'UTF-8'); ?>"
@@ -1749,14 +1749,14 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                 <tr
                   data-search-item
                   data-search-text="<?php
-                    $scopeLabel = 'Final Exam';
-                    if ($q['module_id'] !== null) {
-                      $scopeLabel = (string) $q['module_title'];
-                    } elseif (!empty($q['exam_type_name'])) {
-                      $scopeLabel = (string) $q['exam_type_name'];
-                    }
-                    echo htmlspecialchars(((string) $q['question_text']) . ' ' . $typeLabel . ' ' . $scopeLabel, ENT_QUOTES, 'UTF-8');
-                  ?>">
+                                    $scopeLabel = 'Final Exam';
+                                    if ($q['module_id'] !== null) {
+                                      $scopeLabel = (string) $q['module_title'];
+                                    } elseif (!empty($q['exam_type_name'])) {
+                                      $scopeLabel = (string) $q['exam_type_name'];
+                                    }
+                                    echo htmlspecialchars(((string) $q['question_text']) . ' ' . $typeLabel . ' ' . $scopeLabel, ENT_QUOTES, 'UTF-8');
+                                    ?>">
                   <td><?php echo (int) $q['id']; ?></td>
                   <td>
                     <?php if ($q['module_id'] !== null) : ?>
@@ -2177,7 +2177,8 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
           try {
             instance.dispose();
           } catch (e) {
-            /* ignore */ }
+            /* ignore */
+          }
         }
       }
       document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());

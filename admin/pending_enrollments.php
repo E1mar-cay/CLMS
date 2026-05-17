@@ -46,10 +46,12 @@ try {
 }
 
 /* Ensure users table has required columns */
-foreach ([
-    'university_name' => 'VARCHAR(255) NULL',
-    'review_track' => "ENUM('Regular', 'Enhancement') NULL DEFAULT 'Regular'",
-] as $columnName => $columnSpec) {
+foreach (
+    [
+        'university_name' => 'VARCHAR(255) NULL',
+        'review_track' => "ENUM('Regular', 'Enhancement') NULL DEFAULT 'Regular'",
+    ] as $columnName => $columnSpec
+) {
     try {
         $check = $pdo->query("SHOW COLUMNS FROM users LIKE '" . $columnName . "'")->fetch();
         if (!$check) {
@@ -245,8 +247,8 @@ require_once __DIR__ . '/includes/layout-top.php';
         <div class="d-flex justify-content-between align-items-center mb-3">
             <small class="text-muted">
                 Showing <?php echo $totalRows === 0 ? 0 : ($offset + 1); ?>&ndash;<?php echo min($offset + $perPage, $totalRows); ?> of <?php echo $totalRows; ?> pending enrollment(s)<?php if ($searchQuery !== '') : ?>
-                    for &quot;<strong><?php echo htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8'); ?></strong>&quot;
-                <?php endif; ?>
+                for &quot;<strong><?php echo htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8'); ?></strong>&quot;
+            <?php endif; ?>
             </small>
         </div>
 
@@ -271,16 +273,16 @@ require_once __DIR__ . '/includes/layout-top.php';
                     <tbody>
                         <?php foreach ($enrollments as $index => $enrollment) : ?>
                             <?php
-                                $rowNumber = $offset + $index + 1;
-                                $fullName = trim((string) $enrollment['first_name'] . ' ' . (string) $enrollment['last_name']);
-                                $enrollmentId = (int) $enrollment['id'];
-                                $email = (string) $enrollment['email'];
-                                $universityName = (string) $enrollment['university_name'];
-                                $reviewTrack = (string) $enrollment['review_track'];
-                                $registrationDate = (string) $enrollment['registration_date'];
-                                $registrationDateFormatted = $registrationDate !== '' 
-                                    ? date('M d, Y H:i', strtotime($registrationDate))
-                                    : 'N/A';
+                            $rowNumber = $offset + $index + 1;
+                            $fullName = trim((string) $enrollment['first_name'] . ' ' . (string) $enrollment['last_name']);
+                            $enrollmentId = (int) $enrollment['id'];
+                            $email = (string) $enrollment['email'];
+                            $universityName = (string) $enrollment['university_name'];
+                            $reviewTrack = (string) $enrollment['review_track'];
+                            $registrationDate = (string) $enrollment['registration_date'];
+                            $registrationDateFormatted = $registrationDate !== ''
+                                ? date('M d, Y H:i', strtotime($registrationDate))
+                                : 'N/A';
                             ?>
                             <tr data-enrollment-id="<?php echo $enrollmentId; ?>">
                                 <td><?php echo $rowNumber; ?></td>
