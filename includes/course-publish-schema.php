@@ -48,6 +48,17 @@ if (!function_exists('clms_ensure_course_publish_schema')) {
                 // already live for students — keep it that way.
                 $pdo->exec("UPDATE courses SET publish_status = 'published' WHERE is_published = 1");
             }
+            try {
+                $check = $pdo->query("SHOW COLUMNS FROM courses LIKE 'target_track'")->fetch();
+                if (!$check) {
+                    $pdo->exec(
+                        "ALTER TABLE courses
+                            ADD COLUMN target_track ENUM('Regular Review','Course Enhancement','All') NOT NULL DEFAULT 'All' AFTER publish_status"
+                    );
+                }
+            } catch (Throwable $e) {
+                error_log('courses.target_track migration failed: ' . $e->getMessage());
+            }
         } catch (Throwable $e) {
             error_log('courses.publish_status migration failed: ' . $e->getMessage());
         }

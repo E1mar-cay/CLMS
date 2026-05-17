@@ -23,6 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $firstName = trim((string) ($_POST['first_name'] ?? ''));
   $lastName = trim((string) ($_POST['last_name'] ?? ''));
   $email = trim((string) ($_POST['email'] ?? ''));
+  $universityName = trim((string) ($_POST['university_name'] ?? ''));
+  $reviewTrack = trim((string) ($_POST['review_track'] ?? ''));
   if (!clms_csrf_validate($_POST['csrf_token'] ?? null)) {
     $formError = 'Your session expired. Please try again.';
   } else {
@@ -38,6 +40,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $formError = 'Email must be 100 characters or fewer.';
     } elseif (strlen($password) < 8) {
       $formError = 'Password must be at least 8 characters.';
+    } elseif ($universityName === '') {
+      $formError = 'Please enter your university or school name.';
+    } elseif (strlen($universityName) > 255) {
+      $formError = 'University name must be 255 characters or fewer.';
+    } elseif ($reviewTrack === '') {
+      $formError = 'Please select a type of review.';
+    } elseif (!in_array($reviewTrack, ['Regular', 'Enhancement'], true)) {
+      $formError = 'Invalid review type selected.';
     } else {
       $hash = password_hash($password, PASSWORD_DEFAULT);
       if ($hash === false) {
@@ -46,13 +56,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
           if (clms_users_has_approval_column($pdo)) {
             $stmt = $pdo->prepare(
-              'INSERT INTO users (first_name, last_name, email, password_hash, role, account_approval_status, account_approved_at)
-                             VALUES (:first_name, :last_name, :email, :password_hash, :role, :account_approval_status, NULL)'
+              'INSERT INTO users (first_name, last_name, email, university_name, review_track, password_hash, role,
+  account_approval_status, account_approved_at)
+                             VALUES (:first_name, :last_name, :email, :university_name, :review_track, :password_hash, :role,
+  :account_approval_status, NULL)'
             );
             $stmt->execute([
               'first_name' => $firstName,
               'last_name' => $lastName,
               'email' => $email,
+              'university_name' => $universityName,
+              'review_track' => $reviewTrack,
               'password_hash' => $hash,
               'role' => 'student',
               'account_approval_status' => 'pending',
@@ -60,7 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             clms_redirect('login.php?registered=1&pending=1');
           } else {
             $stmt = $pdo->prepare(
-              'INSERT INTO users (first_name, last_name, email, password_hash, role) VALUES (:first_name, :last_name, :email, :password_hash, :role)'
+              'INSERT INTO users (first_name, last_name, email, university_name, review_track, password_hash, role) VALUES
+  (:first_name, :last_name, :email, :university_name, :review_track, :password_hash, :role)'
             );
             $stmt->execute([
               'first_name' => $firstName,
@@ -354,6 +369,32 @@ $showUpgradeToPro = false;
                           value="<?php echo htmlspecialchars($email, ENT_QUOTES, 'UTF-8'); ?>"
                           maxlength="100"
                           required />
+                      </div>
+                      <div class="col-12">
+                        <label for="university_name" class="form-label">University / School</label>
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="university_name"
+                          name="university_name"
+                          placeholder="e.g. Isabela State University"
+                          maxlength="255"
+                          value="<?php echo htmlspecialchars($universityName ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                          required />
+                      </div>
+                      <div class="col-12">
+                        <label for="review_track" class="form-label">Type of Review</label>
+                        <select
+                          class="form-select"
+                          id="review_track"
+                          name="review_track"
+                          required>
+                          <option value="">Select Review Type</option>
+                          <option value="Regular" <?php echo (isset($reviewTrack) && $reviewTrack === 'Regular') ? 'selected' :
+                                                    ''; ?>>Regular Review</option>
+                          <option value="Enhancement" <?php echo (isset($reviewTrack) && $reviewTrack === 'Enhancement') ?
+                                                        'selected' : ''; ?>>Course Enhancement</option>
+                        </select>
                       </div>
                       <div class="col-12 form-password-toggle">
                         <label class="form-label" for="password">Password</label>

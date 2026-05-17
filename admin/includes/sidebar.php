@@ -50,7 +50,14 @@ $clmsThemeSettings = $clmsThemeSettings ?? ['site_title' => 'CLMS'];
         <div class="text-truncate">Students</div>
       </a>
     </li>
-
+    <?php if ($clmsSidebarRole === 'admin') : ?>
+      <li class="menu-item <?php echo $activeAdminPage === 'pending_enrollments' ? 'active' : ''; ?>">
+        <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/pending_enrollments.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
+          <i class="menu-icon tf-icons bx bx-user-check"></i>
+          <div class="text-truncate">Pending Enrollments</div>
+        </a>
+      </li>
+    <?php endif; ?>
     <li class="menu-item <?php echo $activeAdminPage === 'student_activity' ? 'active' : ''; ?>">
       <a href="<?php echo htmlspecialchars($clmsWebBase . '/admin/student_activity.php', ENT_QUOTES, 'UTF-8'); ?>" class="menu-link">
         <i class="menu-icon tf-icons bx bx-pulse"></i>
