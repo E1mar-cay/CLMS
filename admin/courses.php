@@ -18,7 +18,8 @@ $successMessage = '';
 foreach ([
     'level' => 'VARCHAR(20) NULL',
     'thumbnail_url' => 'VARCHAR(500) NULL',
-    'final_exam_duration_minutes' => 'INT NOT NULL DEFAULT 45',
+    'final_exam_duration_minutes' => "INT NOT NULL DEFAULT 45",
+    'track_type' => "ENUM('Regular','Enhancement') NULL DEFAULT NULL",
 ] as $columnName => $columnSpec) {
     try {
         $check = $pdo->query("SHOW COLUMNS FROM courses LIKE '" . $columnName . "'")->fetch();
@@ -128,6 +129,7 @@ $formLevel = '';
 $formThumbnailUrl = '';
 $formFinalExamDuration = '45';
 $formInstructorId = 0;
+$formTrackType = '';
 
 $instructorOptions = [];
 try {
@@ -154,6 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $passingInput = trim((string) ($_POST['passing_score_percentage'] ?? ''));
                 $isPublishedInput = isset($_POST['is_published']) ? 1 : 0;
                 $levelInput = strtolower(trim((string) ($_POST['level'] ?? '')));
+                $trackTypeInput = trim((string) ($_POST['track_type'] ?? ''));
                 $existingThumbnailInput = trim((string) ($_POST['existing_thumbnail_url'] ?? ''));
                 $removeThumbnailInput = isset($_POST['remove_thumbnail']) && $_POST['remove_thumbnail'] !== '';
                 $finalExamDurationInput = trim((string) ($_POST['final_exam_duration_minutes'] ?? '45'));
@@ -183,6 +186,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Invalid level value.');
                 }
                 $levelValue = $levelInput === '' ? null : $levelInput;
+
+                $allowedTrackTypes = ['', 'Regular', 'Enhancement'];
+                if (!in_array($trackTypeInput, $allowedTrackTypes, true)) {
+                    throw new RuntimeException('Invalid track type value.');
+                }
+                $trackTypeValue = $trackTypeInput === '' ? null : $trackTypeInput;
 
                 $thumbnailValue = $existingThumbnailInput === '' ? null : $existingThumbnailInput;
                 if ($removeThumbnailInput) {
@@ -282,11 +291,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         "INSERT INTO courses
                             (title, description, passing_score_percentage, is_published, publish_status,
                              request_status, request_submitted_at, request_submitted_by,
-                             level, thumbnail_url, final_exam_duration_minutes)
+                             level, thumbnail_url, final_exam_duration_minutes, track_type)
                          VALUES
                             (:title, :description, :passing_score, 0, 'draft',
                              :request_status, :request_submitted_at, :request_submitted_by,
-                             :level, :thumbnail_url, :final_exam_duration_minutes)"
+                             :level, :thumbnail_url, :final_exam_duration_minutes, :track_type)"
                     );
                     $insertStmt->execute([
                         'title' => $titleInput,
@@ -298,6 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'level' => $levelValue,
                         'thumbnail_url' => $thumbnailValue,
                         'final_exam_duration_minutes' => $finalExamDurationValue,
+                        'track_type' => $trackTypeValue,
                     ]);
                     $createdCourseId = (int) $pdo->lastInsertId();
                     if ($createdCourseId > 0) {
@@ -338,7 +348,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                              passing_score_percentage = :passing_score,
                              level = :level,
                              thumbnail_url = :thumbnail_url,
-                             final_exam_duration_minutes = :final_exam_duration_minutes
+                             final_exam_duration_minutes = :final_exam_duration_minutes,
+                             track_type = :track_type
                          WHERE id = :id'
                     );
                     $updateStmt->execute([
@@ -348,6 +359,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'level' => $levelValue,
                         'thumbnail_url' => $thumbnailValue,
                         'final_exam_duration_minutes' => $finalExamDurationValue,
+                        'track_type' => $trackTypeValue,
                         'id' => $courseId,
                     ]);
 
@@ -687,7 +699,7 @@ $formPublishReviewNotes = '';
 if ($editId > 0) {
     $editStmt = $pdo->prepare(
         'SELECT id, title, description, passing_score_percentage, is_published, publish_status,
-                publish_review_notes, level, thumbnail_url, final_exam_duration_minutes,
+                publish_review_notes, level, thumbnail_url, final_exam_duration_minutes, track_type,
                 (SELECT ci.instructor_user_id
                    FROM course_instructors ci
                   WHERE ci.course_id = courses.id
@@ -708,6 +720,7 @@ if ($editId > 0) {
         $formThumbnailUrl = (string) ($editRow['thumbnail_url'] ?? '');
         $formFinalExamDuration = (string) ((int) ($editRow['final_exam_duration_minutes'] ?? 45));
         $formInstructorId = (int) ($editRow['assigned_instructor_id'] ?? 0);
+        $formTrackType = (string) ($editRow['track_type'] ?? '');
     } else {
         if ($editRow) {
             $errorMessage = 'You can only edit courses in your scope.';
@@ -742,6 +755,7 @@ $courseListStmt = $pdo->prepare(
         TRIM(CONCAT(COALESCE(rb.first_name, ''), ' ', COALESCE(rb.last_name, ''))) AS publish_reviewed_by_name,
         c.level,
         c.thumbnail_url,
+        c.track_type,
         COALESCE(c.final_exam_duration_minutes, 45) AS final_exam_duration_minutes,
         GROUP_CONCAT(DISTINCT NULLIF(TRIM(CONCAT(COALESCE(iu.first_name, ''), ' ', COALESCE(iu.last_name, ''))), '') ORDER BY iu.last_name, iu.first_name SEPARATOR ', ') AS instructor_names,
         (SELECT COUNT(*) FROM modules m WHERE m.course_id = c.id) AS module_count,
@@ -782,6 +796,7 @@ $courseListStmt = $pdo->prepare(
         rb.last_name,
         c.level,
         c.thumbnail_url,
+        c.track_type,
         c.final_exam_duration_minutes
      ORDER BY
         FIELD(COALESCE(c.publish_status, 'draft'), 'pending_review', 'changes_requested', 'draft', 'published'),
@@ -903,6 +918,14 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
                                 <div class="fw-semibold"><?php echo htmlspecialchars((string) $course['title'], ENT_QUOTES, 'UTF-8'); ?></div>
 <?php if (!empty($course['level'])) : ?>
                                 <small class="badge bg-label-secondary text-uppercase"><?php echo htmlspecialchars((string) $course['level'], ENT_QUOTES, 'UTF-8'); ?></small>
+<?php endif; ?>
+<?php
+$trackTypeDisplay = (string) ($course['track_type'] ?? '');
+if ($trackTypeDisplay === 'Regular') :
+?>
+                                <small class="badge bg-label-primary ms-1"><i class="bx bx-book-open me-1"></i>Board Review</small>
+<?php elseif ($trackTypeDisplay === 'Enhancement') : ?>
+                                <small class="badge bg-label-success ms-1"><i class="bx bx-graduation me-1"></i>Course Enhancement</small>
 <?php endif; ?>
 <?php if (trim((string) ($course['description'] ?? '')) !== '') : ?>
                                 <small class="text-muted d-block text-truncate" style="max-width: 280px;">
@@ -1143,6 +1166,15 @@ $shouldAutoOpenModal = $isEditMode || ($errorMessage !== '' && $_SERVER['REQUEST
 <?php endif; ?>
                         </div>
 <?php endif; ?>
+                        <div class="mb-3">
+                          <label for="track_type" class="form-label fw-semibold">Student Track <span class="text-danger">*</span></label>
+                          <select id="track_type" name="track_type" class="form-select" required>
+                            <option value="" <?php echo $formTrackType === '' ? 'selected' : ''; ?>>— All students (no filter) —</option>
+                            <option value="Regular" <?php echo $formTrackType === 'Regular' ? 'selected' : ''; ?>>Board Review (for students taking board exam)</option>
+                            <option value="Enhancement" <?php echo $formTrackType === 'Enhancement' ? 'selected' : ''; ?>>Course Enhancement (for graduating students)</option>
+                          </select>
+                          <small class="text-muted">Students will only see courses that match their chosen track.</small>
+                        </div>
                         <div class="row g-3 mb-3">
                           <div class="col-md-6">
                             <label for="level" class="form-label">Level</label>

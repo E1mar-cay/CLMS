@@ -435,11 +435,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $durationInput = filter_input(INPUT_POST, 'duration_minutes', FILTER_VALIDATE_INT);
       $sequenceInput = filter_input(INPUT_POST, 'sequence_order', FILTER_VALIDATE_INT);
       $moduleIdInput = filter_input(INPUT_POST, 'module_id', FILTER_VALIDATE_INT);
-      $targetTrackInput = trim((string) ($_POST['target_track'] ?? 'All Tracks'));
-      $validTracks = ['Regular Review', 'Course Enhancement', 'All Tracks'];
-      if (!in_array($targetTrackInput, $validTracks, true)) {
-        $targetTrackInput = 'All Tracks';
-      }
+      $targetTrackInput = 'All Tracks';
 
       if ($videoCourseId === false || $videoCourseId === null || $videoCourseId <= 0 || !isset($assignedSet[(int) $videoCourseId])) {
         throw new RuntimeException('You can only modify assigned courses.');
@@ -728,11 +724,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pointsRaw = trim((string) ($_POST['points'] ?? '1'));
       $questionId = filter_input(INPUT_POST, 'question_id', FILTER_VALIDATE_INT);
       $rawAttach = trim((string) ($_POST['question_attach'] ?? ''));
-      $targetTrackInput = trim((string) ($_POST['target_track'] ?? 'All Tracks'));
-      $validTracks = ['Regular Review', 'Course Enhancement', 'All Tracks'];
-      if (!in_array($targetTrackInput, $validTracks, true)) {
-        $targetTrackInput = 'All Tracks';
-      }
+      $targetTrackInput = 'All Tracks';
       if ($rawAttach === '') {
         $rawAttach = 'final';
       }
@@ -1020,7 +1012,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourseId > 0 && $editQuestionId !== false && $editQuestionId !== null && $editQuestionId > 0) {
   if (isset($assignedSet[(int) $selectedCourseId])) {
     $editStmt = $pdo->prepare(
-      'SELECT q.id, q.course_id, q.module_id, q.exam_type_id, q.question_text, q.question_type, q.points, q.target_track
+      'SELECT q.id, q.course_id, q.module_id, q.exam_type_id, q.question_text, q.question_type, q.points
              FROM questions q
              LEFT JOIN course_instructors ci
                ON ci.course_id = q.course_id
@@ -1055,7 +1047,7 @@ $courseModulesForPicker = [];
 $attachSelectValue = 'final';
 if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourseId > 0 && isset($assignedSet[(int) $selectedCourseId])) {
   $questionListStmt = $pdo->prepare(
-    'SELECT q.id, q.module_id, q.exam_type_id, q.question_text, q.question_type, q.points, q.target_track,
+    'SELECT q.id, q.module_id, q.exam_type_id, q.question_text, q.question_type, q.points,
                 m.title AS module_title, et.name AS exam_type_name
          FROM questions q
          LEFT JOIN course_instructors ci
@@ -1152,7 +1144,7 @@ $hasSelectedCourse = $selectedCourseId !== false
 
 if ($hasSelectedCourse) {
   $modulesStmt = $pdo->prepare(
-    "SELECT m.id, m.course_id, c.title AS course_title, m.title, m.video_url, m.duration_minutes, m.sequence_order, m.target_track
+    "SELECT m.id, m.course_id, c.title AS course_title, m.title, m.video_url, m.duration_minutes, m.sequence_order
          FROM modules m
          INNER JOIN courses c ON c.id = m.course_id
          LEFT JOIN course_instructors ci
@@ -1342,7 +1334,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
           <input type="hidden" name="question_id" value="<?php echo (int) $editQuestion['id']; ?>" />
         <?php endif; ?>
         <div class="row g-3">
-          <?php $selectedQuestionTrack = (string) ($editQuestion['target_track'] ?? 'All Tracks'); ?>
           <div class="col-md-6">
             <label class="form-label">Assigned Course</label>
             <select class="form-select" name="course_id" required>
@@ -1395,14 +1386,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                 <small class="text-muted d-block">Remember this attachment for new questions in this course (stored in your browser).</small>
               </div>
             <?php endif; ?>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Target Track</label>
-            <select class="form-select" name="target_track" required>
-              <option value="All Tracks" <?php echo $selectedQuestionTrack === 'All Tracks' ? 'selected' : ''; ?>>All Tracks</option>
-              <option value="Regular Review" <?php echo $selectedQuestionTrack === 'Regular Review' ? 'selected' : ''; ?>>Regular Review</option>
-              <option value="Course Enhancement" <?php echo $selectedQuestionTrack === 'Course Enhancement' ? 'selected' : ''; ?>>Course Enhancement</option>
-            </select>
           </div>
           <div class="col-md-3">
             <label class="form-label">Question Type</label>
@@ -1738,7 +1721,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                 <th>Attached To</th>
                 <th>Question</th>
                 <th>Type</th>
-                <th>Target Track</th>
                 <th>Points</th>
                 <th>Actions</th>
               </tr>
@@ -1768,7 +1750,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                     <?php endif; ?>
                   </td>
                   <td><span class="badge bg-label-primary"><?php echo htmlspecialchars($typeLabel, ENT_QUOTES, 'UTF-8'); ?></span></td>
-                  <td><?php echo htmlspecialchars((string) $q['target_track'], ENT_QUOTES, 'UTF-8'); ?></td>
                   <td><?php echo number_format((float) $q['points'], 2); ?></td>
                   <td class="align-middle" style="width: 1%;">
                     <div class="d-flex flex-row flex-nowrap gap-2 align-items-stretch" style="min-width: 10.5rem;">
@@ -1828,7 +1809,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                 <th>Module</th>
                 <th>Video URL</th>
                 <th>Duration</th>
-                <th>Target Track</th>
                 <th>Order</th>
                 <th>Actions</th>
               </tr>
@@ -1840,7 +1820,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                   <td><?php echo htmlspecialchars((string) $mod['title'], ENT_QUOTES, 'UTF-8'); ?></td>
                   <td class="text-truncate" style="max-width: 280px;"><?php echo htmlspecialchars((string) $mod['video_url'], ENT_QUOTES, 'UTF-8'); ?></td>
                   <td><?php echo (int) $mod['duration_minutes']; ?> min</td>
-                  <td><?php echo htmlspecialchars((string) $mod['target_track'], ENT_QUOTES, 'UTF-8'); ?></td>
                   <td><?php echo (int) $mod['sequence_order']; ?></td>
                   <td>
                     <div class="d-flex gap-1 flex-wrap">
@@ -1854,8 +1833,7 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                         data-module-title="<?php echo htmlspecialchars((string) $mod['title'], ENT_QUOTES, 'UTF-8'); ?>"
                         data-video-url="<?php echo htmlspecialchars((string) $mod['video_url'], ENT_QUOTES, 'UTF-8'); ?>"
                         data-duration="<?php echo (int) $mod['duration_minutes']; ?>"
-                        data-sequence="<?php echo (int) $mod['sequence_order']; ?>"
-                        data-target-track="<?php echo htmlspecialchars((string) $mod['target_track'], ENT_QUOTES, 'UTF-8'); ?>">
+                        data-sequence="<?php echo (int) $mod['sequence_order']; ?>">
                         <i class="bx bx-edit-alt"></i> Edit
                       </button>
                       <form method="post"
@@ -1922,15 +1900,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
                 <div class="col-md-6 mb-3">
                   <label class="form-label" for="module_video_sequence">Sequence Order</label>
                   <input class="form-control" type="number" min="1" id="module_video_sequence" name="sequence_order" value="1" required />
-                </div>
-                <div class="col-md-12 mb-3">
-                  <label class="form-label" for="module_video_track">Target Track</label>
-                  <select class="form-select" id="module_video_track" name="target_track" required>
-                    <option value="All Tracks">All Tracks</option>
-                    <option value="Regular Review">Regular Review</option>
-                    <option value="Course Enhancement">Course Enhancement</option>
-                  </select>
-                  <small class="text-muted d-block mt-1">Choose whether this module is available to all tracks or only to one review track.</small>
                 </div>
               </div>
             </div>
@@ -2098,7 +2067,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
     const videoUrlInput = document.getElementById('module_video_url');
     const durationInput = document.getElementById('module_video_duration');
     const sequenceInput = document.getElementById('module_video_sequence');
-    const trackInput = document.getElementById('module_video_track');
 
     const formEl = document.getElementById('moduleVideoForm');
 
@@ -2114,7 +2082,6 @@ if ($selectedCourseId !== false && $selectedCourseId !== null && $selectedCourse
         if (videoUrlInput) videoUrlInput.value = trigger.getAttribute('data-video-url') || '';
         if (durationInput) durationInput.value = trigger.getAttribute('data-duration') || '0';
         if (sequenceInput) sequenceInput.value = trigger.getAttribute('data-sequence') || '1';
-        if (trackInput) trackInput.value = trigger.getAttribute('data-target-track') || 'All Tracks';
         if (formEl) formEl.dataset.mode = 'edit';
       } else {
         if (titleEl) titleEl.textContent = 'Add Module Video';

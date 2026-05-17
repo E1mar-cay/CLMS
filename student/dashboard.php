@@ -22,6 +22,16 @@ foreach (['level' => "VARCHAR(20) NULL", 'thumbnail_url' => 'VARCHAR(500) NULL']
   }
 }
 
+// Ensure track_type column exists on courses table
+try {
+  $check = $pdo->query("SHOW COLUMNS FROM courses LIKE 'track_type'")->fetch();
+  if (!$check) {
+    $pdo->exec("ALTER TABLE courses ADD COLUMN track_type ENUM('Regular','Enhancement') NULL DEFAULT NULL");
+  }
+} catch (Throwable $e) {
+  error_log('courses.track_type migration failed: ' . $e->getMessage());
+}
+
 $pageTitle = 'Student Dashboard | Criminology LMS';
 $loadStudentDashboardCss = true;
 $activeStudentPage = 'dashboard';
@@ -37,6 +47,17 @@ if ($studentName === '') {
 $firstNameOnly = trim((string) ($_SESSION['first_name'] ?? ''));
 if ($firstNameOnly === '') {
   $firstNameOnly = $studentName;
+}
+
+// Load the student's review_track to filter courses
+$studentReviewTrack = '';
+try {
+  $trackStmt = $pdo->prepare('SELECT review_track FROM users WHERE id = :id LIMIT 1');
+  $trackStmt->execute(['id' => $userId]);
+  $trackRow = $trackStmt->fetch();
+  $studentReviewTrack = (string) ($trackRow['review_track'] ?? '');
+} catch (Throwable $e) {
+  error_log('student/dashboard review_track load failed: ' . $e->getMessage());
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -100,6 +121,7 @@ $coursesStmt = $pdo->prepare(
         c.description,
         c.level,
         c.thumbnail_url,
+        c.track_type,
         (SELECT COUNT(*) FROM modules m WHERE m.course_id = c.id) AS total_modules,
         (SELECT COALESCE(SUM(m.duration_minutes), 0) FROM modules m WHERE m.course_id = c.id) AS total_duration_minutes,
         (SELECT COUNT(*) FROM questions q WHERE q.course_id = c.id) AS question_count,
@@ -134,12 +156,15 @@ $coursesStmt = $pdo->prepare(
             LIMIT 1) AS latest_failed_attempt_id
      FROM courses c
      WHERE c.is_published = 1
+       AND (c.track_type IS NULL OR c.track_type = :student_track OR :student_track2 = '')
      ORDER BY c.title ASC"
 );
 $coursesStmt->execute([
   'user_id_completed' => $userId,
   'user_id_passed_attempt' => $userId,
   'user_id_failed_attempt' => $userId,
+  'student_track' => $studentReviewTrack,
+  'student_track2' => $studentReviewTrack,
 ]);
 $allCourses = $coursesStmt->fetchAll();
 
@@ -521,6 +546,12 @@ require_once __DIR__ . '/includes/layout-top.php';
   <div id="catalogSection" class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
     <h5 class="fw-semibold mb-0 clms-student-section-title">
       <i class="bx bx-book-open text-primary me-1"></i>Course catalog
+<?php if ($studentReviewTrack !== '') : ?>
+      <span class="badge <?php echo $studentReviewTrack === 'Regular' ? 'bg-label-primary' : 'bg-label-success'; ?> ms-2" style="font-size:.75rem;">
+        <i class="bx <?php echo $studentReviewTrack === 'Regular' ? 'bx-book-open' : 'bx-graduation'; ?> me-1"></i>
+        <?php echo $studentReviewTrack === 'Regular' ? 'Board Review Track' : 'Course Enhancement Track'; ?>
+      </span>
+<?php endif; ?>
     </h5>
     <div class="d-flex flex-wrap gap-2" id="clmsCatalogFilters" role="group" aria-label="Catalog filter">
       <button type="button" class="btn btn-sm btn-primary clms-filter-chip" data-filter="all">All</button>
